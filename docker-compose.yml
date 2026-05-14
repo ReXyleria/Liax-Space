@@ -9,7 +9,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     volumes:
-      - mysql-data:/var/lib/mysql
+      - ${APP_PATH:?APP_PATH is required}/data/mysql:/var/lib/mysql
 
   app:
     image: rexyleria/liax-space:latest
@@ -25,8 +25,5 @@ services:
       MYSQL_DATABASE: liax_space
       MYSQL_USER: liax_space
     volumes:
-      - ./public/uploads:/app/public/uploads
-      - ./storage:/app/storage
-
-volumes:
-  mysql-data:
+      - ${APP_PATH:?APP_PATH is required}/data/uploads:/app/public/uploads
+      - ${APP_PATH:?APP_PATH is required}/data/storage:/app/storage

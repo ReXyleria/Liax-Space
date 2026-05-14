@@ -18,7 +18,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
-RUN apk add --no-cache su-exec
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/package.json ./package.json
@@ -31,6 +30,7 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
 RUN chmod +x scripts/docker-entrypoint.sh && mkdir -p public/uploads storage/backups storage/config && chown -R nextjs:nodejs /app
+USER nextjs
 
 EXPOSE 3000
 
