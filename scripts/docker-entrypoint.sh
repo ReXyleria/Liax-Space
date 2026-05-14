@@ -1,13 +1,38 @@
 #!/bin/sh
-set -u
+set -eu
 
+STORAGE_DIR="${APP_STORAGE_DIR:-/app/storage}"
 CONFIG_DIR="${SETUP_CONFIG_DIR:-/app/storage/config}"
+UPLOAD_DIR="${UPLOAD_DIR:-/app/public/uploads}"
+BACKUP_DIR="${BACKUP_DIR:-$STORAGE_DIR/backups}"
 CONFIG_FILE="$CONFIG_DIR/runtime.env"
 TOKEN_FILE="$CONFIG_DIR/setup-token"
 STATUS_FILE="$CONFIG_DIR/setup-status.json"
 PRISMA_BIN="./node_modules/.bin/prisma"
+RUNTIME_USER="nextjs"
+RUNTIME_GROUP="nodejs"
 
-mkdir -p "$CONFIG_DIR" /app/public/uploads /app/storage/backups
+prepare_runtime_dirs() {
+  mkdir -p "$CONFIG_DIR" "$UPLOAD_DIR" "$BACKUP_DIR"
+}
+
+if [ "$(id -u)" = "0" ]; then
+  prepare_runtime_dirs
+  chown -R "$RUNTIME_USER:$RUNTIME_GROUP" "$STORAGE_DIR" "$UPLOAD_DIR" || {
+    echo "[setup] Failed to change ownership for mounted data directories."
+    echo "[setup] Ensure APP_PATH points to a writable host directory, for example:"
+    echo "[setup]   APP_PATH=/opt/liax-space"
+    echo "[setup]   mkdir -p \"\$APP_PATH/data/storage\" \"\$APP_PATH/data/uploads\" \"\$APP_PATH/data/mysql\""
+    exit 1
+  }
+  exec su-exec "$RUNTIME_USER:$RUNTIME_GROUP" "$0" "$@"
+fi
+
+if ! prepare_runtime_dirs; then
+  echo "[setup] Runtime data directories are not writable by the application user."
+  echo "[setup] Check host permissions for \$APP_PATH/data/storage and \$APP_PATH/data/uploads."
+  exit 1
+fi
 
 if [ -f "$CONFIG_FILE" ]; then
   echo "[setup] Loading runtime config from $CONFIG_FILE"

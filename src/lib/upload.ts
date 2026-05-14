@@ -2,6 +2,7 @@ import { mkdir, unlink, writeFile } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { ALLOWED_IMAGE_TYPES, UPLOAD_MAX_SIZE } from "@/lib/constants";
+import { getUploadRoot } from "@/lib/runtime-paths";
 
 const extensionByMime: Record<string, string> = {
   "image/jpeg": ".jpg",
@@ -19,8 +20,7 @@ export async function saveUploadedImage(file: File) {
     throw new Error("File is too large.");
   }
 
-  const uploadDir = process.env.UPLOAD_DIR || "public/uploads";
-  const absoluteDir = path.join(process.cwd(), uploadDir);
+  const absoluteDir = getUploadRoot();
   await mkdir(absoluteDir, { recursive: true });
 
   const filename = `${randomUUID()}${extensionByMime[file.type]}`;
@@ -41,9 +41,8 @@ export async function deleteUploadedFileByUrl(url: string) {
     return;
   }
 
-  const uploadDir = process.env.UPLOAD_DIR || "public/uploads";
   const filename = path.basename(url);
-  const absolutePath = path.join(process.cwd(), uploadDir, filename);
+  const absolutePath = path.join(getUploadRoot(), filename);
   await unlink(absolutePath).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== "ENOENT") {
       throw error;

@@ -1,3 +1,5 @@
+name: liax-space
+
 services:
   mysql:
     image: mysql:8.4
@@ -20,10 +22,13 @@ services:
     ports:
       - "3000:3000"
     environment:
+      APP_STORAGE_DIR: /app/storage
+      SETUP_CONFIG_DIR: /app/storage/config
+      UPLOAD_DIR: /app/public/uploads
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       MYSQL_DATABASE: liax_space
       MYSQL_USER: liax_space
     volumes:
-      - ${APP_PATH:?APP_PATH is required}/data/uploads:/app/public/uploads
       - ${APP_PATH:?APP_PATH is required}/data/storage:/app/storage
+      - ${APP_PATH:?APP_PATH is required}/data/uploads:/app/public/uploads

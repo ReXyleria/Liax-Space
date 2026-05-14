@@ -4,10 +4,11 @@ import { BackupStatus, SettingType } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
 import { assertPermission, canManageBackups } from "@/lib/permissions";
+import { getBackupRoot, getUploadRoot } from "@/lib/runtime-paths";
 import { createTarGzArchive, parseTarGzArchive, type BackupArchiveEntry } from "@/features/backup/archive";
 
-const backupRoot = path.join(process.cwd(), "storage", "backups");
-const uploadRoot = path.join(process.cwd(), "public", "uploads");
+const backupRoot = getBackupRoot();
+const uploadRoot = getUploadRoot();
 const backupVersion = 2;
 const legacyJsonBackupVersion = 1;
 const scheduleEnabledKey = "backup.schedule.enabled";
