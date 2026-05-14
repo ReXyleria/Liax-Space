@@ -6,8 +6,47 @@ CONFIG_FILE="$CONFIG_DIR/runtime.env"
 TOKEN_FILE="$CONFIG_DIR/setup-token"
 STATUS_FILE="$CONFIG_DIR/setup-status.json"
 PRISMA_BIN="./node_modules/.bin/prisma"
+APP_USER="${APP_USER:-nextjs}"
+APP_GROUP="${APP_GROUP:-nodejs}"
+APP_STORAGE_DIR="${APP_STORAGE_DIR:-/app/storage}"
+UPLOAD_DIR="${UPLOAD_DIR:-/app/public/uploads}"
+BACKUP_DIR="${BACKUP_DIR:-/app/storage/backups}"
+RUN_AS_APP=false
 
-mkdir -p "$CONFIG_DIR" /app/public/uploads /app/storage/backups
+prepare_runtime_dirs() {
+  mkdir -p "$CONFIG_DIR" "$UPLOAD_DIR" "$BACKUP_DIR"
+
+  if [ "$(id -u)" = "0" ]; then
+    chown -R "$APP_USER:$APP_GROUP" "$APP_STORAGE_DIR" "$UPLOAD_DIR" 2>/dev/null || true
+    chmod -R ug+rwX "$APP_STORAGE_DIR" "$UPLOAD_DIR" 2>/dev/null || true
+
+    if su-exec "$APP_USER:$APP_GROUP" test -w "$CONFIG_DIR" \
+      && su-exec "$APP_USER:$APP_GROUP" test -w "$UPLOAD_DIR" \
+      && su-exec "$APP_USER:$APP_GROUP" test -w "$BACKUP_DIR"; then
+      RUN_AS_APP=true
+    else
+      echo "[setup] Warning: mounted storage is not writable by $APP_USER. Continuing as root so setup can write runtime config."
+    fi
+  fi
+}
+
+run_as_app() {
+  if [ "$RUN_AS_APP" = "true" ]; then
+    su-exec "$APP_USER:$APP_GROUP" "$@"
+  else
+    "$@"
+  fi
+}
+
+exec_server() {
+  if [ "$RUN_AS_APP" = "true" ]; then
+    exec su-exec "$APP_USER:$APP_GROUP" node server.js
+  fi
+
+  exec node server.js
+}
+
+prepare_runtime_dirs
 
 if [ -f "$CONFIG_FILE" ]; then
   echo "[setup] Loading runtime config from $CONFIG_FILE"
@@ -23,6 +62,7 @@ if [ -z "${SETUP_TOKEN:-}" ]; then
   else
     SETUP_TOKEN="$(node -e "process.stdout.write(require('crypto').randomBytes(24).toString('hex'))")"
     printf "%s\n" "$SETUP_TOKEN" > "$TOKEN_FILE"
+    chown "$APP_USER:$APP_GROUP" "$TOKEN_FILE" 2>/dev/null || true
     chmod 600 "$TOKEN_FILE" 2>/dev/null || true
     echo "[setup] Generated one-time setup token. Read it from $TOKEN_FILE or this log line:"
     echo "[setup] SETUP_TOKEN=$SETUP_TOKEN"
@@ -31,7 +71,10 @@ if [ -z "${SETUP_TOKEN:-}" ]; then
 fi
 
 write_status() {
-  STATUS_STATE="$1" STATUS_ERROR="${2:-}" STATUS_FILE="$STATUS_FILE" node - <<'NODE'
+  STATUS_STATE="$1"
+  STATUS_ERROR="${2:-}"
+  export STATUS_STATE STATUS_ERROR STATUS_FILE
+  run_as_app node - <<'NODE'
 const fs = require("fs");
 const path = require("path");
 const statusFile = process.env.STATUS_FILE;
@@ -52,36 +95,36 @@ if [ -z "${DATABASE_URL:-}" ]; then
   echo "[setup] DATABASE_URL is not configured. Starting setup-safe web server."
   echo "[setup] Open /setup and use SETUP_TOKEN from env, $TOKEN_FILE, or the log above."
   export SETUP_REQUIRED=true
-  exec node server.js
+  exec_server
 fi
 
 echo "[setup] DATABASE_URL detected. Running production migrations."
-if "$PRISMA_BIN" migrate deploy; then
+if run_as_app "$PRISMA_BIN" migrate deploy; then
   echo "[setup] Prisma migrations applied."
 else
   echo "[setup] Prisma migrate deploy failed. Starting setup-safe web server."
   write_status "migration-failed" "Database migration failed. Check database permissions, connection settings, and migration logs."
   export SETUP_REQUIRED=true
-  exec node server.js
+  exec_server
 fi
 
 if [ "${RUN_SEED:-false}" = "true" ]; then
   echo "[setup] RUN_SEED=true, running Prisma seed."
-  if ! "$PRISMA_BIN" db seed; then
+  if ! run_as_app "$PRISMA_BIN" db seed; then
     echo "[setup] Prisma seed failed. The app will still start; inspect logs before production use."
   fi
 fi
 
 if [ "${RUN_BOOTSTRAP:-true}" != "false" ]; then
   echo "[setup] Running idempotent setup bootstrap."
-  if node scripts/setup-bootstrap.mjs; then
+  if run_as_app node scripts/setup-bootstrap.mjs; then
     echo "[setup] Bootstrap completed."
   else
     echo "[setup] Bootstrap failed. Starting setup-safe web server."
     write_status "migration-failed" "Database migration succeeded, but OWNER or base settings bootstrap failed. Check OWNER_* configuration."
     export SETUP_REQUIRED=true
-    exec node server.js
+    exec_server
   fi
 fi
 
-exec node server.js
+exec_server
