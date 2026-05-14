@@ -8,42 +8,71 @@ STATUS_FILE="$CONFIG_DIR/setup-status.json"
 PRISMA_BIN="./node_modules/.bin/prisma"
 APP_USER="${APP_USER:-nextjs}"
 APP_GROUP="${APP_GROUP:-nodejs}"
+APP_UID="${APP_UID:-1001}"
+APP_GID="${APP_GID:-1001}"
 APP_STORAGE_DIR="${APP_STORAGE_DIR:-/app/storage}"
 UPLOAD_DIR="${UPLOAD_DIR:-/app/public/uploads}"
 BACKUP_DIR="${BACKUP_DIR:-/app/storage/backups}"
-RUN_AS_APP=false
-
-prepare_runtime_dirs() {
-  mkdir -p "$CONFIG_DIR" "$UPLOAD_DIR" "$BACKUP_DIR"
-
-  if [ "$(id -u)" = "0" ]; then
-    chown -R "$APP_USER:$APP_GROUP" "$APP_STORAGE_DIR" "$UPLOAD_DIR" 2>/dev/null || true
-    chmod -R ug+rwX "$APP_STORAGE_DIR" "$UPLOAD_DIR" 2>/dev/null || true
-
-    if su-exec "$APP_USER:$APP_GROUP" test -w "$CONFIG_DIR" \
-      && su-exec "$APP_USER:$APP_GROUP" test -w "$UPLOAD_DIR" \
-      && su-exec "$APP_USER:$APP_GROUP" test -w "$BACKUP_DIR"; then
-      RUN_AS_APP=true
-    else
-      echo "[setup] Warning: mounted storage is not writable by $APP_USER. Continuing as root so setup can write runtime config."
-    fi
-  fi
-}
 
 run_as_app() {
-  if [ "$RUN_AS_APP" = "true" ]; then
+  if [ "$(id -u)" = "0" ]; then
     su-exec "$APP_USER:$APP_GROUP" "$@"
   else
     "$@"
   fi
 }
 
-exec_server() {
-  if [ "$RUN_AS_APP" = "true" ]; then
-    exec su-exec "$APP_USER:$APP_GROUP" node server.js
+exec_as_app() {
+  if [ "$(id -u)" = "0" ]; then
+    exec su-exec "$APP_USER:$APP_GROUP" "$@"
   fi
 
-  exec node server.js
+  exec "$@"
+}
+
+print_permission_error() {
+  echo "[setup] ERROR: runtime storage is not writable by $APP_USER (UID $APP_UID)." >&2
+  echo "[setup] Required writable paths:" >&2
+  echo "[setup]   $CONFIG_DIR" >&2
+  echo "[setup]   $BACKUP_DIR" >&2
+  echo "[setup]   $UPLOAD_DIR" >&2
+  echo "[setup] Fix the host bind-mount permissions, then recreate the container:" >&2
+  echo "[setup]   mkdir -p ./storage/config ./storage/backups ./public/uploads" >&2
+  echo "[setup]   sudo chown -R $APP_UID:$APP_GID ./storage ./public/uploads" >&2
+  echo "[setup]   sudo chmod -R u+rwX,g+rwX ./storage ./public/uploads" >&2
+  echo "[setup] Do not use chmod 777 or run the application permanently as root." >&2
+}
+
+check_writable_dir() {
+  DIR_TO_CHECK="$1"
+  export DIR_TO_CHECK
+  run_as_app sh -c '
+    test -d "$DIR_TO_CHECK" &&
+    test -w "$DIR_TO_CHECK" &&
+    tmp="$DIR_TO_CHECK/.write-test-$$" &&
+    : > "$tmp" &&
+    rm -f "$tmp"
+  '
+}
+
+prepare_runtime_dirs() {
+  mkdir -p "$CONFIG_DIR" "$UPLOAD_DIR" "$BACKUP_DIR"
+
+  if [ "$(id -u)" = "0" ]; then
+    if ! check_writable_dir "$CONFIG_DIR" || ! check_writable_dir "$BACKUP_DIR" || ! check_writable_dir "$UPLOAD_DIR"; then
+      chown -R "$APP_USER:$APP_GROUP" "$APP_STORAGE_DIR" "$UPLOAD_DIR" 2>/dev/null || true
+      chmod -R ug+rwX "$APP_STORAGE_DIR" "$UPLOAD_DIR" 2>/dev/null || true
+    fi
+  fi
+
+  if ! check_writable_dir "$CONFIG_DIR" || ! check_writable_dir "$BACKUP_DIR" || ! check_writable_dir "$UPLOAD_DIR"; then
+    print_permission_error
+    exit 1
+  fi
+}
+
+exec_server() {
+  exec_as_app node server.js
 }
 
 prepare_runtime_dirs
@@ -60,10 +89,9 @@ if [ -z "${SETUP_TOKEN:-}" ]; then
   if [ -f "$TOKEN_FILE" ]; then
     SETUP_TOKEN="$(cat "$TOKEN_FILE")"
   else
-    SETUP_TOKEN="$(node -e "process.stdout.write(require('crypto').randomBytes(24).toString('hex'))")"
-    printf "%s\n" "$SETUP_TOKEN" > "$TOKEN_FILE"
-    chown "$APP_USER:$APP_GROUP" "$TOKEN_FILE" 2>/dev/null || true
-    chmod 600 "$TOKEN_FILE" 2>/dev/null || true
+    SETUP_TOKEN="$(run_as_app node -e "process.stdout.write(require('crypto').randomBytes(24).toString('hex'))")"
+    export SETUP_TOKEN TOKEN_FILE
+    run_as_app sh -c 'printf "%s\n" "$SETUP_TOKEN" > "$TOKEN_FILE" && chmod 600 "$TOKEN_FILE"'
     echo "[setup] Generated one-time setup token. Read it from $TOKEN_FILE or this log line:"
     echo "[setup] SETUP_TOKEN=$SETUP_TOKEN"
   fi
