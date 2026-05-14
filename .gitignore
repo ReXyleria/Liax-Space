@@ -25,6 +25,7 @@ public/uploads/*
 # Logs, exports, and backup archives
 *.log
 *.sql
+!prisma/migrations/**/migration.sql
 *.dump
 *.tar.gz
 *.tgz
