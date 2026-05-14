@@ -176,6 +176,22 @@ async function finalizeLogin(
   }
 
   if (isNewDevice) {
+    void sendLoginNotificationSafely(user, meta, "password");
+  }
+
+  return {
+    ok: true,
+    message: "Signed in.",
+    redirectTo: resolveSafeRedirect(callbackUrl, user)
+  };
+}
+
+async function sendLoginNotificationSafely(
+  user: { email: string; nickname: string },
+  meta: { deviceName?: string; loginIp?: string } | undefined,
+  method: "password" | "passkey"
+) {
+  try {
     const mailResult = await sendTemplatedMail({
       to: user.email,
       scene: "loginAlert",
@@ -188,15 +204,11 @@ async function finalizeLogin(
     });
 
     if (!mailResult.ok) {
-      console.error("Failed to send new-device login notification", mailResult.message);
+      console.warn(`Skipped ${method} login notification`, mailResult.message);
     }
+  } catch (error) {
+    console.warn(`Skipped ${method} login notification`, error);
   }
-
-  return {
-    ok: true,
-    message: "Signed in.",
-    redirectTo: resolveSafeRedirect(callbackUrl, user)
-  };
 }
 
 export async function sendRegisterCode(input: unknown): Promise<AuthResponse> {

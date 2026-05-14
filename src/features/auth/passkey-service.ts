@@ -305,20 +305,12 @@ export async function verifyPasskeyAuthentication(
   await createSession(credential.userId, meta?.deviceName);
 
   if (isNewDevice) {
-    const mailResult = await sendTemplatedMail({
-      to: credential.user.email,
-      scene: "loginAlert",
-      variables: {
-        nickname: credential.user.nickname,
-        loginTime: new Date().toLocaleString("zh-CN"),
-        loginIp: meta?.loginIp ?? "unknown",
-        deviceName: meta?.deviceName ?? "Unknown device"
-      }
+    void sendPasskeyLoginNotificationSafely({
+      email: credential.user.email,
+      nickname: credential.user.nickname,
+      loginIp: meta?.loginIp,
+      deviceName: meta?.deviceName
     });
-
-    if (!mailResult.ok) {
-      console.error("Failed to send passkey login notification", mailResult.message);
-    }
   }
 
   return {
@@ -326,4 +318,35 @@ export async function verifyPasskeyAuthentication(
     message: "Signed in with passkey.",
     redirectTo: resolveSafeRedirect(meta?.callbackUrl, credential.user)
   };
+}
+
+async function sendPasskeyLoginNotificationSafely({
+  email,
+  nickname,
+  loginIp,
+  deviceName
+}: {
+  email: string;
+  nickname: string;
+  loginIp?: string;
+  deviceName?: string;
+}) {
+  try {
+    const mailResult = await sendTemplatedMail({
+      to: email,
+      scene: "loginAlert",
+      variables: {
+        nickname,
+        loginTime: new Date().toLocaleString("zh-CN"),
+        loginIp: loginIp ?? "unknown",
+        deviceName: deviceName ?? "Unknown device"
+      }
+    });
+
+    if (!mailResult.ok) {
+      console.warn("Skipped passkey login notification", mailResult.message);
+    }
+  } catch (error) {
+    console.warn("Skipped passkey login notification", error);
+  }
 }
