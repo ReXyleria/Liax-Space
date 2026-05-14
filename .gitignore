@@ -1,0 +1,37 @@
+node_modules
+.npm-cache
+.next
+out
+dist
+coverage
+
+# Local environment and runtime secrets
+.env
+.env.local
+.env.*.local
+runtime.env
+storage/config/*
+storage/**/*.env
+storage/**/setup-token
+storage/**/setup-status.json
+
+# Private operational notes and generated data
+.codex/
+docs/
+storage/
+public/uploads/*
+!public/uploads/.gitkeep
+
+# Logs, exports, and backup archives
+*.log
+*.sql
+*.dump
+*.tar.gz
+*.tgz
+*.zip
+storage/backups/**
+
+# Build/cache artifacts
+*.tsbuildinfo
+page-*.html
+pet-runs/

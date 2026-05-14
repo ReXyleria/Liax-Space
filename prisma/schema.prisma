@@ -1,0 +1,572 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  VISITOR
+  USER
+  FRIEND
+  VIP
+  EDITOR
+  ADMIN
+  OWNER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ContentVisibility {
+  PUBLIC
+  LOGIN_REQUIRED
+  FRIEND_ONLY
+  VIP_ONLY
+  EDITOR_ONLY
+  ADMIN_ONLY
+  OWNER_ONLY
+}
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CommentStatus {
+  PENDING
+  APPROVED
+  HIDDEN
+  DELETED
+}
+
+enum GuestbookStatus {
+  PENDING
+  APPROVED
+  HIDDEN
+  DELETED
+}
+
+enum VerificationCodeType {
+  REGISTER
+  LOGIN
+  RESET_PASSWORD
+}
+
+enum WebAuthnChallengeType {
+  REGISTRATION
+  AUTHENTICATION
+}
+
+enum MailTemplateScene {
+  MOMENT_COMMENT
+  LOGIN_ALERT
+  COMMENT_REPLY
+  EMAIL_VERIFY
+  PASSWORD_RESET
+  CUSTOM_PAGE_COMMENT
+  ARTICLE_COMMENT
+  GUESTBOOK_REPLY
+  REGISTER_CODE
+}
+
+enum MailSendStatus {
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum TranslationStatus {
+  NOT_TRANSLATED
+  TRANSLATING
+  TRANSLATED
+  FAILED
+}
+
+enum MediaReferenceSource {
+  ARTICLE
+  MOMENT
+  PAGE
+  USER_AVATAR
+  SETTING
+  MAIL_TEMPLATE
+  ARTICLE_VERSION
+  COMMENT
+}
+
+enum BackupStatus {
+  READY
+  FAILED
+}
+
+enum SettingType {
+  TEXT
+  TEXTAREA
+  BOOLEAN
+  NUMBER
+  IMAGE
+  JSON
+  PASSWORD
+}
+
+model User {
+  id                 String              @id @default(cuid())
+  email              String              @unique
+  username           String?             @unique
+  passwordHash       String
+  nickname           String
+  avatar             String?
+  role               UserRole            @default(USER)
+  identityId         String?
+  status             UserStatus          @default(ACTIVE)
+  emailVerified      Boolean             @default(false)
+  totpSecret         String?             @db.Text
+  totpEnabled        Boolean             @default(false)
+  totpConfirmedAt    DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  lastLoginAt        DateTime?
+  articles           Article[]
+  articleVersions    ArticleVersion[]
+  comments           Comment[]
+  moments            Moment[]
+  momentLikes        MomentLike[]
+  momentComments     MomentComment[]
+  passkeys           PasskeyCredential[]
+  totpRecovery       TotpRecoveryCode[]
+  webauthnChallenges WebAuthnChallenge[]
+  sessions           AuthSession[]
+  pendingAuths       PendingAuth[]
+  trustedDevices     TrustedDevice[]
+  uploadedMedia      MediaAsset[]
+  visitLogs          VisitLog[]
+  identity           Identity?           @relation(fields: [identityId], references: [id], onDelete: SetNull)
+
+  @@index([role])
+  @@index([identityId])
+  @@index([status])
+  @@index([username])
+}
+
+model Identity {
+  id                 String                   @id @default(cuid())
+  key                String                   @unique
+  name               String
+  description        String?                  @db.Text
+  permissions        Json
+  builtInRole        UserRole?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  users              User[]
+  articleAccessRules ArticleAllowedIdentity[]
+
+  @@index([builtInRole])
+}
+
+model AuthSession {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  deviceName String?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PendingAuth {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model TrustedDevice {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  deviceName String?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  expiresAt  DateTime
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model VerificationCode {
+  id        String               @id @default(cuid())
+  email     String
+  codeHash  String
+  type      VerificationCodeType
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime             @default(now())
+
+  @@index([email, type])
+  @@index([expiresAt])
+}
+
+model PasskeyCredential {
+  id                   String    @id @default(cuid())
+  userId               String
+  credentialId         String    @unique
+  publicKey            String    @db.Text
+  counter              Int       @default(0)
+  deviceName           String?
+  transports           String?   @db.Text
+  credentialDeviceType String?
+  backedUp             Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  lastUsedAt           DateTime?
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model TotpRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+}
+
+model WebAuthnChallenge {
+  id        String                @id @default(cuid())
+  userId    String?
+  challenge String                @unique
+  type      WebAuthnChallengeType
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime              @default(now())
+  user      User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([expiresAt])
+  @@index([usedAt])
+}
+
+model Article {
+  id                String                   @id @default(cuid())
+  title             String
+  slug              String                   @unique
+  summary           String?                  @db.Text
+  cover             String?
+  contentJson       Json
+  contentHtml       String                   @db.LongText
+  status            ArticleStatus            @default(DRAFT)
+  visibility        ContentVisibility        @default(PUBLIC)
+  allowComments     Boolean                  @default(true)
+  pinned            Boolean                  @default(false)
+  featured          Boolean                  @default(false)
+  viewCount         Int                      @default(0)
+  seoTitle          String?
+  seoDescription    String?                  @db.Text
+  authorId          String
+  publishedAt       DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  deletedAt         DateTime?
+  rawImportMeta     Json?
+  author            User                     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  tags              ArticleTag[]
+  allowedIdentities ArticleAllowedIdentity[]
+  versions          ArticleVersion[]
+  translations      ArticleTranslation[]
+  comments          Comment[]
+  visitLogs         VisitLog[]
+
+  @@index([status, visibility])
+  @@index([publishedAt])
+  @@index([deletedAt])
+  @@index([authorId])
+}
+
+model ArticleTranslation {
+  id              String            @id @default(cuid())
+  articleId       String
+  locale          String
+  title           String
+  summary         String?           @db.Text
+  contentHtml     String            @db.LongText
+  contentJson     Json?
+  status          TranslationStatus @default(NOT_TRANSLATED)
+  error           String?           @db.Text
+  contentHash     String?           @db.VarChar(64)
+  sourceUpdatedAt DateTime?
+  translatedAt    DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  article         Article           @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, locale])
+  @@index([locale, status])
+  @@index([contentHash])
+}
+
+model Tag {
+  id            String       @id @default(cuid())
+  name          String
+  slug          String       @unique
+  color         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  rawImportMeta Json?
+  articles      ArticleTag[]
+
+  @@index([name])
+}
+
+model ArticleTag {
+  articleId String
+  tagId     String
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+  @@index([tagId])
+}
+
+model ArticleVersion {
+  id                 String            @id @default(cuid())
+  articleId          String
+  version            Int
+  title              String
+  slug               String
+  summary            String?           @db.Text
+  cover              String?
+  contentJson        Json
+  contentHtml        String            @db.LongText
+  status             ArticleStatus
+  visibility         ContentVisibility
+  allowComments      Boolean
+  pinned             Boolean
+  featured           Boolean
+  seoTitle           String?
+  seoDescription     String?           @db.Text
+  tagNames           Json
+  allowedIdentityIds Json?
+  createdById        String
+  createdAt          DateTime          @default(now())
+  article            Article           @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdBy          User              @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([articleId, version])
+  @@index([articleId, createdAt])
+  @@index([createdById])
+}
+
+model ArticleAllowedIdentity {
+  articleId  String
+  identityId String
+  article    Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  identity   Identity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, identityId])
+  @@index([identityId])
+}
+
+model Comment {
+  id            String        @id @default(cuid())
+  articleId     String
+  userId        String
+  parentId      String?
+  content       String        @db.Text
+  deviceName    String?
+  status        CommentStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+  rawImportMeta Json?
+  article       Article       @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent        Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies       Comment[]     @relation("CommentReplies")
+
+  @@index([articleId, status])
+  @@index([userId])
+  @@index([parentId])
+}
+
+model Moment {
+  id            String            @id @default(cuid())
+  content       String            @db.Text
+  images        Json
+  visibility    ContentVisibility @default(PUBLIC)
+  pinned        Boolean           @default(false)
+  likeCount     Int               @default(0)
+  authorId      String
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+  rawImportMeta Json?
+  author        User              @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  likes         MomentLike[]
+  comments      MomentComment[]
+
+  @@index([visibility, pinned])
+  @@index([deletedAt])
+}
+
+model MomentLike {
+  momentId  String
+  userId    String
+  createdAt DateTime @default(now())
+  moment    Moment   @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([momentId, userId])
+  @@index([userId])
+}
+
+model MomentComment {
+  id         String    @id @default(cuid())
+  momentId   String
+  userId     String
+  content    String    @db.Text
+  deviceName String?
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+  moment     Moment    @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([momentId, createdAt])
+  @@index([userId])
+  @@index([deletedAt])
+}
+
+model GuestbookMessage {
+  id        String          @id @default(cuid())
+  nickname  String
+  email     String
+  content   String          @db.Text
+  reply     String?         @db.Text
+  status    GuestbookStatus @default(PENDING)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model Setting {
+  id        String      @id @default(cuid())
+  key       String      @unique
+  value     String      @db.LongText
+  group     String
+  type      SettingType @default(TEXT)
+  updatedAt DateTime    @updatedAt
+
+  @@index([group])
+}
+
+model MailTemplate {
+  id        String            @id @default(cuid())
+  scene     MailTemplateScene @unique
+  subject   String
+  bodyHtml  String            @db.LongText
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([updatedAt])
+}
+
+model MailSendLog {
+  id        String            @id @default(cuid())
+  scene     MailTemplateScene
+  to        String
+  subject   String?
+  status    MailSendStatus
+  error     String?           @db.Text
+  createdAt DateTime          @default(now())
+
+  @@index([scene])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model VisitLog {
+  id        String   @id @default(cuid())
+  path      String
+  articleId String?
+  userId    String?
+  ipHash    String
+  userAgent String?  @db.Text
+  referrer  String?  @db.Text
+  createdAt DateTime @default(now())
+  article   Article? @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([path])
+  @@index([articleId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model MediaAsset {
+  id            String           @id @default(cuid())
+  url           String
+  filename      String
+  mimeType      String
+  size          Int
+  uploaderId    String?
+  createdAt     DateTime         @default(now())
+  isUnused      Boolean          @default(false)
+  unusedSince   DateTime?
+  lastScannedAt DateTime?
+  rawImportMeta Json?
+  uploader      User?            @relation(fields: [uploaderId], references: [id], onDelete: SetNull)
+  references    MediaReference[]
+
+  @@index([uploaderId])
+  @@index([createdAt])
+  @@index([isUnused, unusedSince])
+}
+
+model MediaReference {
+  id        String               @id @default(cuid())
+  assetId   String
+  source    MediaReferenceSource
+  sourceId  String
+  createdAt DateTime             @default(now())
+  asset     MediaAsset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, source, sourceId])
+  @@index([source, sourceId])
+}
+
+model BackupRecord {
+  id          String       @id @default(cuid())
+  filename    String
+  filePath    String       @db.Text
+  sizeBytes   Int
+  status      BackupStatus @default(READY)
+  reason      String?
+  error       String?      @db.Text
+  createdById String?
+  createdAt   DateTime     @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([createdById])
+}

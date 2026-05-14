@@ -1,0 +1,784 @@
+"use client";
+
+import dynamic from "next/dynamic";
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { ArticleStatus, ContentVisibility } from "@prisma/client";
+import { Eye, History, Save, Send, Settings } from "lucide-react";
+import { BlockEditor } from "@/components/editor/block-editor/block-editor";
+import { EditorToc } from "@/components/editor/editor-toc";
+import type {
+  ArticlePreviewDraft,
+  PreviewSiteSettings
+} from "@/components/forms/article-preview-overlay";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { Select } from "@/components/ui/select";
+import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { ImageUploadField } from "@/components/forms/image-upload-field";
+import {
+  createArticleAction,
+  restoreArticleVersionAction,
+  updateArticleAction,
+  type ArticleActionState
+} from "@/features/articles/actions";
+import type { Locale } from "@/lib/i18n";
+
+const ArticlePreviewOverlay = dynamic(
+  () => import("@/components/forms/article-preview-overlay").then((module) => module.ArticlePreviewOverlay),
+  { ssr: false }
+);
+
+type ArticleFormValue = {
+  id: string;
+  title: string;
+  slug: string;
+  summary: string | null;
+  cover: string | null;
+  contentJson: unknown;
+  contentHtml: string;
+  status: ArticleStatus;
+  visibility: ContentVisibility;
+  allowComments: boolean;
+  pinned: boolean;
+  featured: boolean;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  tags: Array<{ name: string }>;
+  allowedIdentities: Array<{ id: string; name: string; key: string }>;
+};
+
+type ArticleDraft = ArticlePreviewDraft;
+
+type ArticleVersionValue = {
+  id: string;
+  version: number;
+  title: string;
+  slug: string;
+  summary: string | null;
+  cover: string | null;
+  contentJson: unknown;
+  contentHtml: string;
+  status: ArticleStatus;
+  visibility: ContentVisibility;
+  tagNames: string[];
+  createdAt: string;
+  createdByName: string;
+};
+
+type PreviewMode = "phone" | "tablet" | "desktop";
+
+function labels(locale: Locale) {
+  return locale === "en"
+    ? {
+        editArticle: "Edit article",
+        createArticle: "New article",
+        fillTitleHint: "Start by filling in the title",
+        currentStatusPrefix: "Current status:",
+        preview: "Preview",
+        save: "Save",
+        versions: "Version history",
+        settings: "Settings",
+        publish: "Publish",
+        updatePublish: "Update and publish",
+        draftDetected: "Detected a local draft from",
+        restoreDraft: "Restore draft",
+        ignore: "Ignore",
+        articleSettings: "Article settings",
+        articleSettingsDescription: "Configure the slug, summary, cover, visibility, tags, and SEO.",
+        close: "Close",
+        slugLabel: "Slug",
+        slugPlaceholder: "Leave empty to generate a stable UUID slug",
+        summaryLabel: "Summary",
+        summaryPlaceholder: "Article summary...",
+        coverLabel: "Cover",
+        visibilityLabel: "Visibility",
+        allowedIdentityLabel: "Allowed viewer identities",
+        allowedIdentityPlaceholder:
+          "If selected, access is limited to these identities in addition to the visibility rule above.",
+        allowedIdentityHint: "OWNER can always view.",
+        tagsLabel: "Tags",
+        tagsPlaceholder: "Choose or create tags",
+        seoTitleLabel: "SEO title",
+        seoDescriptionLabel: "SEO 描述",
+        allowCommentsLabel: "Allow comments",
+        pinnedLabel: "Pinned",
+        featuredLabel: "Featured",
+        versionHistoryDescription:
+          "Load and review historical versions on demand. Restoring writes back to the current article.",
+        loading: "Loading...",
+        restoreVersion: "Restore",
+        previewVersion: "Preview",
+        confirmRestore: "Confirm restore",
+        cancel: "Cancel",
+        restoring: "Restoring...",
+        restoreFailed: "Version restore failed.",
+        noVersions: "Saving the article will create version records.",
+        statusLabels: {
+          [ArticleStatus.DRAFT]: "Draft",
+          [ArticleStatus.PUBLISHED]: "Published",
+          [ArticleStatus.ARCHIVED]: "Archived"
+        }
+      }
+    : {
+        editArticle: "编辑文章",
+        createArticle: "新建文章",
+        fillTitleHint: "先在标题行填写文章标题",
+        currentStatusPrefix: "当前状态：",
+        preview: "预览",
+        save: "保存",
+        versions: "版本历史",
+        settings: "设置",
+        publish: "发布",
+        updatePublish: "更新发布",
+        draftDetected: "检测到",
+        restoreDraft: "恢复草稿",
+        ignore: "忽略",
+        articleSettings: "文章设置",
+        articleSettingsDescription: "配置文章链接、摘要、封面、可见性、标签和 SEO。",
+        close: "关闭",
+        slugLabel: "文章链接",
+        slugPlaceholder: "留空时自动生成稳定 UUID 链接",
+        summaryLabel: "摘要",
+        summaryPlaceholder: "文章摘要...",
+        coverLabel: "封面",
+        visibilityLabel: "可见性",
+        allowedIdentityLabel: "允许观看的身份",
+        allowedIdentityPlaceholder: "选择后会在上方可见性规则之外，额外限制为这些身份可查看。",
+        allowedIdentityHint: "OWNER 始终可以查看。",
+        tagsLabel: "标签",
+        tagsPlaceholder: "选择或新建标签",
+        seoTitleLabel: "SEO 标题",
+        seoDescriptionLabel: "SEO description",
+        allowCommentsLabel: "允许评论",
+        pinnedLabel: "置顶",
+        featuredLabel: "精选",
+        versionHistoryDescription: "按需加载并查看文章历史版本。恢复会写回当前文章。",
+        loading: "加载中...",
+        restoreVersion: "恢复",
+        previewVersion: "预览",
+        confirmRestore: "确认恢复",
+        cancel: "取消",
+        restoring: "恢复中...",
+        restoreFailed: "版本恢复失败。",
+        noVersions: "保存文章后会生成版本记录。",
+        statusLabels: {
+          [ArticleStatus.DRAFT]: "草稿",
+          [ArticleStatus.PUBLISHED]: "已发布",
+          [ArticleStatus.ARCHIVED]: "已归档"
+        }
+      };
+}
+
+const initialArticleActionState: ArticleActionState = {
+  ok: false,
+  message: "",
+  fieldErrors: {}
+};
+
+function visibilityOptions(locale: Locale) {
+  if (locale === "en") {
+    return [
+      { value: ContentVisibility.PUBLIC, label: "Public" },
+      { value: ContentVisibility.LOGIN_REQUIRED, label: "Login required" },
+      { value: ContentVisibility.FRIEND_ONLY, label: "Friends only" },
+      { value: ContentVisibility.VIP_ONLY, label: "VIP only" },
+      { value: ContentVisibility.EDITOR_ONLY, label: "Editor only" },
+      { value: ContentVisibility.ADMIN_ONLY, label: "Admin only" },
+      { value: ContentVisibility.OWNER_ONLY, label: "Owner only" }
+    ];
+  }
+
+  return [
+    { value: ContentVisibility.PUBLIC, label: "公开" },
+    { value: ContentVisibility.LOGIN_REQUIRED, label: "登录可见" },
+    { value: ContentVisibility.FRIEND_ONLY, label: "好友可见" },
+    { value: ContentVisibility.VIP_ONLY, label: "VIP 可见" },
+    { value: ContentVisibility.EDITOR_ONLY, label: "编辑可见" },
+    { value: ContentVisibility.ADMIN_ONLY, label: "管理员可见" },
+    { value: ContentVisibility.OWNER_ONLY, label: "站主可见" }
+  ];
+}
+
+function FieldError({ messages }: { messages?: string[] }) {
+  if (!messages?.length) {
+    return null;
+  }
+  return <p className="text-xs text-destructive">{messages[0]}</p>;
+}
+
+function parseJsonDraft(value: string) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return { type: "doc", content: [] };
+  }
+}
+
+export function ArticleEditorForm({
+  article,
+  tagOptions = [],
+  versions: initialVersions = [],
+  site,
+  viewerIdentities = [],
+  locale = "zh-CN"
+}: {
+  article?: ArticleFormValue | null;
+  tagOptions?: Array<{ name: string }>;
+  viewerIdentities?: Array<{ id: string; name: string; key: string; builtInRole: string | null }>;
+  versions?: ArticleVersionValue[];
+  site: PreviewSiteSettings;
+  locale?: Locale;
+}) {
+  const text = labels(locale);
+  const articleVisibilityOptions = visibilityOptions(locale);
+  const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
+  const returnToListRef = useRef<HTMLInputElement>(null);
+  const saveTimer = useRef<number | null>(null);
+  const action = article ? updateArticleAction.bind(null, article.id) : createArticleAction;
+  const draftKey = `article-draft:${article?.id ?? "new"}`;
+  const [state, formAction, isPending] = useActionState<ArticleActionState, FormData>(
+    action,
+    initialArticleActionState
+  );
+  const [title, setTitle] = useState(article?.title ?? "");
+  const [slug, setSlug] = useState(article?.slug ?? "");
+  const [status, setStatus] = useState<string>(article?.status ?? ArticleStatus.DRAFT);
+  const [visibility, setVisibility] = useState<string>(article?.visibility ?? ContentVisibility.PUBLIC);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("desktop");
+  const [previewDraft, setPreviewDraft] = useState<ArticleDraft | null>(null);
+  const [pendingDraft, setPendingDraft] = useState<ArticleDraft | null>(null);
+  const [editorInitial, setEditorInitial] = useState({
+    html: article?.contentHtml ?? "",
+    json: article?.contentJson
+  });
+  const [editorKey, setEditorKey] = useState(0);
+  const initialSelectedTags = article?.tags.flatMap((tag) => (tag?.name ? [tag.name] : [])) ?? [];
+  const initialSelectedViewerIdentityIds = article?.allowedIdentities.flatMap((identity) =>
+    identity?.id ? [identity.id] : []
+  ) ?? [];
+  const [selectedTags, setSelectedTags] = useState(initialSelectedTags);
+  const [selectedViewerIdentityIds, setSelectedViewerIdentityIds] = useState(initialSelectedViewerIdentityIds);
+  const [settingsOpen, setSettingsOpen] = useState(!article);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versions, setVersions] = useState<ArticleVersionValue[]>(initialVersions);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionPreview, setVersionPreview] = useState<ArticleVersionValue | null>(null);
+  const [restoreConfirm, setRestoreConfirm] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState("");
+  const [isRestoring, startRestoreTransition] = useTransition();
+
+  const tagSelectOptions = useMemo(
+    () => Array.from(new Set([...tagOptions.map((tag) => tag.name), ...selectedTags]))
+      .map((tag) => ({ value: tag, label: tag })),
+    [selectedTags, tagOptions]
+  );
+  const viewerIdentityOptions = useMemo(
+    () =>
+      viewerIdentities.flatMap((identity) =>
+        identity?.id && identity?.name && identity?.key
+          ? [
+              {
+                value: identity.id,
+                label: `${identity.name} (${identity.key})`
+              }
+            ]
+          : []
+      ),
+    [viewerIdentities]
+  );
+
+  const collectDraft = useCallback((): ArticleDraft | null => {
+    const form = formRef.current;
+    if (!form) {
+      return null;
+    }
+    const formData = new FormData(form);
+    return {
+      title,
+      slug,
+      summary: String(formData.get("summary") ?? ""),
+      cover: String(formData.get("cover") ?? ""),
+      contentHtml: String(formData.get("contentHtml") ?? ""),
+      contentJson: String(formData.get("contentJson") ?? JSON.stringify({ type: "doc", content: [] })),
+      status: String(formData.get("status") ?? ArticleStatus.DRAFT),
+      visibility: String(formData.get("visibility") ?? ContentVisibility.PUBLIC),
+      tagNames: selectedTags.join(", "),
+      seoTitle: String(formData.get("seoTitle") ?? ""),
+      seoDescription: String(formData.get("seoDescription") ?? ""),
+      allowComments: formData.get("allowComments") === "on",
+      pinned: formData.get("pinned") === "on",
+      featured: formData.get("featured") === "on",
+      savedAt: Date.now()
+    };
+  }, [selectedTags, slug, title]);
+
+  const scheduleDraftSave = useCallback(() => {
+    if (saveTimer.current) {
+      window.clearTimeout(saveTimer.current);
+    }
+    saveTimer.current = window.setTimeout(() => {
+      const draft = collectDraft();
+      if (draft) {
+        window.localStorage.setItem(draftKey, JSON.stringify(draft));
+      }
+    }, 450);
+  }, [collectDraft, draftKey]);
+
+  const restoreDraft = useCallback((draft: ArticleDraft) => {
+    const form = formRef.current;
+    setTitle(draft.title);
+    setSlug(draft.slug);
+    if (form) {
+      const setValue = (name: string, value: string) => {
+        const field = form.elements.namedItem(name);
+        if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
+          field.value = value;
+        }
+      };
+      const setChecked = (name: string, checked: boolean) => {
+        const field = form.elements.namedItem(name);
+        if (field instanceof HTMLInputElement) {
+          field.checked = checked;
+        }
+      };
+      setValue("summary", draft.summary);
+      setValue("cover", draft.cover);
+      setValue("seoTitle", draft.seoTitle);
+      setValue("seoDescription", draft.seoDescription);
+      setChecked("allowComments", draft.allowComments);
+      setChecked("pinned", draft.pinned);
+      setChecked("featured", draft.featured);
+    }
+    setEditorInitial({ html: draft.contentHtml, json: parseJsonDraft(draft.contentJson) });
+    setStatus(draft.status);
+    setVisibility(draft.visibility);
+    setSelectedTags(draft.tagNames.split(",").map((tag) => tag.trim()).filter(Boolean));
+    setEditorKey((current) => current + 1);
+    setPendingDraft(null);
+  }, []);
+
+  function submitWithStatus(nextStatus: ArticleStatus, returnToList = false) {
+    const form = formRef.current;
+    if (!form) {
+      return;
+    }
+    const statusField = form.elements.namedItem("status");
+    if (statusField instanceof HTMLInputElement) {
+      statusField.value = nextStatus;
+    }
+    if (returnToListRef.current) {
+      returnToListRef.current.value = returnToList ? "1" : "0";
+    }
+    setStatus(nextStatus);
+    form.requestSubmit();
+  }
+
+  const openPreview = useCallback((draft?: ArticleDraft) => {
+    setPreviewDraft(draft ?? collectDraft());
+    setPreviewOpen(true);
+  }, [collectDraft]);
+
+  function previewVersion(version: ArticleVersionValue) {
+    openPreview({
+      title: version.title,
+      slug: version.slug,
+      summary: version.summary ?? "",
+      cover: version.cover ?? "",
+      contentHtml: version.contentHtml,
+      contentJson: JSON.stringify(version.contentJson ?? { type: "doc", content: [] }),
+      status: version.status,
+      visibility: version.visibility,
+      tagNames: version.tagNames.join(", "),
+      seoTitle: "",
+      seoDescription: "",
+      allowComments: true,
+      pinned: false,
+      featured: false,
+      savedAt: new Date(version.createdAt).getTime()
+    });
+  }
+
+  async function loadVersions() {
+    if (!article || versionsLoading || versions.length) {
+      return;
+    }
+    setVersionsLoading(true);
+    try {
+      const res = await fetch(`/api/articles/${article.id}/versions`);
+      if (res.ok) {
+        const data = await res.json();
+        setVersions(data.versions ?? []);
+      }
+    } finally {
+      setVersionsLoading(false);
+    }
+  }
+
+  function handleRestore(versionId: string) {
+    if (!article) {
+      return;
+    }
+    setRestoreError("");
+    startRestoreTransition(() => {
+      void restoreArticleVersionAction(article.id, versionId).catch((error) => {
+        setRestoreError(error instanceof Error ? error.message : text.restoreFailed);
+      });
+    });
+  }
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem(draftKey);
+    if (!raw) {
+      return;
+    }
+    try {
+      const draft = JSON.parse(raw) as ArticleDraft;
+      if (draft.savedAt) {
+        setPendingDraft(draft);
+      }
+    } catch {
+      window.localStorage.removeItem(draftKey);
+    }
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (state.ok) {
+      window.localStorage.removeItem(draftKey);
+    }
+    if (state.ok && state.redirectTo) {
+      router.push(state.redirectTo);
+      router.refresh();
+    }
+  }, [draftKey, router, state.ok, state.redirectTo]);
+
+  useEffect(() => {
+    if (Object.keys(state.fieldErrors).length) {
+      setSettingsOpen(true);
+    }
+  }, [state.fieldErrors]);
+
+  useEffect(() => {
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        formRef.current?.requestSubmit();
+      }
+    };
+    window.addEventListener("keydown", handleSaveShortcut);
+    return () => window.removeEventListener("keydown", handleSaveShortcut);
+  }, []);
+
+  useEffect(() => () => {
+    if (saveTimer.current) {
+      window.clearTimeout(saveTimer.current);
+    }
+  }, []);
+
+  const isPublished = status === ArticleStatus.PUBLISHED;
+  const statusText = text.statusLabels[status as ArticleStatus] ?? status;
+  const dateLocale = locale === "en" ? "en-US" : "zh-CN";
+
+  return (
+    <>
+      <form
+        ref={formRef}
+        action={formAction}
+        className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px]"
+        onInput={scheduleDraftSave}
+        onChange={scheduleDraftSave}
+      >
+        <input type="hidden" name="status" value={status} readOnly />
+        <input ref={returnToListRef} type="hidden" name="returnToList" defaultValue="0" />
+        <div className="space-y-6">
+          {pendingDraft ? (
+            <Card className="p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {text.draftDetected} {new Date(pendingDraft.savedAt).toLocaleString(dateLocale)}.
+                </p>
+                <div className="flex gap-2">
+                  <Button type="button" variant="secondary" onClick={() => restoreDraft(pendingDraft)}>
+                    {text.restoreDraft}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      window.localStorage.removeItem(draftKey);
+                      setPendingDraft(null);
+                    }}
+                  >
+                    {text.ignore}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader className="border-b bg-muted/35">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <CardTitle>{article ? text.editArticle : text.createArticle}</CardTitle>
+                  <p className="mt-2 truncate text-sm text-muted-foreground">
+                    {title || text.fillTitleHint} · {text.currentStatusPrefix}{statusText}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="secondary" onClick={() => openPreview()}>
+                    <Eye className="mr-2 h-4 w-4" />
+                    {text.preview}
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => submitWithStatus(status as ArticleStatus)} disabled={isPending}>
+                    <Save className="mr-2 h-4 w-4" />
+                    {text.save}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      void loadVersions();
+                      setVersionsOpen(true);
+                    }}
+                    disabled={!article}
+                  >
+                    <History className="mr-2 h-4 w-4" />
+                    {text.versions}
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => setSettingsOpen(true)}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    {text.settings}
+                  </Button>
+                  <Button type="button" onClick={() => submitWithStatus(ArticleStatus.PUBLISHED, true)} disabled={isPending}>
+                    <Send className="mr-2 h-4 w-4" />
+                    {isPublished ? text.updatePublish : text.publish}
+                  </Button>
+                </div>
+              </div>
+              {state.message ? (
+                <p className={state.ok ? "mt-3 text-sm text-emerald-600" : "mt-3 text-sm text-destructive"}>
+                  {state.message}
+                </p>
+              ) : null}
+            </CardHeader>
+            <CardContent className="pt-6">
+              <BlockEditor
+                key={editorKey}
+                title={title}
+                initialHtml={editorInitial.html}
+                initialJson={editorInitial.json}
+                onTitleChange={setTitle}
+                onContentChange={scheduleDraftSave}
+              />
+              <FieldError messages={state.fieldErrors.title} />
+              <FieldError messages={state.fieldErrors.contentHtml ?? state.fieldErrors.contentJson} />
+            </CardContent>
+          </Card>
+        </div>
+
+        <aside className="space-y-6">
+          <EditorToc />
+        </aside>
+
+        <Dialog
+          open={settingsOpen}
+          title={text.articleSettings}
+          description={text.articleSettingsDescription}
+          onOpenChange={setSettingsOpen}
+          footer={
+            <div className="flex items-center justify-between gap-3">
+              <Button type="button" variant="secondary" onClick={() => setSettingsOpen(false)}>
+                {text.close}
+              </Button>
+              <Button type="button" onClick={() => submitWithStatus(ArticleStatus.PUBLISHED, true)} disabled={isPending}>
+                <Send className="mr-2 h-4 w-4" />
+                {isPublished ? text.updatePublish : text.publish}
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-5">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">{text.slugLabel}</span>
+              <Input
+                name="slug"
+                value={slug}
+                onChange={(event) => {
+                  setSlug(event.target.value);
+                  scheduleDraftSave();
+                }}
+                placeholder={text.slugPlaceholder}
+              />
+              <FieldError messages={state.fieldErrors.slug} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">{text.summaryLabel}</span>
+              <Textarea name="summary" placeholder={text.summaryPlaceholder} defaultValue={article?.summary ?? ""} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">{text.coverLabel}</span>
+              <ImageUploadField name="cover" defaultValue={article?.cover ?? ""} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">{text.visibilityLabel}</span>
+              <Select
+                name="visibility"
+                value={visibility}
+                onValueChange={(nextVisibility) => {
+                  setVisibility(nextVisibility);
+                  scheduleDraftSave();
+                }}
+                options={articleVisibilityOptions}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">{text.allowedIdentityLabel}</span>
+              <MultiSelect
+                name="allowedIdentityIds"
+                value={selectedViewerIdentityIds}
+                onValueChange={(nextIds) => {
+                  setSelectedViewerIdentityIds(nextIds);
+                  scheduleDraftSave();
+                }}
+                options={viewerIdentityOptions}
+                placeholder={text.allowedIdentityPlaceholder}
+              />
+              <p className="text-xs text-muted-foreground">{text.allowedIdentityHint}</p>
+              <FieldError messages={state.fieldErrors.allowedIdentityIds} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">{text.tagsLabel}</span>
+              <MultiSelect
+                name="tagNames"
+                value={selectedTags}
+                onValueChange={(nextTags) => {
+                  setSelectedTags(nextTags);
+                  scheduleDraftSave();
+                }}
+                options={tagSelectOptions}
+                placeholder={text.tagsPlaceholder}
+                allowCreate
+              />
+              <FieldError messages={state.fieldErrors.tagNames} />
+            </label>
+            <Input name="seoTitle" placeholder={text.seoTitleLabel} defaultValue={article?.seoTitle ?? ""} />
+            <FieldError messages={state.fieldErrors.seoTitle} />
+            <Textarea name="seoDescription" placeholder={text.seoDescriptionLabel} defaultValue={article?.seoDescription ?? ""} />
+            <FieldError messages={state.fieldErrors.seoDescription} />
+            <div className="grid gap-3 md:grid-cols-3">
+              <ThemedCheckbox
+                name="allowComments"
+                label={text.allowCommentsLabel}
+                defaultChecked={article?.allowComments ?? true}
+              />
+              <ThemedCheckbox
+                name="pinned"
+                label={text.pinnedLabel}
+                defaultChecked={article?.pinned ?? false}
+              />
+              <ThemedCheckbox
+                name="featured"
+                label={text.featuredLabel}
+                defaultChecked={article?.featured ?? false}
+              />
+            </div>
+          </div>
+        </Dialog>
+
+        <Dialog
+          open={versionsOpen}
+          title={text.versions}
+          description={text.versionHistoryDescription}
+          onOpenChange={(open) => {
+            if (!open) {
+              setVersionsOpen(false);
+              setVersionPreview(null);
+              setRestoreConfirm(null);
+              setRestoreError("");
+            }
+          }}
+        >
+          <div className="space-y-3">
+            {restoreError ? <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{restoreError}</p> : null}
+            {versionsLoading ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">{text.loading}</p>
+            ) : versions.length ? (
+              versions.map((version) => (
+                <div key={version.id} className="rounded-md border bg-background/70 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">版本 {version.version} · {version.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {new Date(version.createdAt).toLocaleString("zh-CN")} · {version.createdByName}
+                      </p>
+                      {versionPreview?.id === version.id ? (
+                        <div className="mt-3 max-h-64 overflow-y-auto rounded border bg-muted/30 p-3 text-sm">
+                          <div
+                            className="prose-content text-sm"
+                            dangerouslySetInnerHTML={{ __html: version.contentHtml }}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <Button type="button" variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
+                      setVersionPreview(version);
+                      previewVersion(version);
+                    }}>
+                      {text.previewVersion}
+                    </Button>
+                    {article && restoreConfirm === version.id ? (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="danger"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => handleRestore(version.id)}
+                          disabled={isRestoring}
+                        >
+                          {isRestoring ? text.restoring : text.confirmRestore}
+                        </Button>
+                        <Button type="button" variant="ghost" className="h-8 px-3 text-xs" onClick={() => setRestoreConfirm(null)}>
+                          {text.cancel}
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-8 px-3 text-xs"
+                        onClick={() => setRestoreConfirm(version.id)}
+                      >
+                        {text.restoreVersion}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                {text.noVersions}
+              </p>
+            )}
+          </div>
+        </Dialog>
+      </form>
+      <ArticlePreviewOverlay
+        open={previewOpen}
+        draft={previewDraft}
+        mode={previewMode}
+        site={site}
+        onModeChange={setPreviewMode}
+        onClose={() => setPreviewOpen(false)}
+      />
+    </>
+  );
+}
