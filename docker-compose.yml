@@ -29,6 +29,7 @@ services:
       MYSQL_PORT: "3306"
       MYSQL_DATABASE: liax_space
       MYSQL_USER: liax_space
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - ${APP_PATH:?APP_PATH is required}/data/storage:/app/storage
       - ${APP_PATH:?APP_PATH is required}/data/uploads:/app/public/uploads

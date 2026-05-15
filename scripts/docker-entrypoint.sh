@@ -45,18 +45,47 @@ if [ -f "$CONFIG_FILE" ]; then
   set +a
 fi
 
-if [ -z "${SETUP_TOKEN:-}" ]; then
-  if [ -f "$TOKEN_FILE" ]; then
-    SETUP_TOKEN="$(cat "$TOKEN_FILE")"
-  else
-    SETUP_TOKEN="$(node -e "process.stdout.write(require('crypto').randomBytes(24).toString('hex'))")"
-    printf "%s\n" "$SETUP_TOKEN" > "$TOKEN_FILE"
-    chmod 600 "$TOKEN_FILE" 2>/dev/null || true
-    echo "[setup] Generated one-time setup token. Read it from $TOKEN_FILE or this log line:"
-    echo "[setup] SETUP_TOKEN=$SETUP_TOKEN"
+derive_database_url() {
+  if [ -n "${DATABASE_URL:-}" ]; then
+    return
   fi
-  export SETUP_TOKEN
-fi
+
+  if [ -z "${MYSQL_HOST:-}" ] || [ -z "${MYSQL_DATABASE:-}" ] || [ -z "${MYSQL_USER:-}" ] || [ -z "${MYSQL_PASSWORD:-}" ]; then
+    return
+  fi
+
+  DATABASE_URL="$(
+    MYSQL_PORT="${MYSQL_PORT:-3306}" node - <<'NODE'
+const url = new URL("mysql://localhost");
+url.hostname = process.env.MYSQL_HOST;
+url.port = process.env.MYSQL_PORT || "3306";
+url.username = process.env.MYSQL_USER;
+url.password = process.env.MYSQL_PASSWORD;
+url.pathname = `/${process.env.MYSQL_DATABASE}`;
+process.stdout.write(url.toString());
+NODE
+  )"
+  export DATABASE_URL
+  echo "[setup] DATABASE_URL derived from MYSQL_* environment variables."
+}
+
+cleanup_sensitive_setup_files() {
+  if [ "${CLEAN_SETUP_FILES:-true}" = "false" ]; then
+    return
+  fi
+
+  if [ -f "$CONFIG_FILE" ] && [ -z "${MYSQL_PASSWORD:-}" ] && [ "${ALLOW_RUNTIME_ENV_CLEANUP_WITHOUT_ENV:-false}" != "true" ]; then
+    echo "[setup] Keeping $CONFIG_FILE because MYSQL_PASSWORD is not available from the environment."
+    echo "[setup] Set MYSQL_PASSWORD for the app service to allow runtime.env cleanup after setup."
+    rm -f "$TOKEN_FILE" "$STATUS_FILE" 2>/dev/null || true
+    return
+  fi
+
+  rm -f "$CONFIG_FILE" "$TOKEN_FILE" "$STATUS_FILE" 2>/dev/null || true
+  echo "[setup] Cleaned sensitive setup files from $CONFIG_DIR."
+}
+
+derive_database_url
 
 write_status() {
   STATUS_STATE="$1" STATUS_ERROR="${2:-}" STATUS_FILE="$STATUS_FILE" node - <<'NODE'
@@ -77,6 +106,19 @@ NODE
 }
 
 if [ -z "${DATABASE_URL:-}" ]; then
+  if [ -z "${SETUP_TOKEN:-}" ]; then
+    if [ -f "$TOKEN_FILE" ]; then
+      SETUP_TOKEN="$(cat "$TOKEN_FILE")"
+    else
+      SETUP_TOKEN="$(node -e "process.stdout.write(require('crypto').randomBytes(24).toString('hex'))")"
+      printf "%s\n" "$SETUP_TOKEN" > "$TOKEN_FILE"
+      chmod 600 "$TOKEN_FILE" 2>/dev/null || true
+      echo "[setup] Generated one-time setup token. Read it from $TOKEN_FILE or this log line:"
+      echo "[setup] SETUP_TOKEN=$SETUP_TOKEN"
+    fi
+    export SETUP_TOKEN
+  fi
+
   echo "[setup] DATABASE_URL is not configured. Starting setup-safe web server."
   echo "[setup] Open /setup and use SETUP_TOKEN from env, $TOKEN_FILE, or the log above."
   export SETUP_REQUIRED=true
@@ -111,5 +153,7 @@ if [ "${RUN_BOOTSTRAP:-true}" != "false" ]; then
     exec node server.js
   fi
 fi
+
+cleanup_sensitive_setup_files
 
 exec node server.js
