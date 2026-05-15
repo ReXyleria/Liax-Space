@@ -19,6 +19,8 @@ export const settingDefinitions: SettingDefinition[] = [
   { key: "appearance.backgroundBlur", label: "Background blur", group: "Appearance", type: SettingType.NUMBER, defaultValue: "14" },
   { key: "home.heroLine", label: "Homepage intro", group: "Homepage", type: SettingType.TEXTAREA, defaultValue: "A personal notebook built for thoughtful writing." },
   { key: "home.cover", label: "Homepage background", group: "Homepage", type: SettingType.IMAGE, defaultValue: "" },
+  { key: "home.randomBackground", label: "Use random background when unset", group: "Homepage", type: SettingType.BOOLEAN, defaultValue: "true" },
+  { key: "home.randomBackgroundUrl", label: "Random background URL", group: "Homepage", type: SettingType.TEXT, defaultValue: "https://photo.toliax.com/random" },
   { key: "record.icp", label: "ICP filing", group: "Footer", type: SettingType.TEXT, defaultValue: "" },
   { key: "record.icpUrl", label: "ICP filing URL", group: "Footer", type: SettingType.TEXT, defaultValue: "https://beian.miit.gov.cn/" },
   { key: "record.police", label: "Police filing", group: "Footer", type: SettingType.TEXT, defaultValue: "" },

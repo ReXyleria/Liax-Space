@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArticleStatus } from "@prisma/client";
 import { MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import {
   deleteArticleAction,
   publishArticleAction,
@@ -20,7 +21,9 @@ function labels(locale: Locale) {
         edit: "Edit",
         settings: "Settings",
         delete: "Delete",
-        confirmDelete: "Confirm delete"
+        confirmDelete: "Confirm delete",
+        deleteDescription: "This article will be removed from the public site and admin list.",
+        cancel: "Cancel"
       }
     : {
         publish: "发布",
@@ -28,7 +31,9 @@ function labels(locale: Locale) {
         edit: "编辑",
         settings: "设置",
         delete: "删除",
-        confirmDelete: "确认删除"
+        confirmDelete: "确认删除",
+        deleteDescription: "删除后该文章会从前台和后台列表中移除。",
+        cancel: "取消"
       };
 }
 
@@ -49,15 +54,13 @@ export function ArticleActionsMenu({
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      if (!confirmDelete && !rootRef.current?.contains(event.target as Node)) {
         setOpen(false);
-        setConfirmDelete(false);
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
-        setConfirmDelete(false);
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
@@ -66,7 +69,7 @@ export function ArticleActionsMenu({
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, []);
+  }, [confirmDelete]);
 
   return (
     <div ref={rootRef} className="relative flex justify-end">
@@ -87,24 +90,28 @@ export function ArticleActionsMenu({
           <Link href={`/admin/articles/${id}/edit?panel=settings`} className="block rounded-md px-3 py-2 hover:bg-muted">
             {text.settings}
           </Link>
-          {confirmDelete ? (
-            <form action={deleteArticleAction}>
-              <input type="hidden" name="id" value={id} />
-              <button type="submit" className="w-full rounded-md px-3 py-2 text-left text-destructive hover:bg-destructive/10">
-                {text.confirmDelete}
-              </button>
-            </form>
-          ) : (
-            <button
-              type="button"
-              className="w-full rounded-md px-3 py-2 text-left text-destructive hover:bg-destructive/10"
-              onClick={() => setConfirmDelete(true)}
-            >
-              {text.delete}
-            </button>
-          )}
+          <button
+            type="button"
+            className="w-full rounded-md px-3 py-2 text-left text-destructive hover:bg-destructive/10"
+            onClick={() => {
+              setOpen(false);
+              setConfirmDelete(true);
+            }}
+          >
+            {text.delete}
+          </button>
         </div>
       ) : null}
+      <ConfirmActionDialog
+        open={confirmDelete}
+        title={text.confirmDelete}
+        description={text.deleteDescription}
+        confirmLabel={text.confirmDelete}
+        cancelLabel={text.cancel}
+        onOpenChange={setConfirmDelete}
+        action={deleteArticleAction}
+        hiddenFields={[{ name: "id", value: id }]}
+      />
     </div>
   );
 }

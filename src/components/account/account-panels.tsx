@@ -1,13 +1,13 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
-import type { ReactNode } from "react";
+import { useActionState, useRef, useState, useTransition, type ReactNode } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Fingerprint, KeyRound, Laptop, ShieldCheck, UserRound } from "lucide-react";
+import { ImageUploadField } from "@/components/forms/image-upload-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ImageUploadField } from "@/components/forms/image-upload-field";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { Input } from "@/components/ui/input";
 import {
   beginTotpSetupAction,
@@ -200,37 +200,47 @@ export function SessionsPanel({ sessions }: { sessions: SessionItem[] }) {
     revokeSessionAction,
     initialState
   );
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   return (
-    <PanelShell
-      icon={<Laptop className="h-5 w-5" />}
-      title="登录会话"
-      description="撤销仍然有效的登录状态。"
-    >
+    <PanelShell icon={<Laptop className="h-5 w-5" />} title="登录会话" description="撤销仍然有效的登录状态。">
       <div className="space-y-3">
         <ActionMessage state={state} />
         {sessions.length ? (
           sessions.map((session) => (
-            <form
+            <div
               key={session.id}
-              action={formAction}
               className="flex items-center justify-between gap-3 rounded-md border bg-background/60 p-3"
             >
-              <input type="hidden" name="id" value={session.id} />
               <div className="text-sm">
                 <p className="font-medium">{session.deviceName || "未知设备"}</p>
                 <p className="text-muted-foreground">最近使用：{formatDateTime(session.lastUsedAt)}</p>
                 <p className="text-muted-foreground">过期时间：{formatDateTime(session.expiresAt)}</p>
               </div>
-              <Button type="submit" variant="secondary" disabled={isPending}>
+              <Button type="button" variant="secondary" disabled={isPending} onClick={() => setConfirmingId(session.id)}>
                 撤销
               </Button>
-            </form>
+            </div>
           ))
         ) : (
           <p className="rounded-md border bg-background/60 p-4 text-sm text-muted-foreground">暂无登录会话。</p>
         )}
       </div>
+      <ConfirmActionDialog
+        open={Boolean(confirmingId)}
+        title="确认撤销登录会话"
+        description="该登录会话会立即失效，相关设备需要重新登录。"
+        confirmLabel="撤销"
+        cancelLabel="取消"
+        pending={isPending}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmingId(null);
+          }
+        }}
+        action={formAction}
+        hiddenFields={confirmingId ? [{ name: "id", value: confirmingId }] : []}
+      />
     </PanelShell>
   );
 }
@@ -240,37 +250,47 @@ export function TrustedDevicesPanel({ devices }: { devices: TrustedDeviceItem[] 
     revokeTrustedDeviceAction,
     initialState
   );
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   return (
-    <PanelShell
-      icon={<Laptop className="h-5 w-5" />}
-      title="可信设备"
-      description="移除不再信任的设备记录。"
-    >
+    <PanelShell icon={<Laptop className="h-5 w-5" />} title="可信设备" description="移除不再信任的设备记录。">
       <div className="space-y-3">
         <ActionMessage state={state} />
         {devices.length ? (
           devices.map((device) => (
-            <form
+            <div
               key={device.id}
-              action={formAction}
               className="flex items-center justify-between gap-3 rounded-md border bg-background/60 p-3"
             >
-              <input type="hidden" name="id" value={device.id} />
               <div className="text-sm">
                 <p className="font-medium">{device.deviceName || "未知设备"}</p>
                 <p className="text-muted-foreground">最近使用：{formatDateTime(device.lastUsedAt)}</p>
                 <p className="text-muted-foreground">过期时间：{formatDateTime(device.expiresAt)}</p>
               </div>
-              <Button type="submit" variant="secondary" disabled={isPending}>
+              <Button type="button" variant="secondary" disabled={isPending} onClick={() => setConfirmingId(device.id)}>
                 撤销
               </Button>
-            </form>
+            </div>
           ))
         ) : (
           <p className="rounded-md border bg-background/60 p-4 text-sm text-muted-foreground">暂无可信设备。</p>
         )}
       </div>
+      <ConfirmActionDialog
+        open={Boolean(confirmingId)}
+        title="确认撤销可信设备"
+        description="该设备之后不能再跳过二次验证，需要重新完成信任流程。"
+        confirmLabel="撤销"
+        cancelLabel="取消"
+        pending={isPending}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmingId(null);
+          }
+        }}
+        action={formAction}
+        hiddenFields={confirmingId ? [{ name: "id", value: confirmingId }] : []}
+      />
     </PanelShell>
   );
 }
@@ -278,6 +298,7 @@ export function TrustedDevicesPanel({ devices }: { devices: TrustedDeviceItem[] 
 export function PasskeysPanel({ passkeys }: { passkeys: PasskeyItem[] }) {
   const router = useRouter();
   const [registerState, setRegisterState] = useState<AccountActionState>(initialState);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [isRegistering, startRegistering] = useTransition();
   const [deleteState, deleteAction, isDeleting] = useActionState<AccountActionState, FormData>(
     deletePasskeyAction,
@@ -355,12 +376,9 @@ export function PasskeysPanel({ passkeys }: { passkeys: PasskeyItem[] }) {
                     重命名
                   </Button>
                 </form>
-                <form action={deleteAction}>
-                  <input type="hidden" name="id" value={passkey.id} />
-                  <Button type="submit" variant="secondary" disabled={isDeleting}>
-                    删除
-                  </Button>
-                </form>
+                <Button type="button" variant="secondary" disabled={isDeleting} onClick={() => setConfirmingDeleteId(passkey.id)}>
+                  删除
+                </Button>
               </div>
             </div>
           ))
@@ -368,11 +386,29 @@ export function PasskeysPanel({ passkeys }: { passkeys: PasskeyItem[] }) {
           <p className="rounded-md border bg-background/60 p-4 text-sm text-muted-foreground">尚未绑定通行密钥。</p>
         )}
       </div>
+      <ConfirmActionDialog
+        open={Boolean(confirmingDeleteId)}
+        title="确认删除通行密钥"
+        description="删除后该通行密钥不能再用于无密码登录。"
+        confirmLabel="删除"
+        cancelLabel="取消"
+        pending={isDeleting}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmingDeleteId(null);
+          }
+        }}
+        action={deleteAction}
+        hiddenFields={confirmingDeleteId ? [{ name: "id", value: confirmingDeleteId }] : []}
+      />
     </PanelShell>
   );
 }
 
 export function TotpPanel({ enabled }: { enabled: boolean }) {
+  const disableFormRef = useRef<HTMLFormElement>(null);
+  const [disableConfirmOpen, setDisableConfirmOpen] = useState(false);
+  const [disableConfirmed, setDisableConfirmed] = useState(false);
   const [setupState, setupAction, isStarting] = useActionState<AccountActionState, FormData>(
     beginTotpSetupAction,
     initialState
@@ -393,18 +429,46 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
       description="使用 6 位动态验证码和一次性恢复码保护密码登录。"
     >
       {enabled ? (
-        <form action={disableAction} className="space-y-3">
-          <div className="rounded-md border bg-emerald-50 p-3 text-sm text-emerald-700">
-            当前账号已启用 TOTP。
-          </div>
-          <Input name="currentPassword" type="password" placeholder="当前密码" autoComplete="current-password" required />
-          <Input name="code" inputMode="numeric" placeholder="6 位动态验证码" maxLength={6} />
-          <Input name="recoveryCode" placeholder="或恢复码" />
-          <ActionMessage state={disableState} />
-          <Button type="submit" variant="secondary" disabled={isDisabling}>
-            {isDisabling ? "关闭中..." : "关闭 TOTP"}
-          </Button>
-        </form>
+        <>
+          <form
+            ref={disableFormRef}
+            action={disableAction}
+            className="space-y-3"
+            onSubmit={(event) => {
+              if (disableConfirmed) {
+                setDisableConfirmed(false);
+                return;
+              }
+              event.preventDefault();
+              setDisableConfirmOpen(true);
+            }}
+          >
+            <div className="rounded-md border bg-emerald-50 p-3 text-sm text-emerald-700">
+              当前账号已启用 TOTP。
+            </div>
+            <Input name="currentPassword" type="password" placeholder="当前密码" autoComplete="current-password" required />
+            <Input name="code" inputMode="numeric" placeholder="6 位动态验证码" maxLength={6} />
+            <Input name="recoveryCode" placeholder="或恢复码" />
+            <ActionMessage state={disableState} />
+            <Button type="submit" variant="secondary" disabled={isDisabling}>
+              {isDisabling ? "关闭中..." : "关闭 TOTP"}
+            </Button>
+          </form>
+          <ConfirmActionDialog
+            open={disableConfirmOpen}
+            title="确认关闭 TOTP"
+            description="关闭后账号会失去动态验证码保护。"
+            confirmLabel="关闭 TOTP"
+            cancelLabel="取消"
+            pending={isDisabling}
+            onOpenChange={setDisableConfirmOpen}
+            onConfirm={() => {
+              setDisableConfirmed(true);
+              setDisableConfirmOpen(false);
+              window.setTimeout(() => disableFormRef.current?.requestSubmit(), 0);
+            }}
+          />
+        </>
       ) : (
         <div className="space-y-4">
           <form action={setupAction}>

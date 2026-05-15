@@ -3,6 +3,7 @@
 import { useActionState, useRef, useState } from "react";
 import { FileArchive, UploadCloud, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -143,7 +144,10 @@ function UploadRestoreSection({
   text: BackupPanelText;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
 
   function openPicker() {
     inputRef.current?.click();
@@ -153,7 +157,19 @@ function UploadRestoreSection({
     <section className="rounded-lg border bg-card p-5">
       <h2 className="text-xl font-semibold">{text.restoreFromUpload}</h2>
       <p className="mt-1 text-sm text-muted-foreground">{text.restoreFromUploadDescription}</p>
-      <form action={action} className="mt-4 grid gap-3 lg:grid-cols-[1fr_180px_auto]">
+      <form
+        ref={formRef}
+        action={action}
+        className="mt-4 grid gap-3 lg:grid-cols-[1fr_180px_auto]"
+        onSubmit={(event) => {
+          if (confirmed) {
+            setConfirmed(false);
+            return;
+          }
+          event.preventDefault();
+          setConfirmOpen(true);
+        }}
+      >
         <input
           ref={inputRef}
           className="sr-only"
@@ -220,6 +236,20 @@ function UploadRestoreSection({
       <div className="mt-3">
         <StateMessage state={state} />
       </div>
+      <ConfirmActionDialog
+        open={confirmOpen}
+        title={text.confirmRestore}
+        description={text.restoreWarningBody}
+        confirmLabel={text.confirmRestore}
+        cancelLabel={text.cancel}
+        pending={pending}
+        onOpenChange={setConfirmOpen}
+        onConfirm={() => {
+          setConfirmed(true);
+          setConfirmOpen(false);
+          window.setTimeout(() => formRef.current?.requestSubmit(), 0);
+        }}
+      />
     </section>
   );
 }
@@ -251,6 +281,9 @@ function BackupRow({
   onConfirmTextChange: (value: string) => void;
   text: BackupPanelText;
 }) {
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
+
   return (
     <div>
       <div className="grid gap-4 border-b p-5 last:border-b-0 md:grid-cols-[1fr_auto] md:items-center">
@@ -281,26 +314,16 @@ function BackupRow({
           >
             {confirming ? text.cancel : text.restore}
           </Button>
-          <form action={deleteAction}>
-            <input type="hidden" name="id" value={backup.id} />
-            <Button type="submit" variant="secondary" disabled={isDeleting}>
-              {isDeleting ? text.deleting : text.delete}
-            </Button>
-          </form>
+          <Button type="button" variant="secondary" disabled={isDeleting} onClick={() => setDeleteConfirmOpen(true)}>
+            {isDeleting ? text.deleting : text.delete}
+          </Button>
         </div>
       </div>
       {confirming ? (
         <div className="border-b bg-muted/30 px-5 pb-4 pt-3 last:border-b-0">
           <p className="text-sm font-medium text-destructive">{text.restoreWarning}</p>
           <p className="mt-1 text-sm text-muted-foreground">{text.restoreWarningBody}</p>
-          <form
-            action={storedRestoreAction}
-            className="mt-3 flex flex-wrap items-center gap-2"
-            onSubmit={() => {
-              onToggleRestore(null);
-              onConfirmTextChange("");
-            }}
-          >
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <input type="hidden" name="id" value={backup.id} />
             <Input
               name="confirm"
@@ -309,12 +332,42 @@ function BackupRow({
               onChange={(event) => onConfirmTextChange(event.target.value)}
               className="w-60"
             />
-            <Button type="submit" variant="danger" disabled={confirmText !== "RESTORE" || isStoredRestoring}>
+            <Button
+              type="button"
+              variant="danger"
+              disabled={confirmText !== "RESTORE" || isStoredRestoring}
+              onClick={() => setRestoreConfirmOpen(true)}
+            >
               {isStoredRestoring ? text.restoring : text.confirmRestore}
             </Button>
-          </form>
+          </div>
         </div>
       ) : null}
+      <ConfirmActionDialog
+        open={deleteConfirmOpen}
+        title={text.delete}
+        description={`${backup.filename} will be permanently deleted from the backup list.`}
+        confirmLabel={text.delete}
+        cancelLabel={text.cancel}
+        pending={isDeleting}
+        onOpenChange={setDeleteConfirmOpen}
+        action={deleteAction}
+        hiddenFields={[{ name: "id", value: backup.id }]}
+      />
+      <ConfirmActionDialog
+        open={restoreConfirmOpen}
+        title={text.confirmRestore}
+        description={text.restoreWarningBody}
+        confirmLabel={text.confirmRestore}
+        cancelLabel={text.cancel}
+        pending={isStoredRestoring}
+        onOpenChange={setRestoreConfirmOpen}
+        action={storedRestoreAction}
+        hiddenFields={[
+          { name: "id", value: backup.id },
+          { name: "confirm", value: "RESTORE" }
+        ]}
+      />
     </div>
   );
 }

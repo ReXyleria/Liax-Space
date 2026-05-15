@@ -3,15 +3,11 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { ImageUp, Loader2, X } from "lucide-react";
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { UploadProgressDialog } from "@/components/forms/upload-progress-dialog";
 import type { Locale } from "@/lib/i18n";
-
-type UploadResponse = {
-  ok: boolean;
-  message?: string;
-  asset?: { url: string };
-};
+import { emptyUploadProgress, uploadImageFile, type UploadProgressState } from "@/lib/upload-client";
 
 function text(locale: Locale) {
   return locale === "en"
@@ -42,30 +38,38 @@ export function MultiImageUploadField({
   const inputRef = useRef<HTMLInputElement>(null);
   const [urls, setUrls] = useState(defaultValue);
   const [message, setMessage] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadState, setUploadState] = useState<UploadProgressState>(() => emptyUploadProgress());
 
-  function upload(files: FileList) {
-    Array.from(files).forEach((file) => {
-      const formData = new FormData();
-      formData.append("file", file);
+  async function upload(files: FileList) {
+    setMessage("");
+    setIsUploading(true);
+    setUploadOpen(true);
 
-      startTransition(async () => {
-        setMessage("");
-        const response = await fetch("/api/upload", {
-          method: "POST",
-          body: formData
+    try {
+      for (const [index, file] of Array.from(files).entries()) {
+        const result = await uploadImageFile(file, (state) => {
+          setUploadState({
+            ...state,
+            message: state.status === "uploading"
+              ? `${state.message} (${index + 1}/${files.length})`
+              : state.message
+          });
         });
-        const result = (await response.json()) as UploadResponse;
 
-        if (!response.ok || !result.ok || !result.asset?.url) {
+        if (!result.ok || !result.asset?.url) {
           setMessage(result.message ?? copy.uploadFailure);
           return;
         }
 
         setUrls((current) => [...current, result.asset!.url].slice(0, 9));
-        setMessage(copy.uploadSuccess);
-      });
-    });
+      }
+
+      setMessage(copy.uploadSuccess);
+    } finally {
+      setIsUploading(false);
+    }
   }
 
   return (
@@ -79,7 +83,7 @@ export function MultiImageUploadField({
         accept="image/jpeg,image/png,image/webp,image/gif"
         onChange={(event) => {
           if (event.target.files?.length) {
-            upload(event.target.files);
+            void upload(event.target.files);
           }
           event.currentTarget.value = "";
         }}
@@ -87,10 +91,10 @@ export function MultiImageUploadField({
       <Button
         type="button"
         variant="secondary"
-        disabled={isPending || urls.length >= 9}
+        disabled={isUploading || urls.length >= 9}
         onClick={() => inputRef.current?.click()}
       >
-        {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageUp className="mr-2 h-4 w-4" />}
+        {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageUp className="mr-2 h-4 w-4" />}
         {copy.add}
       </Button>
       {urls.length ? (
@@ -112,6 +116,7 @@ export function MultiImageUploadField({
         <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">{copy.empty}</div>
       )}
       {message ? <p className="text-xs text-muted-foreground">{message}</p> : null}
+      <UploadProgressDialog open={uploadOpen} state={uploadState} onOpenChange={setUploadOpen} />
     </div>
   );
 }

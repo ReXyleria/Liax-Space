@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArticleStatus, ContentVisibility } from "@prisma/client";
-import { Eye, History, Save, Send, Settings } from "lucide-react";
+import { AlertTriangle, Eye, History, Save, Send, Settings } from "lucide-react";
 import { BlockEditor } from "@/components/editor/block-editor/block-editor";
 import { EditorToc } from "@/components/editor/editor-toc";
 import type {
@@ -225,6 +225,7 @@ export function ArticleEditorForm({
   versions: initialVersions = [],
   site,
   viewerIdentities = [],
+  warnings = [],
   locale = "zh-CN"
 }: {
   article?: ArticleFormValue | null;
@@ -232,6 +233,7 @@ export function ArticleEditorForm({
   viewerIdentities?: Array<{ id: string; name: string; key: string; builtInRole: string | null }>;
   versions?: ArticleVersionValue[];
   site: PreviewSiteSettings;
+  warnings?: string[];
   locale?: Locale;
 }) {
   const text = labels(locale);
@@ -497,6 +499,23 @@ export function ArticleEditorForm({
         <input type="hidden" name="status" value={status} readOnly />
         <input ref={returnToListRef} type="hidden" name="returnToList" defaultValue="0" />
         <div className="space-y-6">
+          {warnings.length ? (
+            <Card className="border-amber-300 bg-amber-50/80 p-4 text-amber-950">
+              <div className="flex gap-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    {locale === "en" ? "Some optional editor data could not be loaded." : "部分可选编辑器数据加载失败。"}
+                  </p>
+                  <ul className="space-y-1 text-xs">
+                    {warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </Card>
+          ) : null}
           {pendingDraft ? (
             <Card className="p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

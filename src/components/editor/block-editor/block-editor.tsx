@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditor, type Editor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
@@ -22,6 +22,8 @@ import {
 } from "./table-commands";
 import type { BlockCommand, BlockEditorLocale, EditorTocItem, SlashMenuState } from "./editor-types";
 import { createBlockCommands, runCommandAfterDeletingRange, safeJsonString } from "./editor-utils";
+import { UploadProgressDialog } from "@/components/forms/upload-progress-dialog";
+import { emptyUploadProgress, uploadImageFile, type UploadProgressState } from "@/lib/upload-client";
 
 const CLOSED_SLASH_MENU: SlashMenuState = {
   open: false,
@@ -129,7 +131,9 @@ export function BlockEditor({
   const [json, setJson] = useState(() => safeJsonString(initialJson));
   const [status, setStatus] = useState<"idle" | "saved" | "unsaved">("idle");
   const [uploadMessage, setUploadMessage] = useState("");
-  const [isUploading, startUploadTransition] = useTransition();
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadState, setUploadState] = useState<UploadProgressState>(() => emptyUploadProgress());
   const [slashMenu, setSlashMenu] = useState<SlashMenuState>(CLOSED_SLASH_MENU);
 
   const openImagePicker = useCallback(() => fileInputRef.current?.click(), []);
@@ -460,16 +464,15 @@ export function BlockEditor({
     closeSlashMenu();
   }
 
-  function uploadImage(file: File) {
-    const formData = new FormData();
-    formData.append("file", file);
+  async function uploadImage(file: File) {
+    setUploadMessage("");
+    setIsUploading(true);
+    setUploadOpen(true);
 
-    startUploadTransition(async () => {
-      setUploadMessage("");
-      const response = await fetch("/api/upload", { method: "POST", body: formData });
-      const result = (await response.json()) as { ok: boolean; message?: string; asset?: { url: string } };
+    try {
+      const result = await uploadImageFile(file, setUploadState);
 
-      if (!response.ok || !result.ok || !result.asset?.url) {
+      if (!result.ok || !result.asset?.url) {
         setUploadMessage(result.message ?? texts.uploadFailed);
         return;
       }
@@ -479,54 +482,61 @@ export function BlockEditor({
         ensureTrailingParagraph(editor);
       }
       setUploadMessage(texts.uploadDone);
-    });
+    } finally {
+      setIsUploading(false);
+    }
   }
 
   function localizePastedHtmlImages(htmlContent: string) {
-    startUploadTransition(async () => {
-      setUploadMessage("");
-      const document = new DOMParser().parseFromString(htmlContent, "text/html");
-      const images = Array.from(document.querySelectorAll("img"));
-      const failures: string[] = [];
+    setIsUploading(true);
+    void (async () => {
+      try {
+        setUploadMessage("");
+        const document = new DOMParser().parseFromString(htmlContent, "text/html");
+        const images = Array.from(document.querySelectorAll("img"));
+        const failures: string[] = [];
 
-      for (const image of images) {
-        const src = image.getAttribute("src")?.trim() ?? "";
-        if (!src || src.startsWith("/uploads/")) {
-          continue;
-        }
-
-        try {
-          const response = await fetch("/api/upload/remote", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ src })
-          });
-          const result = (await response.json()) as { ok?: boolean; message?: string; asset?: { url: string } };
-
-          if (!response.ok || !result.ok || !result.asset?.url) {
-            failures.push(`${src} - ${result.message ?? texts.uploadFailed}`);
-            image.removeAttribute("src");
-            image.setAttribute("data-import-error", result.message ?? texts.uploadFailed);
+        for (const image of images) {
+          const src = image.getAttribute("src")?.trim() ?? "";
+          if (!src || src.startsWith("/uploads/")) {
             continue;
           }
 
-          image.setAttribute("src", result.asset.url);
-        } catch (error) {
-          failures.push(`${src} - ${error instanceof Error ? error.message : texts.uploadFailed}`);
-          image.removeAttribute("src");
-        }
-      }
+          try {
+            const response = await fetch("/api/upload/remote", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ src })
+            });
+            const result = (await response.json()) as { ok?: boolean; message?: string; asset?: { url: string } };
 
-      editor?.chain().focus().insertContent(document.body.innerHTML).run();
-      if (editor) {
-        ensureTrailingParagraph(editor);
+            if (!response.ok || !result.ok || !result.asset?.url) {
+              failures.push(`${src} - ${result.message ?? texts.uploadFailed}`);
+              image.removeAttribute("src");
+              image.setAttribute("data-import-error", result.message ?? texts.uploadFailed);
+              continue;
+            }
+
+            image.setAttribute("src", result.asset.url);
+          } catch (error) {
+            failures.push(`${src} - ${error instanceof Error ? error.message : texts.uploadFailed}`);
+            image.removeAttribute("src");
+          }
+        }
+
+        editor?.chain().focus().insertContent(document.body.innerHTML).run();
+        if (editor) {
+          ensureTrailingParagraph(editor);
+        }
+        setUploadMessage(
+          failures.length
+            ? `The following images failed to import: ${failures.join("; ")}`
+            : texts.uploadDone
+        );
+      } finally {
+        setIsUploading(false);
       }
-      setUploadMessage(
-        failures.length
-          ? `The following images failed to import: ${failures.join("; ")}`
-          : texts.uploadDone
-      );
-    });
+    })();
   }
 
   const resizeImage = useCallback((attrs: Record<string, string | null>) => {
@@ -631,6 +641,7 @@ export function BlockEditor({
           </p>
         ) : null}
       </div>
+      <UploadProgressDialog open={uploadOpen} state={uploadState} onOpenChange={setUploadOpen} />
     </EditorShell>
   );
 }

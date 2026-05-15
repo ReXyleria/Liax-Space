@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
 import { deleteMediaAssetsAction, type MediaActionState } from "@/features/media/actions";
 
@@ -79,27 +79,23 @@ export function MediaUnusedPanel({ assets }: { assets: MediaAssetItem[] }) {
       {state.message ? (
         <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{state.message}</p>
       ) : null}
-      <Dialog
+      <ConfirmActionDialog
         open={confirmOpen}
         title="确认删除附件"
         description={`将删除 ${selectedIds.length} 个附件。仍被引用的附件会在服务端被阻止。`}
+        confirmLabel={isPending ? "删除中..." : "确认删除"}
+        cancelLabel="取消"
+        pending={isPending}
         onOpenChange={setConfirmOpen}
+        action={formAction}
+        hiddenFields={selectedIds.map((id) => ({ name: "assetId", value: id }))}
       >
-        <form action={formAction} className="space-y-4">
-          {selectedIds.map((id) => <input key={id} type="hidden" name="assetId" value={id} />)}
-          <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border bg-muted/35 p-3 text-sm">
-            {selectedAssets.map((asset) => (
-              <p key={asset.id} className="truncate">{asset.filename}</p>
-            ))}
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setConfirmOpen(false)}>取消</Button>
-            <Button type="submit" variant="danger" disabled={isPending}>
-              {isPending ? "删除中..." : "确认删除"}
-            </Button>
-          </div>
-        </form>
-      </Dialog>
+        <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border bg-muted/35 p-3 text-sm">
+          {selectedAssets.map((asset) => (
+            <p key={asset.id} className="truncate">{asset.filename}</p>
+          ))}
+        </div>
+      </ConfirmActionDialog>
     </div>
   );
 }

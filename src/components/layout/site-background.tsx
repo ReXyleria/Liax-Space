@@ -1,13 +1,50 @@
 import { cn } from "@/lib/utils";
 
-const fallbackBackground = "https://photo.toliax.com/random";
+export const fallbackBackground = "https://photo.toliax.com/random";
+
+export type SiteBackgroundSource = "global" | "homepage" | "random" | "default";
+
+export type SiteBackgroundResolution = {
+  src: string;
+  source: SiteBackgroundSource;
+  settingKey?: string;
+};
+
+export function resolveSiteBackgroundDetails(settings: Record<string, string>): SiteBackgroundResolution {
+  const globalBackground = settings["appearance.backgroundImage"]?.trim();
+  if (globalBackground) {
+    return {
+      src: globalBackground,
+      source: "global",
+      settingKey: "appearance.backgroundImage"
+    };
+  }
+
+  const homepageBackground = settings["home.cover"]?.trim();
+  if (homepageBackground) {
+    return {
+      src: homepageBackground,
+      source: "homepage",
+      settingKey: "home.cover"
+    };
+  }
+
+  if (settings["home.randomBackground"] !== "false") {
+    return {
+      src: settings["home.randomBackgroundUrl"]?.trim() || fallbackBackground,
+      source: "random",
+      settingKey: "home.randomBackgroundUrl"
+    };
+  }
+
+  return {
+    src: fallbackBackground,
+    source: "default"
+  };
+}
 
 export function resolveSiteBackground(settings: Record<string, string>) {
-  return (
-    settings["appearance.backgroundImage"]?.trim() ||
-    settings["home.cover"]?.trim() ||
-    fallbackBackground
-  );
+  return resolveSiteBackgroundDetails(settings).src;
 }
 
 export function SiteBackground({

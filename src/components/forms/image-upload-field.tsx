@@ -3,18 +3,12 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { ImageUp, Loader2, X } from "lucide-react";
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { UploadProgressDialog } from "@/components/forms/upload-progress-dialog";
 import { cn } from "@/lib/utils";
-
-type UploadResponse = {
-  ok: boolean;
-  message?: string;
-  asset?: {
-    url: string;
-  };
-};
+import { emptyUploadProgress, uploadImageFile, type UploadProgressState } from "@/lib/upload-client";
 
 export function ImageUploadField({
   name,
@@ -34,33 +28,27 @@ export function ImageUploadField({
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(defaultValue ?? "");
   const [message, setMessage] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadState, setUploadState] = useState<UploadProgressState>(() => emptyUploadProgress());
+  const isUploading = uploadState.status === "uploading";
 
   function setNextValue(nextValue: string) {
     setValue(nextValue);
     onValueChange?.(nextValue);
   }
 
-  function upload(file: File) {
-    const formData = new FormData();
-    formData.append("file", file);
+  async function upload(file: File) {
+    setMessage("");
+    setUploadOpen(true);
+    const result = await uploadImageFile(file, setUploadState);
 
-    startTransition(async () => {
-      setMessage("");
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData
-      });
-      const result = (await response.json()) as UploadResponse;
+    if (!result.ok || !result.asset?.url) {
+      setMessage(result.message ?? "上传失败");
+      return;
+    }
 
-      if (!response.ok || !result.ok || !result.asset?.url) {
-        setMessage(result.message ?? "上传失败");
-        return;
-      }
-
-      setNextValue(result.asset.url);
-      setMessage("上传完成");
-    });
+    setNextValue(result.asset.url);
+    setMessage("上传完成");
   }
 
   return (
@@ -79,7 +67,7 @@ export function ImageUploadField({
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) {
-              upload(file);
+              void upload(file);
             }
             event.currentTarget.value = "";
           }}
@@ -88,10 +76,10 @@ export function ImageUploadField({
           type="button"
           variant="secondary"
           className="shrink-0"
-          disabled={isPending}
+          disabled={isUploading}
           onClick={() => inputRef.current?.click()}
         >
-          {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageUp className="mr-2 h-4 w-4" />}
+          {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageUp className="mr-2 h-4 w-4" />}
           上传
         </Button>
       </div>
@@ -122,6 +110,7 @@ export function ImageUploadField({
         ) : null}
       </div>
       {message ? <p className="text-xs text-muted-foreground">{message}</p> : null}
+      <UploadProgressDialog open={uploadOpen} state={uploadState} onOpenChange={setUploadOpen} />
     </div>
   );
 }

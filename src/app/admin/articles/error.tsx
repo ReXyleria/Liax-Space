@@ -10,6 +10,10 @@ export default function AdminArticlesError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const debugMessage = error.message && process.env.NODE_ENV !== "production"
+    ? ` ${error.message}`
+    : "";
+
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") {
       console.error(error);
@@ -19,7 +23,7 @@ export default function AdminArticlesError({
   return (
     <ErrorPanel
       title="Article workspace failed"
-      message="The article workspace hit a recoverable error. Retry keeps you inside the admin frame."
+      message={`The article workspace hit a recoverable core error. Retry keeps you inside the admin frame.${debugMessage}`}
       onRetry={reset}
     />
   );
