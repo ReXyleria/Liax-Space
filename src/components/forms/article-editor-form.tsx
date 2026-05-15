@@ -7,6 +7,7 @@ import { ArticleStatus, ContentVisibility } from "@prisma/client";
 import { AlertTriangle, Eye, History, Save, Send, Settings } from "lucide-react";
 import { BlockEditor } from "@/components/editor/block-editor/block-editor";
 import { EditorToc } from "@/components/editor/editor-toc";
+import { ArticleEditorErrorBoundary } from "@/components/forms/article-editor-error-boundary";
 import type {
   ArticlePreviewDraft,
   PreviewSiteSettings
@@ -588,14 +589,16 @@ export function ArticleEditorForm({
               ) : null}
             </CardHeader>
             <CardContent className="pt-6">
-              <BlockEditor
-                key={editorKey}
-                title={title}
-                initialHtml={editorInitial.html}
-                initialJson={editorInitial.json}
-                onTitleChange={setTitle}
-                onContentChange={scheduleDraftSave}
-              />
+              <ArticleEditorErrorBoundary>
+                <BlockEditor
+                  key={editorKey}
+                  title={title}
+                  initialHtml={editorInitial.html}
+                  initialJson={editorInitial.json}
+                  onTitleChange={setTitle}
+                  onContentChange={scheduleDraftSave}
+                />
+              </ArticleEditorErrorBoundary>
               <FieldError messages={state.fieldErrors.title} />
               <FieldError messages={state.fieldErrors.contentHtml ?? state.fieldErrors.contentJson} />
             </CardContent>

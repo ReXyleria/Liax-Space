@@ -191,12 +191,10 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     });
 
     if (!session || session.expiresAt <= new Date()) {
-      await clearSession();
       return null;
     }
 
     if (session.user.status !== UserStatus.ACTIVE) {
-      await clearSession();
       return null;
     }
 

@@ -1,4 +1,4 @@
-import { Extension, Node, mergeAttributes } from "@tiptap/core";
+import { Extension, Node, mergeAttributes, type AnyExtension } from "@tiptap/core";
 import Color from "@tiptap/extension-color";
 import FontFamily from "@tiptap/extension-font-family";
 import Highlight from "@tiptap/extension-highlight";
@@ -424,8 +424,8 @@ const TrailingParagraph = Extension.create({
   }
 });
 
-export function createEditorExtensions(placeholder: string) {
-  return [
+export function createEditorExtensions(placeholder: string): AnyExtension[] {
+  const extensions: Array<AnyExtension | null | undefined> = [
     StarterKit.configure({
       heading: { levels: [1, 2, 3, 4] }
     }),
@@ -447,4 +447,18 @@ export function createEditorExtensions(placeholder: string) {
     TrailingParagraph,
     Placeholder.configure({ placeholder })
   ];
+
+  return extensions.filter((extension, index): extension is AnyExtension => {
+    const name = (extension as { name?: unknown } | null | undefined)?.name;
+    if (typeof name === "string" && name.length > 0) {
+      return true;
+    }
+
+    console.error("[block-editor] invalid Tiptap extension skipped", {
+      index,
+      valueType: typeof extension,
+      value: extension
+    });
+    return false;
+  });
 }
