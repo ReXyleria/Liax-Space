@@ -401,6 +401,21 @@ const DetailsContentNode = Node.create({
   ]
 });
 
+const TableSchemaRoles = Extension.create({
+  name: "tableSchemaRoles",
+  extendNodeSchema(extension) {
+    const roles: Record<string, string> = {
+      table: "table",
+      tableRow: "row",
+      tableCell: "cell",
+      tableHeader: "header_cell"
+    };
+    const tableRole = roles[extension.name];
+
+    return tableRole ? { tableRole } : {};
+  }
+});
+
 const TrailingParagraph = Extension.create({
   name: "trailingParagraph",
   addProseMirrorPlugins() {
@@ -437,6 +452,7 @@ export function createEditorExtensions(placeholder: string): AnyExtension[] {
     TextAlign.configure({ types: ["heading", "paragraph", "tableCell", "tableHeader"] }),
     Link.configure({ openOnClick: false }),
     ResizableImage.configure({ allowBase64: true }),
+    TableSchemaRoles,
     TableRowNode,
     TableHeaderNode,
     TableCellNode,

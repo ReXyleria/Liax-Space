@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import type { UploadProgressState } from "@/lib/upload-client";
@@ -15,6 +16,15 @@ export function UploadProgressDialog({
 }) {
   const isUploading = state.status === "uploading";
   const progress = Math.max(0, Math.min(100, state.progress));
+
+  useEffect(() => {
+    if (!open || state.status !== "success") {
+      return;
+    }
+
+    const timer = window.setTimeout(() => onOpenChange(false), 800);
+    return () => window.clearTimeout(timer);
+  }, [onOpenChange, open, state.status]);
 
   return (
     <Dialog

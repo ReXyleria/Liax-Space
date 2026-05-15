@@ -268,7 +268,7 @@ export function ArticleEditorForm({
   ) ?? [];
   const [selectedTags, setSelectedTags] = useState(initialSelectedTags);
   const [selectedViewerIdentityIds, setSelectedViewerIdentityIds] = useState(initialSelectedViewerIdentityIds);
-  const [settingsOpen, setSettingsOpen] = useState(!article);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versions, setVersions] = useState<ArticleVersionValue[]>(initialVersions);
   const [versionsLoading, setVersionsLoading] = useState(false);
@@ -381,6 +381,15 @@ export function ArticleEditorForm({
     }
     setStatus(nextStatus);
     form.requestSubmit();
+  }
+
+  function publishArticle() {
+    if (!article) {
+      setSettingsOpen(true);
+      return;
+    }
+
+    submitWithStatus(ArticleStatus.PUBLISHED, true);
   }
 
   const openPreview = useCallback((draft?: ArticleDraft) => {
@@ -576,7 +585,7 @@ export function ArticleEditorForm({
                     <Settings className="mr-2 h-4 w-4" />
                     {text.settings}
                   </Button>
-                  <Button type="button" onClick={() => submitWithStatus(ArticleStatus.PUBLISHED, true)} disabled={isPending}>
+                  <Button type="button" onClick={publishArticle} disabled={isPending}>
                     <Send className="mr-2 h-4 w-4" />
                     {isPublished ? text.updatePublish : text.publish}
                   </Button>
