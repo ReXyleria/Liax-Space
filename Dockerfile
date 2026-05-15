@@ -30,7 +30,7 @@ COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-RUN chmod +x scripts/docker-entrypoint.sh && mkdir -p public/uploads storage/backups storage/config && chown -R nextjs:nodejs /app
+RUN chmod +x scripts/docker-entrypoint.sh && mkdir -p public/uploads storage storage/backups storage/cache storage/config && chown -R 1001:1001 /app
 
 EXPOSE 3000
 

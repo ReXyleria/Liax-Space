@@ -5,24 +5,27 @@ STORAGE_DIR="${APP_STORAGE_DIR:-/app/storage}"
 CONFIG_DIR="${SETUP_CONFIG_DIR:-/app/storage/config}"
 UPLOAD_DIR="${UPLOAD_DIR:-/app/public/uploads}"
 BACKUP_DIR="${BACKUP_DIR:-$STORAGE_DIR/backups}"
+CACHE_DIR="${CACHE_DIR:-$STORAGE_DIR/cache}"
 CONFIG_FILE="$CONFIG_DIR/runtime.env"
 TOKEN_FILE="$CONFIG_DIR/setup-token"
 STATUS_FILE="$CONFIG_DIR/setup-status.json"
 PRISMA_BIN="./node_modules/.bin/prisma"
 RUNTIME_USER="nextjs"
 RUNTIME_GROUP="nodejs"
+RUNTIME_UID="1001"
+RUNTIME_GID="1001"
 
 prepare_runtime_dirs() {
-  mkdir -p "$CONFIG_DIR" "$UPLOAD_DIR" "$BACKUP_DIR"
+  mkdir -p "$STORAGE_DIR" "$CONFIG_DIR" "$BACKUP_DIR" "$CACHE_DIR" "$UPLOAD_DIR"
 }
 
 if [ "$(id -u)" = "0" ]; then
   prepare_runtime_dirs
-  chown -R "$RUNTIME_USER:$RUNTIME_GROUP" "$STORAGE_DIR" "$UPLOAD_DIR" || {
+  chown -R "$RUNTIME_UID:$RUNTIME_GID" "$STORAGE_DIR" "$UPLOAD_DIR" || {
     echo "[setup] Failed to change ownership for mounted data directories."
     echo "[setup] Ensure APP_PATH points to a writable host directory, for example:"
     echo "[setup]   APP_PATH=/opt/liax-space"
-    echo "[setup]   mkdir -p \"\$APP_PATH/data/storage\" \"\$APP_PATH/data/uploads\" \"\$APP_PATH/data/mysql\""
+    echo "[setup]   mkdir -p \"\$APP_PATH/data/storage\" \"\$APP_PATH/data/storage/config\" \"\$APP_PATH/data/storage/backups\" \"\$APP_PATH/data/storage/cache\" \"\$APP_PATH/data/uploads\" \"\$APP_PATH/data/mysql\""
     exit 1
   }
   exec su-exec "$RUNTIME_USER:$RUNTIME_GROUP" "$0" "$@"
