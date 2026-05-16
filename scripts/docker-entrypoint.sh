@@ -175,10 +175,15 @@ echo "[setup] DATABASE_URL detected. Running production migrations."
 if "$PRISMA_BIN" migrate deploy; then
   echo "[setup] Prisma migrations applied."
 else
-  echo "[setup] Prisma migrate deploy failed. Starting setup-safe web server."
-  write_status "migration-failed" "Database migration failed. Check database permissions, connection settings, and migration logs."
-  export SETUP_REQUIRED=true
-  exec node server.js
+  echo "[setup] Prisma migrate deploy failed. Falling back to db push."
+  if "$PRISMA_BIN" db push --accept-data-loss; then
+    echo "[setup] Prisma db push completed successfully."
+  else
+    echo "[setup] Prisma db push also failed. Starting setup-safe web server."
+    write_status "migration-failed" "Database migration and schema push both failed. Check database permissions, connection settings, and logs."
+    export SETUP_REQUIRED=true
+    exec node server.js
+  fi
 fi
 
 if [ "${RUN_SEED:-false}" = "true" ]; then
