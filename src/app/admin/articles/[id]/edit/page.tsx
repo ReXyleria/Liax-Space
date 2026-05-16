@@ -4,7 +4,6 @@ import { requireAdminPermission } from "@/lib/admin-guard";
 import { getAdminLocale } from "@/lib/i18n";
 import { canManageArticles } from "@/lib/permissions";
 import { getAdminArticle, getAllTags } from "@/features/articles/service";
-import { listArticleViewerIdentities } from "@/features/identity/service";
 import { listArticleTranslations } from "@/features/articles/translation-service";
 import { getPreviewSiteSettings } from "@/features/settings/preview-site";
 import { formatDate } from "@/lib/utils";
@@ -21,12 +20,11 @@ export default async function EditArticlePage({
     getAdminLocale(),
     requireAdminPermission(canManageArticles, `/admin/articles/${id}/edit`)
   ]);
-  const [article, tagOptions, translations, site, viewerIdentities] = await Promise.all([
+  const [article, tagOptions, translations, site] = await Promise.all([
     getAdminArticle(user, id),
     getAllTags(),
     listArticleTranslations(user, id),
-    getPreviewSiteSettings(),
-    listArticleViewerIdentities(user)
+    getPreviewSiteSettings()
   ]);
 
   if (!article) {
@@ -42,25 +40,14 @@ export default async function EditArticlePage({
     contentJson: article.contentJson,
     contentHtml: article.contentHtml,
     status: article.status,
-    publishedAt: article.publishedAt?.toISOString() ?? null,
+    publishedAt: article.publishedAt ?? null,
     visibility: article.visibility,
     allowComments: article.allowComments,
     pinned: article.pinned,
     featured: article.featured,
     seoTitle: article.seoTitle,
     seoDescription: article.seoDescription,
-    tags: article.tags.flatMap((tag) => (tag?.name ? [{ name: tag.name }] : [])),
-    allowedIdentities: article.allowedIdentities.flatMap((identity) =>
-      identity?.id && identity?.name && identity?.key
-        ? [
-            {
-              id: identity.id,
-              name: identity.name,
-              key: identity.key
-            }
-          ]
-        : []
-    )
+    tags: article.tags.flatMap((tag) => (tag?.name ? [{ name: tag.name }] : []))
   };
 
   return (
@@ -69,7 +56,6 @@ export default async function EditArticlePage({
       article={articleFormValue}
       tagOptions={tagOptions}
       site={site}
-      viewerIdentities={viewerIdentities}
       translations={translations.map((translation) => ({
         id: translation.id,
         locale: translation.locale,

@@ -63,7 +63,9 @@ function getReferrerParts(value: unknown) {
       searchEngine: searchEngine ?? "Other"
     };
   } catch {
-    return { referrer: referrer.slice(0, 2000), referrerHost: null, searchEngine: "Other" };
+    // If the referrer isn't a valid URL, treat it as direct traffic
+    // rather than polluting the "Other" category.
+    return { referrer: referrer.slice(0, 2000), referrerHost: null, searchEngine: "Direct" };
   }
 }
 

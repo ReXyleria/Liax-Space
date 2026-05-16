@@ -24,9 +24,41 @@ export const articleMutationSchema = z.object({
   seoTitle: z.string().max(120, "SEO title cannot exceed 120 characters.").optional().default(""),
   seoDescription: z.string().max(300, "SEO description cannot exceed 300 characters.").optional().default(""),
   tagNames: z.array(z.string().trim().min(1).max(30, "Tag cannot exceed 30 characters.")).max(12, "At most 12 tags are allowed.").default([]),
-  allowedIdentityIds: z.array(z.string().trim().min(1)).max(50, "At most 50 viewer identities are allowed.").default([]),
-  publishedAt: z.string().datetime({ offset: true }).optional().nullable()
-    .transform((value) => value ? new Date(value) : null)
+  publishedAt: z.preprocess(
+    (value) => {
+      if (value instanceof Date) return value.toISOString();
+      if (typeof value === "string" && value.trim() === "") return null;
+      return value;
+    },
+    z.string().datetime({ offset: true }).nullable()
+  ).transform((value) => value ? new Date(value) : null).optional().nullable()
+});
+
+export const articleMetaSchema = z.object({
+  slug: z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value) => typeof value === "string" ? value.trim() : "")
+    .refine(
+      (value) => value === "" || (value.length <= 140 && slugPattern.test(value)),
+      "Slug may only contain lowercase letters, numbers, and hyphens."
+    ),
+  summary: z.string().max(600, "Summary cannot exceed 600 characters.").optional().default(""),
+  cover: z.string().max(500, "Cover URL cannot exceed 500 characters.").optional().default(""),
+  visibility: z.nativeEnum(ContentVisibility).default(ContentVisibility.PUBLIC),
+  allowComments: z.boolean().default(true),
+  pinned: z.boolean().default(false),
+  featured: z.boolean().default(false),
+  seoTitle: z.string().max(120, "SEO title cannot exceed 120 characters.").optional().default(""),
+  seoDescription: z.string().max(300, "SEO description cannot exceed 300 characters.").optional().default(""),
+  tagNames: z.array(z.string().trim().min(1).max(30, "Tag cannot exceed 30 characters.")).max(12, "At most 12 tags are allowed.").default([]),
+  publishedAt: z.preprocess(
+    (value) => {
+      if (value instanceof Date) return value.toISOString();
+      if (typeof value === "string" && value.trim() === "") return null;
+      return value;
+    },
+    z.string().datetime({ offset: true }).nullable()
+  ).transform((value) => value ? new Date(value) : null).optional().nullable()
 });
 
 export const articleQuerySchema = z.object({

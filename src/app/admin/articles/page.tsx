@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { requireAdminPermission } from "@/lib/admin-guard";
 import { getAdminLocale } from "@/lib/i18n";
 import { canManageArticles } from "@/lib/permissions";
-import { listAdminArticles } from "@/features/articles/service";
+import { listAdminArticles, getAllTags } from "@/features/articles/service";
 import { formatDate } from "@/lib/utils";
 
 function labels(locale: Awaited<ReturnType<typeof getAdminLocale>>) {
@@ -38,7 +38,10 @@ export default async function AdminArticlesPage() {
     requireAdminPermission(canManageArticles, "/admin/articles")
   ]);
   const text = labels(locale);
-  const { articles, error } = await listAdminArticles(user);
+  const [{ articles, error }, tagOptions] = await Promise.all([
+    listAdminArticles(user),
+    getAllTags()
+  ]);
 
   return (
     <div className="space-y-6">
@@ -82,7 +85,7 @@ export default async function AdminArticlesPage() {
                 <span className="text-sm text-muted-foreground">{article.status}</span>
                 <span className="text-sm text-muted-foreground">{article.visibility}</span>
                 <span className="text-sm text-muted-foreground">{formatDate(article.updatedAt)}</span>
-                <ArticleActionsMenu id={article.id} status={article.status} locale={locale} />
+                <ArticleActionsMenu article={article} tagOptions={tagOptions} locale={locale} />
               </div>
             ))}
           </div>

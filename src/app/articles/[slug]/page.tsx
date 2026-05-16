@@ -217,11 +217,10 @@ export default async function ArticleDetailPage({
                       <Card className="p-4">
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                           <p className="text-sm font-medium">{comment.user.nickname}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatDate(comment.createdAt)} · {comment.deviceName || t(locale, "unknownDevice")}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{formatDate(comment.createdAt)}</p>
                         </div>
                         <p className="mt-2 text-sm leading-6 text-muted-foreground">{comment.content}</p>
+                        <p className="mt-1.5 text-[0.7rem] text-muted-foreground/60">{comment.deviceName || t(locale, "unknownDevice")}</p>
                       </Card>
                     </MotionItem>
                   ))

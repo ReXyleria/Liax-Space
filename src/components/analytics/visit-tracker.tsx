@@ -12,9 +12,13 @@ export function VisitTracker() {
     }
 
     const query = window.location.search.replace(/^\?/, "");
+    const rawReferrer = document.referrer || "";
+    // Treat same-origin referrers as direct traffic so internal navigation
+    // doesn't pollute the "Other" category in search-engine-source charts.
+    const referrer = rawReferrer && rawReferrer.startsWith(window.location.origin) ? "" : rawReferrer;
     const payload = JSON.stringify({
       path: query ? `${pathname}?${query}` : pathname,
-      referrer: document.referrer || ""
+      referrer
     });
 
     if (navigator.sendBeacon) {

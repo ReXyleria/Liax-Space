@@ -52,7 +52,6 @@ type ArticleFormValue = {
   seoDescription: string | null;
   publishedAt: string | null;
   tags: Array<{ name: string }>;
-  allowedIdentities: Array<{ id: string; name: string; key: string }>;
 };
 
 type ArticleDraft = ArticlePreviewDraft;
@@ -100,10 +99,6 @@ function labels(locale: Locale) {
         summaryPlaceholder: "Article summary...",
         coverLabel: "Cover",
         visibilityLabel: "Visibility",
-        allowedIdentityLabel: "Allowed viewer identities",
-        allowedIdentityPlaceholder:
-          "If selected, access is limited to these identities in addition to the visibility rule above.",
-        allowedIdentityHint: "Administer can always view.",
         tagsLabel: "Tags",
         tagsPlaceholder: "Choose or create tags",
         seoTitleLabel: "SEO title",
@@ -152,9 +147,6 @@ function labels(locale: Locale) {
         summaryPlaceholder: "文章摘要...",
         coverLabel: "封面",
         visibilityLabel: "可见性",
-        allowedIdentityLabel: "允许观看的身份",
-        allowedIdentityPlaceholder: "选择后会在上方可见性规则之外，额外限制为这些身份可查看。",
-        allowedIdentityHint: "Administer 始终可以查看。",
         tagsLabel: "标签",
         tagsPlaceholder: "选择或新建标签",
         seoTitleLabel: "SEO 标题",
@@ -194,7 +186,7 @@ function visibilityOptions(locale: Locale) {
       { value: ContentVisibility.LOGIN_REQUIRED, label: "Login required" },
       { value: ContentVisibility.SVIP_ONLY, label: "SVIP only" },
       { value: ContentVisibility.SSVIP_ONLY, label: "SSVIP only" },
-      { value: ContentVisibility.Administer_ONLY, label: "Administer only" }
+      { value: ContentVisibility.Administer_ONLY, label: "Private" }
     ];
   }
 
@@ -203,7 +195,7 @@ function visibilityOptions(locale: Locale) {
     { value: ContentVisibility.LOGIN_REQUIRED, label: "登录可见" },
     { value: ContentVisibility.SVIP_ONLY, label: "SVIP 可见" },
     { value: ContentVisibility.SSVIP_ONLY, label: "SSVIP 可见" },
-    { value: ContentVisibility.Administer_ONLY, label: "站主可见" }
+    { value: ContentVisibility.Administer_ONLY, label: "私密" }
   ];
 }
 
@@ -241,13 +233,11 @@ export function ArticleEditorForm({
   tagOptions = [],
   versions: initialVersions = [],
   site,
-  viewerIdentities = [],
   warnings = [],
   locale = "zh-CN"
 }: {
   article?: ArticleFormValue | null;
   tagOptions?: Array<{ name: string }>;
-  viewerIdentities?: Array<{ id: string; name: string; key: string; builtInRole: string | null }>;
   versions?: ArticleVersionValue[];
   site: PreviewSiteSettings;
   warnings?: string[];
@@ -284,11 +274,7 @@ export function ArticleEditorForm({
   });
   const [editorKey, setEditorKey] = useState(0);
   const initialSelectedTags = article?.tags.flatMap((tag) => (tag?.name ? [tag.name] : [])) ?? [];
-  const initialSelectedViewerIdentityIds = article?.allowedIdentities.flatMap((identity) =>
-    identity?.id ? [identity.id] : []
-  ) ?? [];
   const [selectedTags, setSelectedTags] = useState(initialSelectedTags);
-  const [selectedViewerIdentityIds, setSelectedViewerIdentityIds] = useState(initialSelectedViewerIdentityIds);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versions, setVersions] = useState<ArticleVersionValue[]>(initialVersions);
@@ -306,21 +292,6 @@ export function ArticleEditorForm({
       .map((tag) => ({ value: tag, label: tag })),
     [selectedTags, tagOptions]
   );
-  const viewerIdentityOptions = useMemo(
-    () =>
-      viewerIdentities.flatMap((identity) =>
-        identity?.id && identity?.name && identity?.key
-          ? [
-              {
-                value: identity.id,
-                label: `${identity.name} (${identity.key})`
-              }
-            ]
-          : []
-      ),
-    [viewerIdentities]
-  );
-
   const collectDraft = useCallback((): ArticleDraft | null => {
     const form = formRef.current;
     if (!form) {
@@ -733,21 +704,6 @@ export function ArticleEditorForm({
               />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{text.allowedIdentityLabel}</span>
-              <MultiSelect
-                name="allowedIdentityIds"
-                value={selectedViewerIdentityIds}
-                onValueChange={(nextIds) => {
-                  setSelectedViewerIdentityIds(nextIds);
-                  scheduleDraftSave();
-                }}
-                options={viewerIdentityOptions}
-                placeholder={text.allowedIdentityPlaceholder}
-              />
-              <p className="text-xs text-muted-foreground">{text.allowedIdentityHint}</p>
-              <FieldError messages={state.fieldErrors.allowedIdentityIds} />
-            </label>
-            <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">{text.tagsLabel}</span>
               <MultiSelect
                 name="tagNames"
@@ -795,7 +751,6 @@ export function ArticleEditorForm({
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">{text.publishedAtLabel}</span>
               <Input
-                name="publishedAt"
                 type="datetime-local"
                 value={publishedAt}
                 onChange={(event) => {

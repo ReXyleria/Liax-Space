@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ArticleStatus } from "@prisma/client";
+import { ArticleStatus, ContentVisibility } from "@prisma/client";
 import { MoreHorizontal } from "lucide-react";
+import Link from "next/link";
+import { ArticleSettingsDialog } from "@/components/admin/article-settings-dialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import {
@@ -12,6 +13,23 @@ import {
   unpublishArticleAction
 } from "@/features/articles/actions";
 import type { Locale } from "@/lib/i18n";
+
+export type ArticleRowData = {
+  id: string;
+  title: string;
+  slug: string;
+  summary: string | null;
+  cover: string | null;
+  status: ArticleStatus;
+  visibility: ContentVisibility;
+  allowComments: boolean;
+  pinned: boolean;
+  featured: boolean;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  publishedAt: string | null;
+  tags: Array<{ name: string }>;
+};
 
 function labels(locale: Locale) {
   return locale === "en"
@@ -38,19 +56,20 @@ function labels(locale: Locale) {
 }
 
 export function ArticleActionsMenu({
-  id,
-  status,
+  article,
+  tagOptions = [],
   locale = "zh-CN"
 }: {
-  id: string;
-  status: ArticleStatus;
+  article: ArticleRowData;
+  tagOptions?: Array<{ name: string }>;
   locale?: Locale;
 }) {
   const text = labels(locale);
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const isPublished = status === ArticleStatus.PUBLISHED;
+  const isPublished = article.status === ArticleStatus.PUBLISHED;
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -79,17 +98,24 @@ export function ArticleActionsMenu({
       {open ? (
         <div className="absolute right-0 top-10 z-50 w-44 rounded-lg border bg-card p-1 text-sm shadow-xl shadow-primary/10">
           <form action={isPublished ? unpublishArticleAction : publishArticleAction}>
-            <input type="hidden" name="id" value={id} />
+            <input type="hidden" name="id" value={article.id} />
             <button type="submit" className="w-full rounded-md px-3 py-2 text-left hover:bg-muted">
               {isPublished ? text.unpublish : text.publish}
             </button>
           </form>
-          <Link href={`/admin/articles/${id}/edit`} className="block rounded-md px-3 py-2 hover:bg-muted">
+          <Link href={`/admin/articles/${article.id}/edit`} className="block rounded-md px-3 py-2 hover:bg-muted">
             {text.edit}
           </Link>
-          <Link href={`/admin/articles/${id}/edit?panel=settings`} className="block rounded-md px-3 py-2 hover:bg-muted">
+          <button
+            type="button"
+            className="w-full rounded-md px-3 py-2 text-left hover:bg-muted"
+            onClick={() => {
+              setOpen(false);
+              setSettingsOpen(true);
+            }}
+          >
             {text.settings}
-          </Link>
+          </button>
           <button
             type="button"
             className="w-full rounded-md px-3 py-2 text-left text-destructive hover:bg-destructive/10"
@@ -110,7 +136,14 @@ export function ArticleActionsMenu({
         cancelLabel={text.cancel}
         onOpenChange={setConfirmDelete}
         action={deleteArticleAction}
-        hiddenFields={[{ name: "id", value: id }]}
+        hiddenFields={[{ name: "id", value: article.id }]}
+      />
+      <ArticleSettingsDialog
+        article={article}
+        tagOptions={tagOptions}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        locale={locale}
       />
     </div>
   );

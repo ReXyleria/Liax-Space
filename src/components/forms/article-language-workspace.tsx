@@ -47,14 +47,12 @@ export function ArticleLanguageWorkspace({
   article,
   tagOptions,
   site,
-  viewerIdentities,
   translations,
   locale = "zh-CN"
 }: {
   article: NonNullable<ArticleFormValue>;
   tagOptions: Array<{ name: string }>;
   site: PreviewSiteSettings;
-  viewerIdentities: Array<{ id: string; name: string; key: string; builtInRole: string | null }>;
   translations: TranslationValue[];
   locale?: Locale;
 }) {
@@ -107,7 +105,6 @@ export function ArticleLanguageWorkspace({
           article={article}
           tagOptions={tagOptions}
           site={site}
-          viewerIdentities={viewerIdentities}
         />
       ) : (
         <ArticleTranslationEditorForm article={article} translation={englishTranslation} locale={locale} />

@@ -12,10 +12,11 @@ import {
   deleteArticle,
   restoreArticleVersion,
   setArticleStatus,
-  updateArticle
+  updateArticle,
+  updateArticleMeta
 } from "@/features/articles/service";
 import { generateArticleSeo } from "@/features/articles/seo-service";
-import { articleMutationSchema } from "@/features/articles/validators";
+import { articleMutationSchema, articleMetaSchema } from "@/features/articles/validators";
 
 export type ArticleActionState = {
   ok: boolean;
@@ -49,12 +50,6 @@ function parseArticleForm(formData: FormData) {
     .flatMap((tag) => String(tag).split(","))
     .map((tag) => tag.trim())
     .filter(Boolean);
-  const allowedIdentityIds = formData
-    .getAll("allowedIdentityIds")
-    .flatMap((identityId) => String(identityId).split(","))
-    .map((identityId) => identityId.trim())
-    .filter(Boolean);
-
   return {
     title: formData.get("title"),
     slug: formData.get("slug"),
@@ -70,8 +65,7 @@ function parseArticleForm(formData: FormData) {
     seoTitle: formData.get("seoTitle") ?? "",
     seoDescription: formData.get("seoDescription") ?? "",
     publishedAt: formData.get("publishedAt") ? new Date(String(formData.get("publishedAt"))).toISOString() : null,
-    tagNames,
-    allowedIdentityIds
+    tagNames
   };
 }
 
@@ -260,4 +254,53 @@ export async function deleteArticleAction(formData: FormData) {
   await deleteArticle(user, id);
   revalidatePath("/admin/articles");
   revalidatePath("/articles");
+}
+
+export async function updateArticleSettingsAction(
+  id: string,
+  _previousState: ArticleActionState,
+  formData: FormData
+): Promise<ArticleActionState> {
+  const locale = await getAdminLocale();
+  const input = {
+    slug: formData.get("slug"),
+    summary: formData.get("summary") ?? "",
+    cover: formData.get("cover") ?? "",
+    visibility: formData.get("visibility") ?? "PUBLIC",
+    allowComments: parseBoolean(formData.get("allowComments")),
+    pinned: parseBoolean(formData.get("pinned")),
+    featured: parseBoolean(formData.get("featured")),
+    seoTitle: formData.get("seoTitle") ?? "",
+    seoDescription: formData.get("seoDescription") ?? "",
+    publishedAt: formData.get("publishedAt") ? new Date(String(formData.get("publishedAt"))).toISOString() : null,
+    tagNames: formData
+      .getAll("tagNames")
+      .flatMap((tag) => String(tag).split(","))
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+  };
+
+  const parsed = articleMetaSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: actionText(locale).checkFields,
+      fieldErrors: fieldErrorsFromZod(parsed.error)
+    };
+  }
+
+  try {
+    const user = await requireUser();
+    await updateArticleMeta(user, id, parsed.data);
+    revalidatePath("/admin/articles");
+    revalidatePath("/articles");
+    return {
+      ok: true,
+      message: actionText(locale).articleSaved,
+      fieldErrors: {}
+    };
+  } catch (error) {
+    return actionErrorState(error, locale);
+  }
 }

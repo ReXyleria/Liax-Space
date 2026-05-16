@@ -10,35 +10,17 @@ import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import { assertPermission, canManageArticles, canViewContent } from "@/lib/permissions";
 import { sanitizeArticleHtml } from "@/lib/sanitize";
 import type { CurrentUser } from "@/lib/auth";
-import { articleMutationSchema, articleQuerySchema } from "@/features/articles/validators";
+import { articleMutationSchema, articleMetaSchema, articleQuerySchema } from "@/features/articles/validators";
 import {
   resolveArticleDisplayTranslation,
   scheduleArticleTranslationSync
 } from "@/features/articles/translation-service";
 import { pushArticleUrlAfterPublish } from "@/features/site-push/service";
 import { normalizeTagSlug } from "@/features/tags/utils";
-import {
-  getPublicIdentityRank,
-  getPublicIdentityTierByRole,
-  isPublicIdentityKey,
-  publicIdentityKeys
-} from "@/features/identity/tiers";
 
 const articleInclude = {
   author: { select: { nickname: true } },
   tags: { include: { tag: true } },
-  allowedIdentities: {
-    include: {
-      identity: {
-        select: {
-          id: true,
-          key: true,
-          name: true,
-          builtInRole: true
-        }
-      }
-    }
-  },
   translations: true
 } satisfies Prisma.ArticleInclude;
 
@@ -65,18 +47,7 @@ const tagWithArticlesInclude = {
         select: {
           status: true,
           deletedAt: true,
-          visibility: true,
-          allowedIdentities: {
-            include: {
-              identity: {
-                select: {
-                  id: true,
-                  key: true,
-                  builtInRole: true
-                }
-              }
-            }
-          }
+          visibility: true
         }
       }
     }
@@ -142,7 +113,7 @@ function normalizeDisplayLocale(locale?: string | null) {
 
 function mapArticle(article: ArticleWithRelations, locale?: string | null) {
   const display = resolveArticleDisplayTranslation(article, locale);
-  const { tags, translations: ignoredTranslations, allowedIdentities, ...rest } = article;
+  const { tags, translations: ignoredTranslations, ...rest } = article;
   void ignoredTranslations;
   const normalizedLocale = normalizeDisplayLocale(locale);
 
@@ -154,7 +125,7 @@ function mapArticle(article: ArticleWithRelations, locale?: string | null) {
     translationLocale: normalizedLocale,
     translationStatus: display.status,
     translationError: display.error,
-    allowedIdentities: allowedIdentities.map((item) => item.identity).filter(isDefined),
+    publishedAt: rest.publishedAt?.toISOString() ?? null,
     tags: tags.map((item) => item.tag).filter(isDefined)
   };
 }
@@ -163,46 +134,9 @@ function canViewArticle(
   user: CurrentUser | null,
   article: {
     visibility: ContentVisibility;
-    allowedIdentities: Array<{
-      identityId: string;
-      identity: {
-        key: string;
-        builtInRole: UserRole | null;
-      };
-    }>;
   }
 ) {
-  if (!canViewContent(user, article.visibility)) {
-    return false;
-  }
-
-  if (!article.allowedIdentities.length) {
-    return true;
-  }
-
-  if (user?.role === "Administer") {
-    return true;
-  }
-
-  if (!user) {
-    return false;
-  }
-
-  const directIdentity = article.allowedIdentities.find((item) => item.identityId === user.identity?.id);
-  const userTier = directIdentity?.identity.key && isPublicIdentityKey(directIdentity.identity.key)
-    ? directIdentity.identity
-    : getPublicIdentityTierByRole(user.identity?.builtInRole ?? user.role);
-  const viewerRank = userTier ? getPublicIdentityRank(userTier.key) : 0;
-
-  if (viewerRank <= 0) {
-    return false;
-  }
-
-  return article.allowedIdentities.some((item) => {
-    const requiredTier = getPublicIdentityTierByRole(item.identity.builtInRole);
-    const requiredRank = getPublicIdentityRank(item.identity.key) || getPublicIdentityRank(requiredTier?.key);
-    return requiredRank > 0 && viewerRank >= requiredRank;
-  });
+  return canViewContent(user, article.visibility);
 }
 
 async function nextArticleVersion(articleId: string) {
@@ -231,7 +165,6 @@ async function recordArticleVersion(
     | "featured"
     | "seoTitle"
     | "seoDescription"
-    | "allowedIdentities"
   >,
   tagNames: string[],
   userId: string
@@ -253,7 +186,7 @@ async function recordArticleVersion(
       featured: article.featured,
       seoTitle: article.seoTitle,
       seoDescription: article.seoDescription,
-      allowedIdentityIds: article.allowedIdentities.map((item) => item.identityId),
+      allowedIdentityIds: [],
       tagNames,
       createdById: userId
     }
@@ -446,36 +379,6 @@ async function syncTags(articleId: string, tagNames: string[]) {
   }
 }
 
-async function syncArticleAllowedIdentities(articleId: string, identityIds: string[]) {
-  const cleanIds = Array.from(new Set(identityIds.map((identityId) => identityId.trim()).filter(Boolean)));
-
-  await db.articleAllowedIdentity.deleteMany({ where: { articleId } });
-
-  if (!cleanIds.length) {
-    return;
-  }
-
-  const identities = await db.identity.findMany({
-    where: {
-      id: { in: cleanIds },
-      key: { in: publicIdentityKeys }
-    },
-    select: { id: true }
-  });
-
-  if (!identities.length) {
-    return;
-  }
-
-  await db.articleAllowedIdentity.createMany({
-    data: identities.map((identity) => ({
-      articleId,
-      identityId: identity.id
-    })),
-    skipDuplicates: true
-  });
-}
-
 function extractArticleMediaUrls(html: string, cover?: string | null) {
   const urls = new Set<string>();
 
@@ -560,7 +463,6 @@ export async function createArticle(user: CurrentUser, input: unknown) {
   });
 
   await syncTags(article.id, parsed.tagNames);
-  await syncArticleAllowedIdentities(article.id, parsed.allowedIdentityIds);
   await syncArticleMediaReferences(article.id, sanitizedHtml, parsed.cover);
   const versionArticle = await db.article.findUniqueOrThrow({ where: { id: article.id }, include: articleInclude });
   await recordArticleVersion(versionArticle, parsed.tagNames, user.id);
@@ -611,7 +513,6 @@ export async function updateArticle(user: CurrentUser, id: string, input: unknow
   });
 
   await syncTags(article.id, parsed.tagNames);
-  await syncArticleAllowedIdentities(article.id, parsed.allowedIdentityIds);
   await syncArticleMediaReferences(article.id, sanitizedHtml, parsed.cover);
   const versionArticle = await db.article.findUniqueOrThrow({ where: { id: article.id }, include: articleInclude });
   await recordArticleVersion(versionArticle, parsed.tagNames, user.id);
@@ -656,9 +557,6 @@ export async function restoreArticleVersion(user: CurrentUser, articleId: string
   const tagNames = Array.isArray(version.tagNames)
     ? version.tagNames.map((tag) => String(tag)).filter(Boolean)
     : [];
-  const allowedIdentityIds = Array.isArray(version.allowedIdentityIds)
-    ? version.allowedIdentityIds.map((identityId) => String(identityId)).filter(Boolean)
-    : [];
   const slug = await ensureArticleSlug(version.slug, articleId);
 
   const article = await db.article.update({
@@ -682,7 +580,6 @@ export async function restoreArticleVersion(user: CurrentUser, articleId: string
   });
 
   await syncTags(articleId, tagNames);
-  await syncArticleAllowedIdentities(articleId, allowedIdentityIds);
   await syncArticleMediaReferences(articleId, version.contentHtml, version.cover);
   const versionArticle = await db.article.findUniqueOrThrow({ where: { id: article.id }, include: articleInclude });
   await recordArticleVersion(versionArticle, tagNames, user.id);
@@ -732,6 +629,43 @@ export async function deleteArticle(user: CurrentUser, id: string) {
       data: { deletedAt: new Date() }
     });
   });
+}
+
+export async function updateArticleMeta(user: CurrentUser, id: string, input: unknown) {
+  assertPermission(canManageArticles(user), "You do not have permission to update articles.");
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL is not configured.");
+  }
+  const parsed = articleMetaSchema.parse(input);
+  const existing = await db.article.findUnique({ where: { id } });
+  if (!existing) {
+    throw new Error("Article not found.");
+  }
+
+  const slug = await ensureArticleSlug(parsed.slug || existing.slug, id);
+
+  const article = await db.article.update({
+    where: { id },
+    data: {
+      slug,
+      summary: parsed.summary,
+      cover: parsed.cover,
+      visibility: parsed.visibility,
+      allowComments: parsed.allowComments,
+      pinned: parsed.pinned,
+      featured: parsed.featured,
+      seoTitle: parsed.seoTitle,
+      seoDescription: parsed.seoDescription,
+      publishedAt:
+        parsed.publishedAt ?? existing.publishedAt
+    }
+  });
+
+  await syncTags(article.id, parsed.tagNames);
+  await syncArticleMediaReferences(article.id, existing.contentHtml, parsed.cover);
+  scheduleArticleTranslationSync(article);
+
+  return article;
 }
 
 export async function getAllTags() {
