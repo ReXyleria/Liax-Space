@@ -17,6 +17,7 @@ async function main() {
       avatar: true,
       role: true,
       status: true,
+      mutedUntil: true,
       emailVerified: true,
       totpEnabled: true,
       totpConfirmedAt: true,

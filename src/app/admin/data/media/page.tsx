@@ -2,11 +2,11 @@ import { MediaReferenceSource } from "@prisma/client";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Card } from "@/components/ui/card";
 import { MediaUnusedPanel } from "@/components/admin/media-unused-panel";
+import { RescanButton } from "@/components/admin/rescan-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { listMediaAssets } from "@/features/media/service";
-import { rescanMediaAction } from "@/features/media/actions";
 import { requireAdminPermission } from "@/lib/admin-guard";
 import { getAdminLocale, t } from "@/lib/i18n";
 import { canManageSettings } from "@/lib/permissions";
@@ -32,11 +32,7 @@ export default async function AdminDataMediaPage({
         eyebrow={t(locale, "adminData")}
         title={t(locale, "adminMedia")}
         description={t(locale, "adminMediaDescription")}
-        action={
-          <form action={rescanMediaAction}>
-            <Button type="submit">{t(locale, "rescanReferences")}</Button>
-          </form>
-        }
+        action={<RescanButton />}
       />
       <form className="grid gap-2 md:grid-cols-[1fr_180px_180px_auto]">
         <Input name="q" placeholder={t(locale, "searchMediaPlaceholder")} defaultValue={params.q ?? ""} />
@@ -46,9 +42,7 @@ export default async function AdminDataMediaPage({
           options={[
             { value: "all", label: t(locale, "allMedia") },
             { value: "used", label: t(locale, "usedMedia") },
-            { value: "unreferenced", label: t(locale, "unreferencedMedia") },
-            { value: "unused", label: t(locale, "unusedMedia") },
-            { value: "older-unused", label: t(locale, "olderUnusedMedia") }
+            { value: "unreferenced", label: t(locale, "unreferencedMedia") }
           ]}
         />
         <Select
@@ -65,6 +59,7 @@ export default async function AdminDataMediaPage({
       </form>
       {error ? <Card className="p-5 text-destructive">{error}</Card> : null}
       <MediaUnusedPanel
+        locale={locale}
         assets={assets.map((asset) => ({
           id: asset.id,
           url: asset.url,

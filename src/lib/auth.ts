@@ -18,7 +18,7 @@ export class AuthError extends Error {
 
 export type CurrentUser = Pick<
   User,
-  "id" | "email" | "username" | "nickname" | "avatar" | "role" | "status" | "emailVerified" | "totpEnabled" | "totpConfirmedAt" | "createdAt" | "lastLoginAt"
+  "id" | "email" | "username" | "nickname" | "avatar" | "role" | "status" | "mutedUntil" | "emailVerified" | "totpEnabled" | "totpConfirmedAt" | "createdAt" | "lastLoginAt"
 > & {
   identity: {
     id: string;
@@ -230,6 +230,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
             avatar: true,
             role: true,
             status: true,
+            mutedUntil: true,
             emailVerified: true,
             totpEnabled: true,
             totpConfirmedAt: true,

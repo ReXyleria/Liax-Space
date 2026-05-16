@@ -54,6 +54,20 @@ export async function deleteMediaAssetsAction(
     revalidatePath("/admin/data/media");
     return { ok: true, message: `已删除 ${count} 个附件。` };
   } catch (error) {
+    if (error instanceof Error) {
+      const match = error.message.match(/^(\d+) selected assets are still referenced and were not deleted\.$/);
+      if (match) {
+        const count = match[1];
+        const locale = String(formData.get("locale") ?? "zh-CN");
+        return {
+          ok: false,
+          message:
+            locale === "zh-CN"
+              ? `${count} 个选中的附件仍被引用，未被删除。`
+              : `${count} selected assets are still referenced and were not deleted.`
+        };
+      }
+    }
     return {
       ok: false,
       message: error instanceof Error ? error.message : "附件删除失败。"

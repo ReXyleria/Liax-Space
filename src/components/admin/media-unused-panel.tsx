@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
@@ -21,18 +21,39 @@ type MediaAssetItem = {
 
 const initialState: MediaActionState = { ok: false, message: "" };
 
-export function MediaUnusedPanel({ assets }: { assets: MediaAssetItem[] }) {
+export function MediaUnusedPanel({ locale, assets }: { locale?: string; assets: MediaAssetItem[] }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [state, formAction, isPending] = useActionState<MediaActionState, FormData>(
     deleteMediaAssetsAction,
     initialState
   );
+  const prevStateRef = useRef(state);
+
   const selectedAssets = assets.filter((asset) => selectedIds.includes(asset.id));
+
+  useEffect(() => {
+    if (state === prevStateRef.current) return;
+    prevStateRef.current = state;
+
+    if (state.ok) {
+      setConfirmOpen(false);
+      setSelectedIds([]);
+    }
+  }, [state]);
 
   function toggleSelected(id: string, checked: boolean) {
     setSelectedIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id));
   }
+
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!isPending) {
+        setConfirmOpen(open);
+      }
+    },
+    [isPending]
+  );
 
   return (
     <div className="space-y-4">
@@ -76,8 +97,8 @@ export function MediaUnusedPanel({ assets }: { assets: MediaAssetItem[] }) {
           删除选中
         </Button>
       </div>
-      {state.message ? (
-        <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{state.message}</p>
+      {state.message && state.ok ? (
+        <p className="text-sm text-emerald-600">{state.message}</p>
       ) : null}
       <ConfirmActionDialog
         open={confirmOpen}
@@ -86,15 +107,21 @@ export function MediaUnusedPanel({ assets }: { assets: MediaAssetItem[] }) {
         confirmLabel={isPending ? "删除中..." : "确认删除"}
         cancelLabel="取消"
         pending={isPending}
-        onOpenChange={setConfirmOpen}
+        onOpenChange={handleOpenChange}
         action={formAction}
-        hiddenFields={selectedIds.map((id) => ({ name: "assetId", value: id }))}
+        hiddenFields={[
+          { name: "locale", value: locale ?? "zh-CN" },
+          ...selectedIds.map((id) => ({ name: "assetId", value: id }))
+        ]}
       >
         <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border bg-muted/35 p-3 text-sm">
           {selectedAssets.map((asset) => (
             <p key={asset.id} className="truncate">{asset.filename}</p>
           ))}
         </div>
+        {!state.ok && state.message ? (
+          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.message}</p>
+        ) : null}
       </ConfirmActionDialog>
     </div>
   );

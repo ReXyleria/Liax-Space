@@ -138,6 +138,7 @@ model User {
   role               UserRole            @default(USER)
   identityId         String?
   status             UserStatus          @default(ACTIVE)
+  mutedUntil         DateTime?
   emailVerified      Boolean             @default(false)
   totpSecret         String?             @db.Text
   totpEnabled        Boolean             @default(false)

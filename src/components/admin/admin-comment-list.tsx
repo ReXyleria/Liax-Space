@@ -1,14 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { CommentStatus } from "@prisma/client";
-import { ChevronDown, Pin, PinOff, Trash2 } from "lucide-react";
+import { ChevronDown, Pin, PinOff, Trash2, VolumeX } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { formatDate } from "@/lib/utils";
-import { setCommentStatusAction, toggleCommentPinnedAction } from "@/features/comments/actions";
+import {
+  type CommentActionState,
+  setCommentStatusAction,
+  toggleCommentPinnedAction,
+  muteUserAction
+} from "@/features/comments/actions";
 
 type AdminComment = {
   id: string;
@@ -18,7 +24,13 @@ type AdminComment = {
   createdAt: string | Date;
   deviceName: string | null;
   article: { title: string; slug: string };
-  user: { nickname: string; email: string; avatar: string | null };
+  user: {
+    id: string;
+    nickname: string;
+    email: string;
+    avatar: string | null;
+    mutedUntil: string | Date | null;
+  };
 };
 
 const statusLabels: Record<string, string> = {
@@ -28,12 +40,23 @@ const statusLabels: Record<string, string> = {
   DELETED: "已删除"
 };
 
+const muteOptions = [
+  { value: "1h", label: "禁言 1 小时" },
+  { value: "3h", label: "禁言 3 小时" },
+  { value: "5h", label: "禁言 5 小时" },
+  { value: "1d", label: "禁言 1 天" },
+  { value: "1mo", label: "禁言 1 个月" },
+  { value: "permanent", label: "永久禁言" }
+];
+
 type ArticleGroup = {
   articleId: string;
   title: string;
   slug: string;
   comments: AdminComment[];
 };
+
+const muteInitialState: CommentActionState = { ok: false, message: "" };
 
 export function AdminCommentList({ comments }: { comments: AdminComment[] }) {
   const groups = useMemo(() => {
@@ -102,13 +125,19 @@ export function AdminCommentList({ comments }: { comments: AdminComment[] }) {
                 }`}
               />
             </button>
-            {isExpanded && (
-              <div className="divide-y border-t">
-                {group.comments.map((comment) => (
-                  <CommentRow key={comment.id} comment={comment} />
-                ))}
+            <div
+              className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${
+                isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+              }`}
+            >
+              <div className="overflow-hidden">
+                <div className="divide-y border-t">
+                  {group.comments.map((comment) => (
+                    <CommentRow key={comment.id} comment={comment} />
+                  ))}
+                </div>
               </div>
-            )}
+            </div>
           </Card>
         );
       })}
@@ -117,6 +146,15 @@ export function AdminCommentList({ comments }: { comments: AdminComment[] }) {
 }
 
 function CommentRow({ comment }: { comment: AdminComment }) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [muteState, muteFormAction, mutePending] = useActionState<CommentActionState, FormData>(
+    muteUserAction,
+    muteInitialState
+  );
+
+  const isMuted =
+    comment.user.mutedUntil && new Date(comment.user.mutedUntil) > new Date();
+
   return (
     <div className="space-y-2 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -133,6 +171,12 @@ function CommentRow({ comment }: { comment: AdminComment }) {
             <span className="text-xs text-muted-foreground">
               {formatDate(comment.createdAt)}
             </span>
+            {isMuted ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[0.65rem] font-medium text-orange-700">
+                <VolumeX className="h-2.5 w-2.5" />
+                已禁言
+              </span>
+            ) : null}
             {comment.pinned ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-medium text-amber-700">
                 <Pin className="h-2.5 w-2.5" />
@@ -160,21 +204,23 @@ function CommentRow({ comment }: { comment: AdminComment }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <form action={setCommentStatusAction} className="flex items-center gap-2">
-          <input type="hidden" name="id" value={comment.id} />
+        <form action={muteFormAction} className="flex items-center gap-2">
+          <input type="hidden" name="userId" value={comment.user.id} />
           <Select
-            name="status"
-            defaultValue={comment.status}
-            className="min-w-32"
-            options={Object.values(CommentStatus).map((s) => ({
-              value: s,
-              label: statusLabels[s] ?? s
-            }))}
+            name="duration"
+            defaultValue="1h"
+            className="min-w-36"
+            options={muteOptions}
           />
-          <Button type="submit" variant="secondary" className="h-9 px-3 text-xs">
-            更新状态
+          <Button type="submit" variant="secondary" className="h-9 px-3 text-xs" disabled={mutePending}>
+            {mutePending ? "禁言中..." : isMuted ? "更新禁言" : "禁言此用户"}
           </Button>
         </form>
+        {muteState.message ? (
+          <span className={muteState.ok ? "text-xs text-emerald-600" : "text-xs text-destructive"}>
+            {muteState.message}
+          </span>
+        ) : null}
         <form action={toggleCommentPinnedAction}>
           <input type="hidden" name="id" value={comment.id} />
           <Button
@@ -196,18 +242,28 @@ function CommentRow({ comment }: { comment: AdminComment }) {
             )}
           </Button>
         </form>
-        <form action={setCommentStatusAction}>
-          <input type="hidden" name="id" value={comment.id} />
-          <input type="hidden" name="status" value="DELETED" />
-          <Button
-            type="submit"
-            variant="ghost"
-            className="h-9 px-3 text-xs text-destructive hover:bg-destructive/10"
-          >
-            <Trash2 className="mr-1 h-3.5 w-3.5" />
-            删除
-          </Button>
-        </form>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-9 px-3 text-xs text-destructive hover:bg-destructive/10"
+          onClick={() => setDeleteOpen(true)}
+        >
+          <Trash2 className="mr-1 h-3.5 w-3.5" />
+          删除
+        </Button>
+        <ConfirmActionDialog
+          open={deleteOpen}
+          title="确认删除评论"
+          description="删除后将无法恢复，确定要删除这条评论吗？"
+          confirmLabel="确认删除"
+          cancelLabel="取消"
+          onOpenChange={setDeleteOpen}
+          action={setCommentStatusAction}
+          hiddenFields={[
+            { name: "id", value: comment.id },
+            { name: "status", value: "DELETED" }
+          ]}
+        />
       </div>
     </div>
   );

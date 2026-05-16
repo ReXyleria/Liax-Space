@@ -3,7 +3,7 @@ import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import { assertPermission, canManageComments } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
 import { sendTemplatedMail } from "@/lib/mail";
-import { commentCreateSchema, commentStatusSchema } from "@/features/comments/validators";
+import { commentCreateSchema, commentStatusSchema, muteUserSchema, MUTE_DURATIONS } from "@/features/comments/validators";
 
 async function commentsRequireApproval() {
   if (!isDatabaseConfigured()) {
@@ -32,6 +32,17 @@ export async function createComment(user: CurrentUser, input: unknown) {
   if (!isDatabaseConfigured()) {
     throw new Error("DATABASE_URL 未配置。");
   }
+
+  if (user.mutedUntil && new Date(user.mutedUntil) > new Date()) {
+    const until = new Date(user.mutedUntil);
+    const isIndefinite = until.getFullYear() >= 2090;
+    throw new Error(
+      isIndefinite
+        ? "你已被永久禁言，无法发表评论。"
+        : `你已被禁言至 ${until.toLocaleString("zh-CN")}，暂时无法发表评论。`
+    );
+  }
+
   const parsed = commentCreateSchema.parse(input);
   const article = await db.article.findFirst({
     where: { id: parsed.articleId, deletedAt: null },
@@ -122,7 +133,7 @@ export async function listAdminComments(user: CurrentUser) {
         where: { deletedAt: null },
         include: {
           article: { select: { title: true, slug: true } },
-          user: { select: { nickname: true, email: true, avatar: true } }
+          user: { select: { id: true, nickname: true, email: true, avatar: true, mutedUntil: true } }
         },
         orderBy: [{ pinned: "desc" }, { createdAt: "desc" }]
       }),
@@ -156,4 +167,28 @@ export async function updateCommentStatus(user: CurrentUser, input: unknown) {
       deletedAt: parsed.status === CommentStatus.DELETED ? new Date() : null
     }
   });
+}
+
+export async function muteUser(user: CurrentUser, input: unknown) {
+  assertPermission(canManageComments(user), "你没有权限管理评论。");
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL 未配置。");
+  }
+  const parsed = muteUserSchema.parse(input);
+
+  const durationMs = MUTE_DURATIONS[parsed.duration] ?? 0;
+
+  let mutedUntil: Date | null;
+  if (parsed.duration === "permanent") {
+    mutedUntil = new Date("2099-12-31T23:59:59.999Z");
+  } else {
+    mutedUntil = new Date(Date.now() + durationMs);
+  }
+
+  await db.user.update({
+    where: { id: parsed.userId },
+    data: { mutedUntil }
+  });
+
+  return mutedUntil;
 }
