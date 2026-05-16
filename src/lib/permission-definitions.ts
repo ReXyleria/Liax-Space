@@ -81,13 +81,10 @@ export const permissionGroups = Array.from(new Set(permissionDefinitions.map((it
 export const allPermissionKeys = permissionDefinitions.map((item) => item.key);
 
 export const defaultRolePermissions: Record<UserRole, string[]> = {
-  VISITOR: [],
   USER: [],
-  FRIEND: [],
-  VIP: [],
-  EDITOR: ["articles.manage", "moments.manage", "tags.manage"],
-  ADMIN: allPermissionKeys.filter((key) => key !== "codeInjection.manage"),
-  OWNER: allPermissionKeys
+  SVIP: [],
+  SSVIP: [],
+  Administer: allPermissionKeys
 };
 
 export function getDefaultPermissionsForRole(role: UserRole) {

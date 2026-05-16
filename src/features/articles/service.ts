@@ -170,7 +170,7 @@ function canViewArticle(
     return true;
   }
 
-  if (user?.role === "OWNER") {
+  if (user?.role === "Administer") {
     return true;
   }
 
@@ -545,7 +545,7 @@ export async function createArticle(user: CurrentUser, input: unknown) {
       seoTitle: parsed.seoTitle,
       seoDescription: parsed.seoDescription,
       authorId: user.id,
-      publishedAt: parsed.status === ArticleStatus.PUBLISHED ? new Date() : null
+      publishedAt: parsed.status === ArticleStatus.PUBLISHED ? (parsed.publishedAt ?? new Date()) : (parsed.publishedAt ?? null)
     }
   });
 
@@ -592,8 +592,8 @@ export async function updateArticle(user: CurrentUser, id: string, input: unknow
       seoDescription: parsed.seoDescription,
       publishedAt:
         parsed.status === ArticleStatus.PUBLISHED
-          ? existing.publishedAt ?? new Date()
-          : existing.publishedAt
+          ? (parsed.publishedAt ?? existing.publishedAt ?? new Date())
+          : (parsed.publishedAt ?? existing.publishedAt)
     }
   });
 

@@ -5,4 +5,6 @@ export type DashboardStats = {
   totalGuestbook: number;
   todayVisits: number;
   popularArticles: Array<{ title: string; slug: string; viewCount: number }>;
+  recentArticles: Array<{ id: string; title: string; slug: string; publishedAt: Date | null }>;
+  visitTrend: Array<{ date: string; count: number }>;
 };

@@ -24,7 +24,9 @@ export const articleMutationSchema = z.object({
   seoTitle: z.string().max(120, "SEO title cannot exceed 120 characters.").optional().default(""),
   seoDescription: z.string().max(300, "SEO description cannot exceed 300 characters.").optional().default(""),
   tagNames: z.array(z.string().trim().min(1).max(30, "Tag cannot exceed 30 characters.")).max(12, "At most 12 tags are allowed.").default([]),
-  allowedIdentityIds: z.array(z.string().trim().min(1)).max(50, "At most 50 viewer identities are allowed.").default([])
+  allowedIdentityIds: z.array(z.string().trim().min(1)).max(50, "At most 50 viewer identities are allowed.").default([]),
+  publishedAt: z.string().datetime({ offset: true }).optional().nullable()
+    .transform((value) => value ? new Date(value) : null)
 });
 
 export const articleQuerySchema = z.object({

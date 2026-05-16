@@ -43,6 +43,7 @@ export default async function AdminMomentsPage() {
           visibility: moment.visibility,
           pinned: moment.pinned,
           createdAtLabel: formatDate(moment.createdAt),
+          createdAtIso: moment.createdAt.toISOString().slice(0, 16),
           authorName: moment.author.nickname
         }))}
       />

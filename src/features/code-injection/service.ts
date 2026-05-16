@@ -91,7 +91,7 @@ export async function getCodeInjectionMap() {
 }
 
 export async function updateCodeInjection(user: CurrentUser, values: CodeInjectionMap) {
-  assertPermission(canManageCodeInjection(user), "仅 OWNER 可以管理代码注入。");
+  assertPermission(canManageCodeInjection(user), "仅 Administer 可以管理代码注入。");
 
   const allowedKeys = new Set(codeInjectionDefinitions.flatMap((item) => [item.key, item.enabledKey]));
   const updates = Object.entries(values).filter(([key]) => allowedKeys.has(key));

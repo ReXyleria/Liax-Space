@@ -18,7 +18,7 @@ export function CodeInjectionForm({ settings }: { settings: CodeInjectionMap }) 
   return (
     <form action={formAction} className="space-y-6">
       <Card className="border-destructive/30 bg-destructive/5 p-5 text-sm leading-6 text-destructive">
-        代码注入是仅限 OWNER 的高级功能。注入的 HTML、CSS 和 JS 可能带来 XSS 风险或破坏统计。
+        代码注入是仅限 Administer 的高级功能。注入的 HTML、CSS 和 JS 可能带来 XSS 风险或破坏统计。
         头部片段会在 hydration 后由客户端插入，底部/自定义 HTML 会被隔离在法律页脚上方。
       </Card>
       {codeInjectionDefinitions.map((definition) => (

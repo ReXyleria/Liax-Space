@@ -1,32 +1,114 @@
 import "server-only";
 
 import { randomBytes } from "crypto";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile, unlink } from "fs/promises";
 import path from "path";
-import { PrismaClient, UserRole } from "@prisma/client";
+import bcrypt from "bcryptjs";
+import { UserRole, UserStatus, SettingType } from "@prisma/client";
 import { z } from "zod";
-import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
+import {
+  db,
+  describeDatabaseError,
+  getDatabaseConfigDiagnostics,
+  getDatabaseLogDetails,
+  getDatabaseTableReadiness,
+  isDatabaseConfigured
+} from "@/lib/db";
 
 const storageRoot = process.env.APP_STORAGE_DIR || path.join(process.cwd(), "storage");
 const configDir = process.env.SETUP_CONFIG_DIR || path.join(storageRoot, "config");
-const runtimeEnvPath = path.join(configDir, "runtime.env");
 const setupStatusPath = path.join(configDir, "setup-status.json");
 const setupTokenPath = path.join(configDir, "setup-token");
+const installLockPath = path.join(configDir, "install.lock");
+
+const allPermissionKeys = [
+  "articles.manage",
+  "comments.manage",
+  "moments.manage",
+  "tags.manage",
+  "users.manage",
+  "identities.manage",
+  "settings.manage",
+  "mailTemplates.manage",
+  "codeInjection.manage",
+  "backupRestore.manage",
+  "analytics.view"
+];
+
+const defaultRolePermissions: Record<string, string[]> = {
+  USER: [],
+  SVIP: [],
+  SSVIP: [],
+  Administer: allPermissionKeys
+};
+
+const setupRequiredTables = ["SystemInstallation", "User", "Setting", "Identity"];
+
+const publicIdentityTiers = [
+  { key: "user", name: "user", description: "Default reader identity.", builtInRole: UserRole.USER },
+  { key: "svip", name: "svip", description: "Standard VIP reader identity.", builtInRole: UserRole.SVIP },
+  { key: "ssvip", name: "ssvip", description: "Top visible reader identity.", builtInRole: UserRole.SSVIP }
+];
+
+const defaultSettings: [string, string, string, SettingType][] = [
+  ["site.title", "Liax-Space", "basic", SettingType.TEXT],
+  ["site.subtitle", "Notes on code and life.", "basic", SettingType.TEXT],
+  ["site.url", "http://localhost:3000", "basic", SettingType.TEXT],
+  ["site.logo", "", "basic", SettingType.IMAGE],
+  ["theme.primary", "#7187f3", "theme", SettingType.TEXT],
+  ["theme.accent", "#c8a2ff", "theme", SettingType.TEXT],
+  ["appearance.backgroundImage", "", "appearance", SettingType.IMAGE],
+  ["appearance.backgroundOverlayOpacity", "30", "appearance", SettingType.NUMBER],
+  ["appearance.backgroundBlur", "14", "appearance", SettingType.NUMBER],
+  ["site.defaultLanguage", "zh-CN", "basic", SettingType.TEXT],
+  ["site.defaultFont", "HarmonyOS Sans", "basic", SettingType.TEXT],
+  ["home.heroLine", "A personal notebook built for thoughtful writing.", "home", SettingType.TEXTAREA],
+  ["home.cover", "", "home", SettingType.IMAGE],
+  ["home.randomBackground", "true", "home", SettingType.BOOLEAN],
+  ["home.randomBackgroundUrl", "https://photo.toliax.com/random", "home", SettingType.TEXT],
+  ["record.icp", "", "record", SettingType.TEXT],
+  ["record.icpUrl", "https://beian.miit.gov.cn/", "record", SettingType.TEXT],
+  ["record.police", "", "record", SettingType.TEXT],
+  ["record.policeUrl", "https://www.beian.gov.cn/portal/registerSystemInfo", "record", SettingType.TEXT],
+  ["footer.copyright", "© Liax-Space", "footer", SettingType.TEXT],
+  ["contact.email", "", "contact", SettingType.TEXT],
+  ["contact.github", "", "contact", SettingType.TEXT],
+  ["contact.bilibili", "", "contact", SettingType.TEXT],
+  ["contact.x", "", "contact", SettingType.TEXT],
+  ["contact.qq", "", "contact", SettingType.TEXT],
+  ["contact.wechatQr", "", "contact", SettingType.IMAGE],
+  ["smtp.host", "", "smtp", SettingType.TEXT],
+  ["smtp.port", "587", "smtp", SettingType.NUMBER],
+  ["smtp.user", "", "smtp", SettingType.TEXT],
+  ["smtp.pass", "", "smtp", SettingType.PASSWORD],
+  ["smtp.from", "", "smtp", SettingType.TEXT],
+  ["smtp.notificationsEnabled", "true", "smtp", SettingType.BOOLEAN],
+  ["register.enabled", "true", "register", SettingType.BOOLEAN],
+  ["register.defaultRole", "USER", "identity", SettingType.TEXT],
+  ["comments.requireApproval", "true", "comments", SettingType.BOOLEAN],
+  ["guestbook.requireApproval", "true", "guestbook", SettingType.BOOLEAN],
+  ["translation.enabled", "false", "translation", SettingType.BOOLEAN],
+  ["translation.provider", "custom", "translation", SettingType.TEXT],
+  ["translation.baseUrl", "", "translation", SettingType.TEXT],
+  ["translation.apiKey", "", "translation", SettingType.PASSWORD],
+  ["translation.model", "", "translation", SettingType.TEXT],
+  ["translation.sourceLang", "zh-CN", "translation", SettingType.TEXT],
+  ["translation.targetLang", "en", "translation", SettingType.TEXT],
+  ["translation.timeoutMs", "30000", "translation", SettingType.NUMBER],
+  ["translation.maxRetries", "2", "translation", SettingType.NUMBER],
+  ["translation.autoTranslate", "true", "translation", SettingType.BOOLEAN],
+  ["translation.saveResult", "true", "translation", SettingType.BOOLEAN],
+  ["translation.chunkingEnabled", "true", "translation", SettingType.BOOLEAN],
+  ["translation.maxChunkChars", "3500", "translation", SettingType.NUMBER],
+  ["translation.chunkConcurrency", "2", "translation", SettingType.NUMBER]
+];
 
 const setupSchema = z
   .object({
     setupToken: z.string().trim().min(16, "安装令牌不正确。"),
-    dbHost: z.string().trim().min(1, "请输入数据库主机。").max(255, "数据库主机过长。"),
-    dbPort: z.coerce.number().int().min(1, "端口无效。").max(65535, "端口无效。"),
-    dbName: z
-      .string()
-      .trim()
-      .min(1, "请输入数据库名。")
-      .max(80, "数据库名过长。")
-      .regex(/^[a-zA-Z0-9_-]+$/, "数据库名只能包含字母、数字、下划线或短横线。"),
-    dbUser: z.string().trim().min(1, "请输入数据库用户名。").max(120, "数据库用户名过长。"),
-    dbPassword: z.string().min(1, "请输入数据库密码。"),
     siteUrl: z.string().trim().url("请输入有效的网站域名，例如 https://example.com。"),
+    siteTitle: z.string().trim().min(1, "请输入站点标题。").max(120, "站点标题过长。"),
+    passkeyRpName: z.string().trim().min(1, "请输入 Passkey RP 名称。").max(120, "Passkey RP 名称过长。"),
     ownerEmail: z.string().trim().email("请输入有效的管理员邮箱。"),
     ownerUsername: z
       .string()
@@ -48,7 +130,7 @@ const setupSchema = z
   });
 
 type SetupStatusFile = {
-  state: "pending-restart" | "complete" | "migration-failed";
+  state: "complete" | "migration-failed" | "database-url-missing";
   updatedAt: string;
   siteUrl?: string;
   databaseHost?: string;
@@ -56,13 +138,33 @@ type SetupStatusFile = {
   error?: string;
 };
 
-type RuntimeEnv = Record<string, string>;
+function formatDatabaseTarget() {
+  const diagnostics = getDatabaseConfigDiagnostics();
+  const target = [
+    diagnostics.user ? `user=${diagnostics.user}` : null,
+    diagnostics.host ? `host=${diagnostics.host}` : null,
+    diagnostics.port ? `port=${diagnostics.port}` : null,
+    diagnostics.database ? `database=${diagnostics.database}` : null
+  ].filter(Boolean);
+
+  return target.length ? target.join(", ") : "no database target detected";
+}
+
+function databaseMissingConfigMessage() {
+  const diagnostics = getDatabaseConfigDiagnostics();
+  const missing = diagnostics.missingMysqlEnv.length
+    ? `缺少环境变量：${diagnostics.missingMysqlEnv.join(", ")}。`
+    : "MYSQL_* 已提供但 DATABASE_URL 未生成。";
+
+  return `DATABASE_URL 未配置，数据库无法连接。${missing} 当前目标：${formatDatabaseTarget()}。注意：app 服务也必须传 MYSQL_PASSWORD，不能只给 mysql 服务传。`;
+}
 
 type SetupCheck = {
   completed: boolean;
   databaseConfigured: boolean;
   databaseReachable: boolean;
   hasOwner: boolean;
+  setupTokenDeleted: boolean;
   canInstall: boolean;
   tokenReady: boolean;
   runtimeConfig: {
@@ -71,6 +173,14 @@ type SetupCheck = {
     databaseName?: string;
   };
   status?: SetupStatusFile;
+  error?: string;
+};
+
+type InstallationState = {
+  reachable: boolean;
+  installed: boolean;
+  hasOwner: boolean;
+  setupTokenDeleted: boolean;
   error?: string;
 };
 
@@ -90,58 +200,12 @@ function normalizeSiteUrl(value: string) {
   return url.toString().replace(/\/$/, "");
 }
 
-function buildDatabaseUrl(input: z.infer<typeof setupSchema>) {
-  const user = encodeURIComponent(input.dbUser);
-  const password = encodeURIComponent(input.dbPassword);
-  const database = encodeURIComponent(input.dbName);
-  return `mysql://${user}:${password}@${input.dbHost}:${input.dbPort}/${database}`;
-}
-
 function getRpId(siteUrl: string) {
   try {
     return new URL(siteUrl).hostname || "localhost";
   } catch {
     return "localhost";
   }
-}
-
-function shellQuote(value: string) {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-function serializeRuntimeEnv(values: RuntimeEnv) {
-  return `${Object.entries(values)
-    .map(([key, value]) => `${key}=${shellQuote(value)}`)
-    .join("\n")}\n`;
-}
-
-function parseRuntimeEnv(content: string): RuntimeEnv {
-  const result: RuntimeEnv = {};
-
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const index = trimmed.indexOf("=");
-    if (index <= 0) {
-      continue;
-    }
-
-    const key = trimmed.slice(0, index).trim();
-    let value = trimmed.slice(index + 1).trim();
-
-    if (value.startsWith("'") && value.endsWith("'")) {
-      value = value.slice(1, -1).replace(/'\\''/g, "'");
-    } else if (value.startsWith('"') && value.endsWith('"')) {
-      value = value.slice(1, -1);
-    }
-
-    result[key] = value;
-  }
-
-  return result;
 }
 
 async function ensureConfigDir() {
@@ -153,14 +217,6 @@ async function readJsonFile<T>(filePath: string): Promise<T | null> {
     return JSON.parse(await readFile(filePath, "utf8")) as T;
   } catch {
     return null;
-  }
-}
-
-async function readRuntimeEnv() {
-  try {
-    return parseRuntimeEnv(await readFile(runtimeEnvPath, "utf8"));
-  } catch {
-    return {};
   }
 }
 
@@ -209,93 +265,108 @@ function checkRateLimit(request: Request) {
   }
 }
 
-async function getOwnerState() {
+async function queryInstallationState(): Promise<InstallationState> {
+  const installation = await db.systemInstallation.findUnique({
+    where: { id: "main" }
+  });
+
+  const ownerCount = await db.user.count({ where: { role: UserRole.Administer } });
+
+  return {
+    reachable: true,
+    installed: installation?.installed ?? false,
+    hasOwner: ownerCount > 0,
+    setupTokenDeleted: installation?.setupTokenDeleted ?? false,
+    error: undefined
+  };
+}
+
+async function queryInstallationStateWithDetailedLogging(): Promise<InstallationState> {
+  const timeoutMs = Number(process.env.DATABASE_TIMEOUT_MS || 5000);
+
+  try {
+    const tableReadiness = await getDatabaseTableReadiness(setupRequiredTables);
+    if (!tableReadiness.ready) {
+      console.error("[setup] database schema tables missing", {
+        ...getDatabaseLogDetails(),
+        requiredTables: setupRequiredTables,
+        existingTables: tableReadiness.existing,
+        missingTables: tableReadiness.missing
+      });
+      return {
+        reachable: false,
+        installed: false,
+        hasOwner: false,
+        setupTokenDeleted: false,
+        error: `数据库已连接，但迁移未完成，缺少数据表：${tableReadiness.missing.join(", ")}。请检查容器启动日志中的 Prisma migrate deploy 是否失败，或重新部署包含最新 migrations 的镜像。当前目标：${formatDatabaseTarget()}。`
+      };
+    }
+
+    return await Promise.race([
+      queryInstallationState(),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`Database health check timed out after ${timeoutMs}ms`)), timeoutMs);
+      })
+    ]);
+  } catch (error) {
+    console.error("[setup] database health check failed", getDatabaseLogDetails(error));
+    return {
+      reachable: false,
+      installed: false,
+      hasOwner: false,
+      setupTokenDeleted: false,
+      error: `${describeDatabaseError(error)} 当前目标：${formatDatabaseTarget()}。`
+    };
+  }
+}
+
+async function getInstallationState() {
   if (!isDatabaseConfigured()) {
-    return { reachable: false, hasOwner: false, error: undefined };
+    const error = databaseMissingConfigMessage();
+    console.error("[setup] database config missing", getDatabaseLogDetails());
+    return { reachable: false, installed: false, hasOwner: false, setupTokenDeleted: false, error };
   }
 
-  const result = await withDatabase<{ reachable: boolean; hasOwner: boolean; error?: string }>(
-    async () => {
-      const count = await db.user.count({ where: { role: UserRole.OWNER } });
-      return { reachable: true, hasOwner: count > 0, error: undefined };
-    },
-    { reachable: false, hasOwner: false, error: "数据库暂不可用。" }
-  );
-
-  return result;
+  return queryInstallationStateWithDetailedLogging();
 }
 
 export async function getSetupStatus(): Promise<SetupCheck> {
-  const [runtimeEnv, status, token] = await Promise.all([
-    readRuntimeEnv(),
+  const [status, token, installationState] = await Promise.all([
     readJsonFile<SetupStatusFile>(setupStatusPath),
-    getOrCreateSetupToken().then(() => true).catch(() => false)
+    getOrCreateSetupToken().then(() => true).catch(() => false),
+    getInstallationState()
   ]);
-  const ownerState = await getOwnerState();
+
   const databaseConfigured = isDatabaseConfigured();
-  const completed = Boolean(status?.state === "complete" || ownerState.hasOwner);
-  const databaseHost =
-    runtimeEnv.MYSQL_HOST ||
-    (runtimeEnv.DATABASE_URL ? safeDatabaseHost(runtimeEnv.DATABASE_URL) : process.env.MYSQL_HOST || undefined);
-  const databaseName =
-    runtimeEnv.MYSQL_DATABASE ||
-    (runtimeEnv.DATABASE_URL ? safeDatabaseName(runtimeEnv.DATABASE_URL) : process.env.MYSQL_DATABASE || undefined);
-  const siteUrl = runtimeEnv.SITE_URL || process.env.SITE_URL || undefined;
+  const completed = installationState.installed || installationState.hasOwner;
 
   return {
     completed,
     databaseConfigured,
-    databaseReachable: ownerState.reachable,
-    hasOwner: ownerState.hasOwner,
-    canInstall: !completed || !ownerState.reachable || status?.state === "migration-failed",
+    databaseReachable: installationState.reachable,
+    hasOwner: installationState.hasOwner,
+    setupTokenDeleted: installationState.setupTokenDeleted,
+    canInstall: !completed || !installationState.reachable || status?.state === "migration-failed",
     tokenReady: token,
     runtimeConfig: {
-      siteUrl,
-      databaseHost,
-      databaseName
+      siteUrl: process.env.SITE_URL || undefined,
+      databaseHost: process.env.MYSQL_HOST || undefined,
+      databaseName: process.env.MYSQL_DATABASE || undefined
     },
     status: status ?? undefined,
-    error: status?.error || ownerState.error
+    error: status?.error || installationState.error
   };
 }
 
-function safeDatabaseHost(databaseUrl: string) {
-  try {
-    return new URL(databaseUrl).hostname;
-  } catch {
-    return undefined;
-  }
-}
-
-function safeDatabaseName(databaseUrl: string) {
-  try {
-    return new URL(databaseUrl).pathname.replace(/^\//, "") || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 async function assertSetupAllowed() {
-  const status = await getSetupStatus();
-  if (status.completed && status.databaseReachable && status.hasOwner) {
+  const installationState = await getInstallationState();
+
+  if (installationState.installed || installationState.hasOwner) {
     throw new Error("系统已经完成安装，不能再次修改启动配置。");
   }
-}
 
-async function testDatabaseConnection(databaseUrl: string) {
-  const prisma = new PrismaClient({
-    datasources: {
-      db: {
-        url: databaseUrl
-      }
-    },
-    log: ["error"]
-  });
-
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-  } finally {
-    await prisma.$disconnect();
+  if (!installationState.reachable) {
+    throw new Error(installationState.error || "数据库不可用，请检查数据库连接配置。");
   }
 }
 
@@ -328,59 +399,156 @@ export async function submitSetup(input: unknown, request: Request) {
     };
   }
 
-  const siteUrl = normalizeSiteUrl(parsed.data.siteUrl);
-  const databaseUrl = buildDatabaseUrl(parsed.data);
-
-  try {
-    await testDatabaseConnection(databaseUrl);
-  } catch {
+  if (!isDatabaseConfigured()) {
     return {
       ok: false,
-      message: "数据库连接失败。请确认主机、端口、数据库名、用户名和密码正确，且数据库已经创建。"
+      message: "数据库未配置。请通过 MYSQL_* 环境变量或 DATABASE_URL 提供数据库连接信息。"
     };
   }
 
-  await ensureConfigDir();
-  const runtimeEnv: RuntimeEnv = {
-    DATABASE_URL: databaseUrl,
-    MYSQL_HOST: parsed.data.dbHost,
-    MYSQL_PORT: String(parsed.data.dbPort),
-    MYSQL_DATABASE: parsed.data.dbName,
-    MYSQL_USER: parsed.data.dbUser,
-    SITE_URL: siteUrl,
-    OWNER_EMAIL: parsed.data.ownerEmail.toLowerCase(),
-    OWNER_USERNAME: parsed.data.ownerUsername,
-    OWNER_PASSWORD: parsed.data.ownerPassword,
-    OWNER_NICKNAME: parsed.data.ownerNickname,
-    PASSKEY_RP_ID: getRpId(siteUrl),
-    PASSKEY_ORIGIN: siteUrl,
-    PASSKEY_RP_NAME: "Liax-Space",
-    SETUP_PENDING_RESTART: "true",
-    RUN_BOOTSTRAP: "true"
-  };
+  const siteUrl = normalizeSiteUrl(parsed.data.siteUrl);
+  const passwordHash = await bcrypt.hash(parsed.data.ownerPassword, 12);
 
-  await writeFile(runtimeEnvPath, serializeRuntimeEnv(runtimeEnv), { mode: 0o600 });
-  await writeSetupStatus({
-    state: "pending-restart",
-    updatedAt: new Date().toISOString(),
-    siteUrl,
-    databaseHost: parsed.data.dbHost,
-    databaseName: parsed.data.dbName
-  });
+  try {
+    await db.$transaction(async (tx) => {
+      // Create Administer user
+      await tx.user.create({
+        data: {
+          email: parsed.data.ownerEmail.toLowerCase(),
+          username: parsed.data.ownerUsername,
+          nickname: parsed.data.ownerNickname,
+          passwordHash,
+          role: UserRole.Administer,
+          status: UserStatus.ACTIVE,
+          emailVerified: true
+        }
+      });
 
-  const shouldRestart = process.env.NODE_ENV === "production" || process.env.SETUP_RESTART_ON_SAVE === "true";
-  if (shouldRestart && process.env.SETUP_DISABLE_RESTART !== "true") {
-    setTimeout(() => {
-      console.warn("[setup] Runtime configuration saved. Exiting so the container can restart with the new config.");
-      process.exit(0);
-    }, 500);
+      // Write site settings
+      const siteSettings: [string, string, SettingType][] = [
+        ["site.url", siteUrl, SettingType.TEXT],
+        ["site.title", parsed.data.siteTitle, SettingType.TEXT],
+        ["passkey.rpId", getRpId(siteUrl), SettingType.TEXT],
+        ["passkey.origin", siteUrl, SettingType.TEXT],
+        ["passkey.rpName", parsed.data.passkeyRpName, SettingType.TEXT]
+      ];
+
+      for (const [key, value, type] of siteSettings) {
+        await tx.setting.upsert({
+          where: { key },
+          update: { value, type },
+          create: { key, value, type, group: key.split(".")[0] }
+        });
+      }
+
+      // Write all default settings (skip ones we already wrote)
+      const writtenKeys = new Set(siteSettings.map(([k]) => k));
+      for (const [key, defaultValue, group, type] of defaultSettings) {
+        if (writtenKeys.has(key)) continue;
+        await tx.setting.upsert({
+          where: { key },
+          update: {},
+          create: { key, value: String(defaultValue), group, type }
+        });
+      }
+
+      // Create identity tiers
+      for (const identity of publicIdentityTiers) {
+        await tx.identity.upsert({
+          where: { key: identity.key },
+          update: {
+            name: identity.name,
+            description: identity.description,
+            builtInRole: identity.builtInRole,
+            permissions: defaultRolePermissions[identity.builtInRole] || []
+          },
+          create: {
+            key: identity.key,
+            name: identity.name,
+            description: identity.description,
+            builtInRole: identity.builtInRole,
+            permissions: defaultRolePermissions[identity.builtInRole] || []
+          }
+        });
+      }
+
+      // Set default identity for registration
+      const userIdentity = await tx.identity.findUnique({ where: { key: "user" }, select: { id: true } });
+      if (userIdentity) {
+        await tx.setting.upsert({
+          where: { key: "register.defaultIdentityId" },
+          update: { value: userIdentity.id, group: "identity", type: SettingType.TEXT },
+          create: { key: "register.defaultIdentityId", value: userIdentity.id, group: "identity", type: SettingType.TEXT }
+        });
+      }
+
+      // Mark installation as complete in database
+      await tx.systemInstallation.upsert({
+        where: { id: "main" },
+        update: {
+          installed: true,
+          installedAt: new Date()
+        },
+        create: {
+          id: "main",
+          installed: true,
+          installedAt: new Date()
+        }
+      });
+    });
+  } catch (error) {
+    console.error("[setup] Failed to initialize system", error);
+    await writeSetupStatus({
+      state: "migration-failed",
+      updatedAt: new Date().toISOString(),
+      siteUrl,
+      databaseHost: process.env.MYSQL_HOST || undefined,
+      databaseName: process.env.MYSQL_DATABASE || undefined,
+      error: error instanceof Error ? error.message : "System initialization failed."
+    });
+    return {
+      ok: false,
+      message: "系统初始化失败，请检查日志。"
+    };
   }
+
+  // Write install.lock (backward compatibility)
+  await ensureConfigDir();
+  await writeFile(installLockPath, new Date().toISOString(), { mode: 0o600 });
+
+  // Delete setup token and mark in database
+  try {
+    await unlink(setupTokenPath);
+  } catch {
+    // Token file may not exist if token was provided via env var
+  }
+
+  // Mark token as deleted in database
+  try {
+    await db.systemInstallation.upsert({
+      where: { id: "main" },
+      update: { setupTokenDeleted: true },
+      create: { id: "main", installed: true, installedAt: new Date(), setupTokenDeleted: true }
+    });
+  } catch {
+    // Non-critical, token file deletion already attempted
+  }
+
+  // Clear setup mode so middleware stops redirecting
+  process.env.SETUP_REQUIRED = "false";
+  delete process.env.SETUP_TOKEN;
+
+  // Write status
+  await writeSetupStatus({
+    state: "complete",
+    updatedAt: new Date().toISOString(),
+    siteUrl
+  });
 
   return {
     ok: true,
-    message: shouldRestart
-      ? "配置已保存，服务正在重启并执行数据库迁移。请稍后刷新页面。"
-      : "配置已保存。当前为开发模式，请手动重启服务以加载新配置。",
-    restart: shouldRestart
+    message: "系统安装完成！请刷新页面进入站点。",
+    restart: false,
+    redirectTo: "/login?callbackUrl=/admin"
   };
 }

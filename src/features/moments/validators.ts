@@ -6,7 +6,9 @@ export const momentMutationSchema = z.object({
   content: z.string().trim().min(1, "瞬间内容不能为空。").max(1000, "瞬间内容不能超过 1000 个字符。"),
   images: z.array(z.string().url("图片地址格式不正确。")).max(9, "最多上传 9 张图片。").default([]),
   visibility: z.nativeEnum(ContentVisibility).default(ContentVisibility.PUBLIC),
-  pinned: z.boolean().default(false)
+  pinned: z.boolean().default(false),
+  createdAt: z.string().datetime({ offset: true }).optional().nullable()
+    .transform((value) => value ? new Date(value) : undefined)
 });
 
 export const momentCommentSchema = z.object({

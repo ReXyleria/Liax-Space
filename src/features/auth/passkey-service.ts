@@ -18,11 +18,31 @@ import { sendTemplatedMail } from "@/lib/mail";
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
-function getPasskeyConfig() {
-  const origin = process.env.PASSKEY_ORIGIN || "http://localhost:3000";
+async function getPasskeyConfig() {
+  let origin = process.env.PASSKEY_ORIGIN || "";
+  let rpID = process.env.PASSKEY_RP_ID || "";
+  let rpName = process.env.PASSKEY_RP_NAME || "";
+
+  if (!origin || !rpID || !rpName) {
+    try {
+      if (isDatabaseConfigured()) {
+        const settings = await db.setting.findMany({
+          where: { key: { in: ["passkey.origin", "passkey.rpId", "passkey.rpName"] } }
+        });
+        const map = Object.fromEntries(settings.map((s) => [s.key, s.value]));
+        origin = origin || map["passkey.origin"] || "";
+        rpID = rpID || map["passkey.rpId"] || "";
+        rpName = rpName || map["passkey.rpName"] || "";
+      }
+    } catch {
+      // DB not available, use env-only fallback
+    }
+  }
+
+  origin = origin || "http://localhost:3000";
   const parsed = new URL(origin);
-  const rpID = process.env.PASSKEY_RP_ID || parsed.hostname || "localhost";
-  const rpName = process.env.PASSKEY_RP_NAME || "Liax-Space";
+  rpID = rpID || parsed.hostname || "localhost";
+  rpName = rpName || "Liax-Space";
 
   if (process.env.NODE_ENV === "production" && !origin.startsWith("https://")) {
     throw new Error("PASSKEY_ORIGIN must be HTTPS in production.");
@@ -121,7 +141,7 @@ export async function generatePasskeyRegistration(user: CurrentUser) {
     throw new Error("DATABASE_URL is not configured.");
   }
 
-  const { rpName, rpID } = getPasskeyConfig();
+  const { rpName, rpID } = await getPasskeyConfig();
   const credentials = await db.passkeyCredential.findMany({
     where: { userId: user.id },
     select: { credentialId: true, transports: true }
@@ -156,7 +176,7 @@ export async function verifyPasskeyRegistration(
     throw new Error("DATABASE_URL is not configured.");
   }
 
-  const { origin, rpID } = getPasskeyConfig();
+  const { origin, rpID } = await getPasskeyConfig();
   const verification = await verifyRegistrationResponse({
     response,
     expectedOrigin: origin,
@@ -206,7 +226,7 @@ export async function generatePasskeyAuthentication(input: { account?: string; u
     }
   }
 
-  const { rpID } = getPasskeyConfig();
+  const { rpID } = await getPasskeyConfig();
   const options = await generateAuthenticationOptions({
     rpID,
     allowCredentials: user
@@ -228,6 +248,7 @@ export async function verifyPasskeyAuthentication(
     deviceName?: string;
     loginIp?: string;
     callbackUrl?: string;
+    cookieSecure?: boolean;
     expectedUserId?: string;
     allowUnboundChallenge?: boolean;
   }
@@ -249,7 +270,7 @@ export async function verifyPasskeyAuthentication(
     throw new Error("Passkey does not match the pending login.");
   }
 
-  const { origin, rpID } = getPasskeyConfig();
+  const { origin, rpID } = await getPasskeyConfig();
   const verification = await verifyAuthenticationResponse({
     response,
     expectedOrigin: origin,
@@ -302,7 +323,7 @@ export async function verifyPasskeyAuthentication(
     })
   ]);
 
-  await createSession(credential.userId, meta?.deviceName);
+  await createSession(credential.userId, meta?.deviceName, { secure: meta?.cookieSecure });
 
   if (isNewDevice) {
     void sendPasskeyLoginNotificationSafely({

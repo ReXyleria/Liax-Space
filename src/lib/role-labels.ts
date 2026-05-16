@@ -1,13 +1,10 @@
 import { UserRole, UserStatus } from "@prisma/client";
 
 export const roleLabels: Record<UserRole, string> = {
-  VISITOR: "visitor",
   USER: "user",
-  FRIEND: "svip",
-  VIP: "ssvip",
-  EDITOR: "Editor",
-  ADMIN: "Admin",
-  OWNER: "Administer"
+  SVIP: "svip",
+  SSVIP: "ssvip",
+  Administer: "Administer"
 };
 
 export const statusLabels: Record<UserStatus, string> = {

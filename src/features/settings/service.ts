@@ -40,7 +40,10 @@ export const settingDefinitions: SettingDefinition[] = [
   { key: "smtp.notificationsEnabled", label: "Enable mail notifications", group: "SMTP", type: SettingType.BOOLEAN, defaultValue: "true" },
   { key: "register.enabled", label: "Allow registration", group: "Registration", type: SettingType.BOOLEAN, defaultValue: "true" },
   { key: "comments.requireApproval", label: "Comments require approval", group: "Comments", type: SettingType.BOOLEAN, defaultValue: "true" },
-  { key: "guestbook.requireApproval", label: "Guestbook requires approval", group: "Guestbook", type: SettingType.BOOLEAN, defaultValue: "true" }
+  { key: "guestbook.requireApproval", label: "Guestbook requires approval", group: "Guestbook", type: SettingType.BOOLEAN, defaultValue: "true" },
+  { key: "passkey.rpId", label: "Passkey RP ID", group: "Passkey", type: SettingType.TEXT, defaultValue: "localhost" },
+  { key: "passkey.origin", label: "Passkey Origin", group: "Passkey", type: SettingType.TEXT, defaultValue: "http://localhost:3000" },
+  { key: "passkey.rpName", label: "Passkey RP Name", group: "Passkey", type: SettingType.TEXT, defaultValue: "Liax-Space" }
 ];
 
 const localizedSettingDefinitions: Record<Locale, Record<string, { label: string; group: string }>> = {
@@ -81,7 +84,10 @@ const localizedSettingDefinitions: Record<Locale, Record<string, { label: string
     "smtp.notificationsEnabled": { label: "启用邮件通知", group: "SMTP" },
     "register.enabled": { label: "允许注册", group: "注册" },
     "comments.requireApproval": { label: "评论需要审核", group: "评论" },
-    "guestbook.requireApproval": { label: "留言需要审核", group: "留言" }
+    "guestbook.requireApproval": { label: "留言需要审核", group: "留言" },
+    "passkey.rpId": { label: "Passkey RP ID", group: "通行密钥" },
+    "passkey.origin": { label: "Passkey Origin", group: "通行密钥" },
+    "passkey.rpName": { label: "Passkey RP 名称", group: "通行密钥" }
   }
 };
 
@@ -101,7 +107,7 @@ const highPrivilegePermissions = new Set([
   "mailTemplates.manage",
   "codeInjection.manage"
 ]);
-const highPrivilegeRoles: UserRole[] = [UserRole.OWNER, UserRole.ADMIN, UserRole.EDITOR];
+const highPrivilegeRoles: UserRole[] = [UserRole.Administer];
 
 function isHighPrivilegeIdentity(identity: { builtInRole: UserRole | null; permissions: unknown }) {
   if (identity.builtInRole && highPrivilegeRoles.includes(identity.builtInRole)) {

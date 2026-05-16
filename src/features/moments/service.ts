@@ -73,7 +73,8 @@ export async function createMoment(user: CurrentUser, input: unknown) {
       images: parsed.images,
       visibility: parsed.visibility,
       pinned: parsed.pinned,
-      authorId: user.id
+      authorId: user.id,
+      ...(parsed.createdAt ? { createdAt: parsed.createdAt } : {})
     }
   });
 }
@@ -103,7 +104,8 @@ export async function updateMoment(user: CurrentUser, input: unknown) {
       content: parsed.content,
       images: parsed.images,
       visibility: parsed.visibility,
-      pinned: parsed.pinned
+      pinned: parsed.pinned,
+      ...(parsed.createdAt ? { createdAt: parsed.createdAt } : {})
     }
   });
 }

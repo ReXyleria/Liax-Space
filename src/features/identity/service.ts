@@ -16,7 +16,7 @@ import {
 function filterPermissionsForActor(actor: CurrentUser, permissions: string[]) {
   const unique = Array.from(new Set(permissions)).filter((key) => allPermissionKeys.includes(key));
 
-  if (actor.role === UserRole.OWNER) {
+  if (actor.role === UserRole.Administer) {
     return unique;
   }
 
@@ -237,7 +237,7 @@ export async function updateIdentity(user: CurrentUser, input: unknown) {
   }
 
   if (!isPublicIdentityKey(target.key)) {
-    throw new Error("站长是隐藏的 OWNER 等级，旧身份不可编辑。")
+    throw new Error("站长是隐藏的 Administer 等级，旧身份不可编辑。")
   }
 
   const permissions = filterPermissionsForActor(user, parsed.permissions);

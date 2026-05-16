@@ -29,18 +29,73 @@ export type CurrentUser = Pick<
   } | null;
 };
 
-function getCookieOptions(expires: Date) {
+type CookieWriteOptions = {
+  secure?: boolean;
+  maxAge?: number;
+};
+
+function readBooleanEnv(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return undefined;
+}
+
+export function shouldUseSecureCookies(request?: Request) {
+  const explicit = readBooleanEnv(process.env.AUTH_COOKIE_SECURE ?? process.env.COOKIE_SECURE);
+  if (explicit !== undefined) {
+    return explicit;
+  }
+
+  const forwardedProto = request?.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  if (forwardedProto === "https") {
+    return true;
+  }
+  if (forwardedProto === "http") {
+    return false;
+  }
+
+  if (request?.url) {
+    try {
+      return new URL(request.url).protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  const configuredUrl = process.env.SITE_URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? process.env.APP_URL;
+  if (configuredUrl) {
+    try {
+      return new URL(configuredUrl).protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function getCookieOptions(expires: Date, options: CookieWriteOptions = {}) {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: options.secure ?? shouldUseSecureCookies(),
     sameSite: "lax" as const,
     path: "/",
     expires,
-    maxAge: SESSION_MAX_AGE_SECONDS
+    maxAge: options.maxAge ?? SESSION_MAX_AGE_SECONDS
   };
 }
 
-export async function createSession(userId: string, deviceName?: string) {
+export async function createSession(userId: string, deviceName?: string, options: CookieWriteOptions = {}) {
   if (!isDatabaseConfigured()) {
     throw new AuthError("Database is not configured.");
   }
@@ -59,10 +114,10 @@ export async function createSession(userId: string, deviceName?: string) {
   });
 
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, token, getCookieOptions(expiresAt));
+  cookieStore.set(SESSION_COOKIE_NAME, token, getCookieOptions(expiresAt, options));
 }
 
-export async function createTrustedDevice(userId: string, deviceName?: string) {
+export async function createTrustedDevice(userId: string, deviceName?: string, options: CookieWriteOptions = {}) {
   if (!isDatabaseConfigured()) {
     throw new AuthError("Database is not configured.");
   }
@@ -86,7 +141,11 @@ export async function createTrustedDevice(userId: string, deviceName?: string) {
   });
 
   const cookieStore = await cookies();
-  cookieStore.set(TRUSTED_DEVICE_COOKIE_NAME, token, getCookieOptions(expiresAt));
+  cookieStore.set(
+    TRUSTED_DEVICE_COOKIE_NAME,
+    token,
+    getCookieOptions(expiresAt, { ...options, maxAge: TRUSTED_DEVICE_MAX_AGE_SECONDS })
+  );
 }
 
 export async function resolveTrustedDevice(userId: string) {

@@ -15,11 +15,7 @@ function getProfileHref(user: Awaited<ReturnType<typeof getCurrentUser>>) {
     return "/login";
   }
 
-  if (user.role === UserRole.EDITOR) {
-    return "/admin/articles";
-  }
-
-  if (user.role === UserRole.ADMIN || user.role === UserRole.OWNER) {
+  if (user.role === UserRole.Administer) {
     return "/admin";
   }
 

@@ -19,10 +19,10 @@ const highPrivilegePermissions = new Set([
   "mailTemplates.manage",
   "codeInjection.manage"
 ]);
-const highPrivilegeRoles: UserRole[] = [UserRole.OWNER, UserRole.ADMIN, UserRole.EDITOR];
+const highPrivilegeRoles: UserRole[] = [UserRole.Administer];
 
 function parsePublicRole(value: string | undefined | null): UserRole {
-  if (value === "FRIEND" || value === "VIP") {
+  if (value === "SVIP" || value === "SSVIP") {
     return value;
   }
 
@@ -150,7 +150,7 @@ export async function clearPendingLogin(token: string) {
 
 async function finalizeLogin(
   user: { id: string; email: string; nickname: string; role: UserRole },
-  meta: { deviceName?: string; loginIp?: string } | undefined,
+  meta: { deviceName?: string; loginIp?: string; cookieSecure?: boolean } | undefined,
   callbackUrl: string | undefined,
   options?: { trustDevice?: boolean }
 ): Promise<AuthResponse> {
@@ -169,10 +169,10 @@ async function finalizeLogin(
     data: { lastLoginAt: new Date() }
   });
 
-  await createSession(user.id, meta?.deviceName);
+  await createSession(user.id, meta?.deviceName, { secure: meta?.cookieSecure });
 
   if (options?.trustDevice) {
-    await createTrustedDevice(user.id, meta?.deviceName);
+    await createTrustedDevice(user.id, meta?.deviceName, { secure: meta?.cookieSecure });
   }
 
   if (isNewDevice) {
@@ -345,7 +345,10 @@ export async function registerUser(input: unknown): Promise<AuthResponse> {
   }
 }
 
-export async function loginUser(input: unknown, meta?: { deviceName?: string; loginIp?: string }): Promise<AuthResponse> {
+export async function loginUser(
+  input: unknown,
+  meta?: { deviceName?: string; loginIp?: string; cookieSecure?: boolean }
+): Promise<AuthResponse> {
   const parsed = loginSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, message: "用户名、邮箱或密码不正确。" };
@@ -406,7 +409,7 @@ export async function loginUser(input: unknown, meta?: { deviceName?: string; lo
 
 export async function verifyLoginSecondFactor(
   input: unknown,
-  meta?: { deviceName?: string; loginIp?: string }
+  meta?: { deviceName?: string; loginIp?: string; cookieSecure?: boolean }
 ): Promise<AuthResponse> {
   const parsed = loginSecondFactorSchema.safeParse(input);
   if (!parsed.success) {

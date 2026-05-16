@@ -64,8 +64,8 @@ const defaultSettings: Array<{
 async function upsertOwner() {
   const ownerEmail = process.env.OWNER_EMAIL || "owner@example.com";
   const ownerPassword = process.env.OWNER_PASSWORD || "change-me-in-env";
-  const ownerNickname = process.env.OWNER_NICKNAME || "Owner";
-  const ownerUsername = process.env.OWNER_USERNAME || ownerEmail.split("@")[0] || "owner";
+  const ownerNickname = process.env.OWNER_NICKNAME || "Administer";
+  const ownerUsername = process.env.OWNER_USERNAME || ownerEmail.split("@")[0] || "Administer";
 
   const existing = await prisma.user.findFirst({
     where: {
@@ -84,7 +84,7 @@ async function upsertOwner() {
         email: ownerEmail,
         username: ownerUsername,
         nickname: ownerNickname,
-        role: UserRole.OWNER,
+        role: UserRole.Administer,
         status: "ACTIVE",
         emailVerified: true
       }
@@ -97,7 +97,7 @@ async function upsertOwner() {
       username: ownerUsername,
       nickname: ownerNickname,
       passwordHash: await hashPassword(ownerPassword),
-      role: UserRole.OWNER,
+      role: UserRole.Administer,
       status: "ACTIVE",
       emailVerified: true
     }

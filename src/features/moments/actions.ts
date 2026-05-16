@@ -22,6 +22,7 @@ function failure(message: string, fieldErrors: Record<string, string[]> = {}): M
 }
 
 function parseMomentPayload(formData: FormData) {
+  const createdAtRaw = formData.get("createdAt");
   return {
     id: String(formData.get("id") ?? "").trim() || undefined,
     content: formData.get("content"),
@@ -30,7 +31,8 @@ function parseMomentPayload(formData: FormData) {
       .map((value) => value.trim())
       .filter(Boolean),
     visibility: formData.get("visibility"),
-    pinned: formData.get("pinned") === "on"
+    pinned: formData.get("pinned") === "on",
+    createdAt: createdAtRaw ? new Date(String(createdAtRaw)).toISOString() : undefined
   };
 }
 

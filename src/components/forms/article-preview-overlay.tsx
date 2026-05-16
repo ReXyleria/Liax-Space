@@ -19,6 +19,7 @@ export type ArticlePreviewDraft = {
   tagNames: string;
   seoTitle: string;
   seoDescription: string;
+  publishedAt: string;
   allowComments: boolean;
   pinned: boolean;
   featured: boolean;

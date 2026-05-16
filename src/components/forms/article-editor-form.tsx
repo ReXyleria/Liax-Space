@@ -49,6 +49,7 @@ type ArticleFormValue = {
   featured: boolean;
   seoTitle: string | null;
   seoDescription: string | null;
+  publishedAt: string | null;
   tags: Array<{ name: string }>;
   allowedIdentities: Array<{ id: string; name: string; key: string }>;
 };
@@ -101,7 +102,7 @@ function labels(locale: Locale) {
         allowedIdentityLabel: "Allowed viewer identities",
         allowedIdentityPlaceholder:
           "If selected, access is limited to these identities in addition to the visibility rule above.",
-        allowedIdentityHint: "OWNER can always view.",
+        allowedIdentityHint: "Administer can always view.",
         tagsLabel: "Tags",
         tagsPlaceholder: "Choose or create tags",
         seoTitleLabel: "SEO title",
@@ -109,6 +110,8 @@ function labels(locale: Locale) {
         allowCommentsLabel: "Allow comments",
         pinnedLabel: "Pinned",
         featuredLabel: "Featured",
+        publishedAtLabel: "Publish date",
+        publishedAtHint: "For importing old articles, set the original publish date.",
         versionHistoryDescription:
           "Load and review historical versions on demand. Restoring writes back to the current article.",
         loading: "Loading...",
@@ -150,7 +153,7 @@ function labels(locale: Locale) {
         visibilityLabel: "可见性",
         allowedIdentityLabel: "允许观看的身份",
         allowedIdentityPlaceholder: "选择后会在上方可见性规则之外，额外限制为这些身份可查看。",
-        allowedIdentityHint: "OWNER 始终可以查看。",
+        allowedIdentityHint: "Administer 始终可以查看。",
         tagsLabel: "标签",
         tagsPlaceholder: "选择或新建标签",
         seoTitleLabel: "SEO 标题",
@@ -158,6 +161,8 @@ function labels(locale: Locale) {
         allowCommentsLabel: "允许评论",
         pinnedLabel: "置顶",
         featuredLabel: "精选",
+        publishedAtLabel: "发布时间",
+        publishedAtHint: "导入旧文章时可手动设置原始发布时间。",
         versionHistoryDescription: "按需加载并查看文章历史版本。恢复会写回当前文章。",
         loading: "加载中...",
         restoreVersion: "恢复",
@@ -186,22 +191,18 @@ function visibilityOptions(locale: Locale) {
     return [
       { value: ContentVisibility.PUBLIC, label: "Public" },
       { value: ContentVisibility.LOGIN_REQUIRED, label: "Login required" },
-      { value: ContentVisibility.FRIEND_ONLY, label: "Friends only" },
-      { value: ContentVisibility.VIP_ONLY, label: "VIP only" },
-      { value: ContentVisibility.EDITOR_ONLY, label: "Editor only" },
-      { value: ContentVisibility.ADMIN_ONLY, label: "Admin only" },
-      { value: ContentVisibility.OWNER_ONLY, label: "Owner only" }
+      { value: ContentVisibility.SVIP_ONLY, label: "SVIP only" },
+      { value: ContentVisibility.SSVIP_ONLY, label: "SSVIP only" },
+      { value: ContentVisibility.Administer_ONLY, label: "Administer only" }
     ];
   }
 
   return [
     { value: ContentVisibility.PUBLIC, label: "公开" },
     { value: ContentVisibility.LOGIN_REQUIRED, label: "登录可见" },
-    { value: ContentVisibility.FRIEND_ONLY, label: "好友可见" },
-    { value: ContentVisibility.VIP_ONLY, label: "VIP 可见" },
-    { value: ContentVisibility.EDITOR_ONLY, label: "编辑可见" },
-    { value: ContentVisibility.ADMIN_ONLY, label: "管理员可见" },
-    { value: ContentVisibility.OWNER_ONLY, label: "站主可见" }
+    { value: ContentVisibility.SVIP_ONLY, label: "SVIP 可见" },
+    { value: ContentVisibility.SSVIP_ONLY, label: "SSVIP 可见" },
+    { value: ContentVisibility.Administer_ONLY, label: "站主可见" }
   ];
 }
 
@@ -253,6 +254,9 @@ export function ArticleEditorForm({
   const [slug, setSlug] = useState(article?.slug ?? "");
   const [status, setStatus] = useState<string>(article?.status ?? ArticleStatus.DRAFT);
   const [visibility, setVisibility] = useState<string>(article?.visibility ?? ContentVisibility.PUBLIC);
+  const [publishedAt, setPublishedAt] = useState<string>(
+    article?.publishedAt ? new Date(article.publishedAt).toISOString().slice(0, 16) : ""
+  );
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState<PreviewMode>("desktop");
   const [previewDraft, setPreviewDraft] = useState<ArticleDraft | null>(null);
@@ -315,6 +319,7 @@ export function ArticleEditorForm({
       tagNames: selectedTags.join(", "),
       seoTitle: String(formData.get("seoTitle") ?? ""),
       seoDescription: String(formData.get("seoDescription") ?? ""),
+      publishedAt: String(formData.get("publishedAt") ?? ""),
       allowComments: formData.get("allowComments") === "on",
       pinned: formData.get("pinned") === "on",
       featured: formData.get("featured") === "on",
@@ -410,6 +415,7 @@ export function ArticleEditorForm({
       tagNames: version.tagNames.join(", "),
       seoTitle: "",
       seoDescription: "",
+      publishedAt: version.createdAt,
       allowComments: true,
       pinned: false,
       featured: false,
@@ -507,6 +513,7 @@ export function ArticleEditorForm({
         onChange={scheduleDraftSave}
       >
         <input type="hidden" name="status" value={status} readOnly />
+        <input type="hidden" name="publishedAt" value={publishedAt} readOnly />
         <input ref={returnToListRef} type="hidden" name="returnToList" defaultValue="0" />
         <div className="space-y-6">
           {warnings.length ? (
@@ -703,6 +710,20 @@ export function ArticleEditorForm({
             <FieldError messages={state.fieldErrors.seoTitle} />
             <Textarea name="seoDescription" placeholder={text.seoDescriptionLabel} defaultValue={article?.seoDescription ?? ""} />
             <FieldError messages={state.fieldErrors.seoDescription} />
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">{text.publishedAtLabel}</span>
+              <Input
+                name="publishedAt"
+                type="datetime-local"
+                value={publishedAt}
+                onChange={(event) => {
+                  setPublishedAt(event.target.value);
+                  scheduleDraftSave();
+                }}
+              />
+              <p className="text-xs text-muted-foreground">{text.publishedAtHint}</p>
+              <FieldError messages={state.fieldErrors.publishedAt} />
+            </label>
             <div className="grid gap-3 md:grid-cols-3">
               <ThemedCheckbox
                 name="allowComments"

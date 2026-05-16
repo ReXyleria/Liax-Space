@@ -23,14 +23,14 @@ export const publicIdentityTiers: PublicIdentityTier[] = [
     key: "svip",
     name: "SVIP",
     description: "标准 VIP 读者身份。",
-    builtInRole: UserRole.FRIEND,
+    builtInRole: UserRole.SVIP,
     rank: 2
   },
   {
     key: "ssvip",
     name: "SSVIP",
     description: "最高可见读者身份。",
-    builtInRole: UserRole.VIP,
+    builtInRole: UserRole.SSVIP,
     rank: 3
   }
 ];
@@ -48,16 +48,16 @@ export function getPublicIdentityTierByKey(key: string | null | undefined) {
 }
 
 export function getPublicIdentityTierByRole(role: UserRole | null | undefined) {
-  if (role === UserRole.VIP) {
+  if (role === UserRole.SSVIP) {
     return getPublicIdentityTierByKey("ssvip");
   }
-  if (role === UserRole.FRIEND) {
+  if (role === UserRole.SVIP) {
     return getPublicIdentityTierByKey("svip");
   }
-  if (role === UserRole.USER || role === UserRole.VISITOR) {
+  if (role === UserRole.USER) {
     return getPublicIdentityTierByKey("user");
   }
-  if (role === UserRole.EDITOR || role === UserRole.ADMIN) {
+  if (role === UserRole.Administer) {
     return getPublicIdentityTierByKey("ssvip");
   }
   return null;

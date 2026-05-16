@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 function isInternalNavigation(target: EventTarget | null) {
   const element = target instanceof Element ? target.closest("a") : null;
@@ -24,6 +24,8 @@ function isInternalNavigation(target: EventTarget | null) {
 export function RouteTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [navigating, setNavigating] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "exit" | "enter">("idle");
+  const prevPathname = useRef(pathname);
   const isAdmin = pathname.startsWith("/admin");
 
   useEffect(() => {
@@ -34,6 +36,7 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
 
       if (isInternalNavigation(event.target)) {
         setNavigating(true);
+        setPhase("exit");
       }
     };
 
@@ -42,34 +45,54 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setNavigating(false), 240);
-    return () => window.clearTimeout(timeout);
-  }, [pathname]);
+    if (navigating) {
+      prevPathname.current = pathname;
+      const enterTimer = window.setTimeout(() => {
+        setPhase("enter");
+      }, 200);
+      const doneTimer = window.setTimeout(() => {
+        setNavigating(false);
+        setPhase("idle");
+      }, 600);
+      return () => {
+        window.clearTimeout(enterTimer);
+        window.clearTimeout(doneTimer);
+      };
+    }
+  }, [pathname, navigating]);
 
   return (
     <>
+      {/* Top progress bar - subtle, elegant */}
       <div
         aria-hidden="true"
-        className="fixed left-0 top-0 z-[70] h-0.5 w-full origin-left bg-gradient-to-r from-primary via-accent to-primary transition-all duration-300 ease-out"
+        className="fixed left-0 top-0 z-[70] h-[2px] w-full origin-left bg-gradient-to-r from-primary/80 via-accent to-primary/80"
         style={{
           opacity: navigating ? 1 : 0,
-          transform: navigating ? "scaleX(1)" : "scaleX(0)"
+          transform: navigating ? "scaleX(1)" : "scaleX(0)",
+          transition: navigating
+            ? "transform 1.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms ease-out"
+            : "transform 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-in"
         }}
       />
+
+      {/* Subtle page dim overlay */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-[55] bg-background/35 backdrop-blur-sm transition-opacity duration-200 motion-reduce:hidden"
-        style={{ opacity: navigating ? (isAdmin ? 0.08 : 0.12) : 0 }}
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-y-0 left-0 z-[56] w-1/3 bg-gradient-to-r from-primary/14 via-accent/10 to-transparent blur-2xl transition-transform duration-500 ease-out motion-reduce:hidden"
+        className="pointer-events-none fixed inset-0 z-[55] bg-background/20 backdrop-blur-[2px] motion-reduce:hidden"
         style={{
-          transform: navigating ? "translateX(260%) skewX(-10deg)" : "translateX(-120%) skewX(-10deg)",
-          opacity: navigating ? 1 : 0
+          opacity: phase === "exit" ? 1 : 0,
+          transition: "opacity 350ms cubic-bezier(0.4, 0, 0.2, 1)"
         }}
       />
-      <div key={pathname} className={isAdmin ? "route-transition-admin" : "route-transition-public"}>
+
+      {/* Page content with smooth crossfade */}
+      <div
+        key={pathname}
+        className={
+          isAdmin ? "route-transition-admin" : "route-transition-public"
+        }
+      >
         {children}
       </div>
     </>

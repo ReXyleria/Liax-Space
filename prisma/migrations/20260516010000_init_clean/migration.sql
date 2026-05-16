@@ -6,7 +6,7 @@ CREATE TABLE `User` (
     `passwordHash` VARCHAR(191) NOT NULL,
     `nickname` VARCHAR(191) NOT NULL,
     `avatar` VARCHAR(191) NULL,
-    `role` ENUM('VISITOR', 'USER', 'FRIEND', 'VIP', 'EDITOR', 'ADMIN', 'OWNER') NOT NULL DEFAULT 'USER',
+    `role` ENUM('USER', 'SVIP', 'SSVIP', 'Administer') NOT NULL DEFAULT 'USER',
     `identityId` VARCHAR(191) NULL,
     `status` ENUM('ACTIVE', 'DISABLED') NOT NULL DEFAULT 'ACTIVE',
     `emailVerified` BOOLEAN NOT NULL DEFAULT false,
@@ -33,7 +33,7 @@ CREATE TABLE `Identity` (
     `name` VARCHAR(191) NOT NULL,
     `description` TEXT NULL,
     `permissions` JSON NOT NULL,
-    `builtInRole` ENUM('VISITOR', 'USER', 'FRIEND', 'VIP', 'EDITOR', 'ADMIN', 'OWNER') NULL,
+    `builtInRole` ENUM('USER', 'SVIP', 'SSVIP', 'Administer') NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -162,7 +162,7 @@ CREATE TABLE `Article` (
     `contentJson` JSON NOT NULL,
     `contentHtml` LONGTEXT NOT NULL,
     `status` ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') NOT NULL DEFAULT 'DRAFT',
-    `visibility` ENUM('PUBLIC', 'LOGIN_REQUIRED', 'FRIEND_ONLY', 'VIP_ONLY', 'EDITOR_ONLY', 'ADMIN_ONLY', 'OWNER_ONLY') NOT NULL DEFAULT 'PUBLIC',
+    `visibility` ENUM('PUBLIC', 'LOGIN_REQUIRED', 'SVIP_ONLY', 'SSVIP_ONLY', 'Administer_ONLY') NOT NULL DEFAULT 'PUBLIC',
     `allowComments` BOOLEAN NOT NULL DEFAULT true,
     `pinned` BOOLEAN NOT NULL DEFAULT false,
     `featured` BOOLEAN NOT NULL DEFAULT false,
@@ -243,7 +243,7 @@ CREATE TABLE `ArticleVersion` (
     `contentJson` JSON NOT NULL,
     `contentHtml` LONGTEXT NOT NULL,
     `status` ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') NOT NULL,
-    `visibility` ENUM('PUBLIC', 'LOGIN_REQUIRED', 'FRIEND_ONLY', 'VIP_ONLY', 'EDITOR_ONLY', 'ADMIN_ONLY', 'OWNER_ONLY') NOT NULL,
+    `visibility` ENUM('PUBLIC', 'LOGIN_REQUIRED', 'SVIP_ONLY', 'SSVIP_ONLY', 'Administer_ONLY') NOT NULL,
     `allowComments` BOOLEAN NOT NULL,
     `pinned` BOOLEAN NOT NULL,
     `featured` BOOLEAN NOT NULL,
@@ -294,7 +294,7 @@ CREATE TABLE `Moment` (
     `id` VARCHAR(191) NOT NULL,
     `content` TEXT NOT NULL,
     `images` JSON NOT NULL,
-    `visibility` ENUM('PUBLIC', 'LOGIN_REQUIRED', 'FRIEND_ONLY', 'VIP_ONLY', 'EDITOR_ONLY', 'ADMIN_ONLY', 'OWNER_ONLY') NOT NULL DEFAULT 'PUBLIC',
+    `visibility` ENUM('PUBLIC', 'LOGIN_REQUIRED', 'SVIP_ONLY', 'SSVIP_ONLY', 'Administer_ONLY') NOT NULL DEFAULT 'PUBLIC',
     `pinned` BOOLEAN NOT NULL DEFAULT false,
     `likeCount` INTEGER NOT NULL DEFAULT 0,
     `authorId` VARCHAR(191) NOT NULL,
@@ -464,6 +464,16 @@ CREATE TABLE `BackupRecord` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable
+CREATE TABLE `SystemInstallation` (
+    `id` VARCHAR(191) NOT NULL DEFAULT 'main',
+    `installed` BOOLEAN NOT NULL DEFAULT false,
+    `installedAt` DATETIME(3) NULL,
+    `setupTokenDeleted` BOOLEAN NOT NULL DEFAULT false,
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- AddForeignKey
 ALTER TABLE `User` ADD CONSTRAINT `User_identityId_fkey` FOREIGN KEY (`identityId`) REFERENCES `Identity`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
@@ -544,4 +554,3 @@ ALTER TABLE `MediaAsset` ADD CONSTRAINT `MediaAsset_uploaderId_fkey` FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE `MediaReference` ADD CONSTRAINT `MediaReference_assetId_fkey` FOREIGN KEY (`assetId`) REFERENCES `MediaAsset`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-

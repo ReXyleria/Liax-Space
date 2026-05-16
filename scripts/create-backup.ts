@@ -8,7 +8,7 @@ async function main() {
   }
 
   const owner = await db.user.findFirst({
-    where: { role: UserRole.OWNER },
+    where: { role: UserRole.Administer },
     select: {
       id: true,
       email: true,
@@ -35,7 +35,7 @@ async function main() {
   });
 
   if (!owner) {
-    throw new Error("No OWNER user exists for scheduled backup attribution.");
+    throw new Error("No Administer user exists for scheduled backup attribution.");
   }
 
   const backup = await createBackup(owner, "scheduled-cli");

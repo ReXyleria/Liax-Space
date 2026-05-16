@@ -13,8 +13,8 @@ import {
   updateUserAction,
   type UserActionState
 } from "@/features/users/actions";
-import { statusLabels } from "@/lib/role-labels";
-import { roleLabels } from "@/lib/role-labels";
+import { getPublicIdentityTierByKey } from "@/features/identity/tiers";
+import { roleLabels, statusLabels } from "@/lib/role-labels";
 
 type IdentityOption = {
   id: string;
@@ -84,15 +84,14 @@ export function UserRowForm({
   );
   const formId = `user-settings-${user.id}`;
   const displayIdentity =
-    user.role === UserRole.OWNER
-      ? roleLabels[UserRole.OWNER]
-      : user.identityName === "user"
-        ? "普通读者"
-        : user.identityName === "svip"
-          ? "SVIP"
-          : user.identityName === "ssvip"
-            ? "SSVIP"
-            : user.identityName ?? "默认身份";
+    user.role === UserRole.Administer
+      ? roleLabels[UserRole.Administer]
+      : (() => {
+          const tier = user.identityName
+            ? getPublicIdentityTierByKey(user.identityName)
+            : null;
+          return tier?.name ?? user.identityName ?? "默认身份";
+        })();
 
   useEffect(() => {
     if (saveState.ok) {
@@ -225,8 +224,7 @@ export function UserRowForm({
         <form action={deleteAction} className="space-y-4">
           <input type="hidden" name="id" value={user.id} />
           <div className="rounded-lg border bg-destructive/5 p-4 text-sm text-muted-foreground">
-            此操作会永久删除该用户及其文章、瞬间、评论、会话、安全凭据、可信设备，以及可安全删除的上传媒体。
-          </div>
+            此操作会永久删除该用户及其文章、瞬间、评论、会话、安全凭据、可信设备，以及可安全删除的上传媒体。          </div>
           <ActionMessage state={deleteState} />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setDeleteOpen(false)}>取消</Button>

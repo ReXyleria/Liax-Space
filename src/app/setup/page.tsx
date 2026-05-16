@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { CheckCircle2, Database, KeyRound, ServerCrash } from "lucide-react";
+import { CheckCircle2, Database, KeyRound, ShieldCheck } from "lucide-react";
 import { SetupForm } from "@/components/setup/setup-form";
 import { getSetupStatus } from "@/features/setup/service";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "首次安装 - Liax-Space",
-  description: "配置数据库、站点域名和初始管理员账号。"
+  description: "配置站点域名、管理员账号与 Passkey。"
 };
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
@@ -36,7 +36,7 @@ export default async function SetupPage() {
             </div>
             <h1 className="mt-8 text-3xl font-semibold tracking-tight">首次部署安装</h1>
             <p className="mt-4 text-sm leading-6 text-slate-300">
-              这里会生成容器运行时配置。数据库密码和管理员初始密码只写入服务器挂载卷，不会回显到浏览器。
+              数据库连接信息由 docker-compose 环境变量提供。这里只需配置站点、管理员账号与 Passkey，所有信息写入数据库。
             </p>
             <div className="mt-8 space-y-3 text-sm">
               <div className="flex items-start gap-3">
@@ -44,12 +44,12 @@ export default async function SetupPage() {
                 <p className="text-slate-300">必须输入一次性安装令牌，防止公网抢装。</p>
               </div>
               <div className="flex items-start gap-3">
-                <ServerCrash className="mt-0.5 h-4 w-4 text-sky-300" />
-                <p className="text-slate-300">保存后服务会重启，再执行迁移和 OWNER 初始化。</p>
+                <ShieldCheck className="mt-0.5 h-4 w-4 text-sky-300" />
+                <p className="text-slate-300">管理员密码仅用于生成密码哈希，不会写入任何配置文件。</p>
               </div>
               <div className="flex items-start gap-3">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 text-sky-300" />
-                <p className="text-slate-300">安装完成后本页面会自动关闭写入入口。</p>
+                <p className="text-slate-300">安装完成后 SystemInstallation 表和 Administer 管理员共同保护安装入口。</p>
               </div>
             </div>
           </aside>
@@ -61,14 +61,14 @@ export default async function SetupPage() {
                 ok={status.databaseReachable}
                 label={status.databaseReachable ? "数据库可访问" : "数据库待配置"}
               />
-              <StatusPill ok={status.hasOwner} label={status.hasOwner ? "OWNER 已存在" : "等待创建 OWNER"} />
+              <StatusPill ok={status.hasOwner} label={status.hasOwner ? "Administer 已存在" : "等待创建 Administer"} />
             </div>
 
             {status.completed && status.databaseReachable && status.hasOwner ? (
               <div className="rounded-xl border bg-background/80 p-6">
                 <h2 className="text-xl font-semibold">系统已完成安装</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  已检测到可访问数据库和 OWNER 管理员。为了安全，本页面不再允许修改启动配置。
+                  已检测到 SystemInstallation 和 Administer 管理员。为了安全，本页面不再允许修改启动配置。
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
                   <Link
@@ -94,8 +94,6 @@ export default async function SetupPage() {
                 ) : null}
                 <SetupForm
                   initialSiteUrl={status.runtimeConfig.siteUrl}
-                  initialDatabaseHost={status.runtimeConfig.databaseHost}
-                  initialDatabaseName={status.runtimeConfig.databaseName}
                 />
               </div>
             )}

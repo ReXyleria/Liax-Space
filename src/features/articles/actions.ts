@@ -60,6 +60,7 @@ function parseArticleForm(formData: FormData) {
     featured: parseBoolean(formData.get("featured")),
     seoTitle: formData.get("seoTitle") ?? "",
     seoDescription: formData.get("seoDescription") ?? "",
+    publishedAt: formData.get("publishedAt") ? new Date(String(formData.get("publishedAt"))).toISOString() : null,
     tagNames,
     allowedIdentityIds
   };

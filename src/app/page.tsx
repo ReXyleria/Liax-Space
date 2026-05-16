@@ -15,7 +15,7 @@ export default async function HomePage() {
     getOwnerProfile()
   ]);
 
-  const ownerNickname = ownerProfile?.nickname || settings["site.title"] || (locale === "en" ? "Administer" : "Administer");
+  const ownerNickname = ownerProfile?.nickname || settings["site.title"] || (locale === "en" ? "Administer" : "站主");
   const ownerAvatar = ownerProfile?.avatar || "";
   const contacts = parseContactItems(settings);
 

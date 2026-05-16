@@ -15,13 +15,18 @@ export async function getDashboardStats(user: CurrentUser): Promise<{ stats: Das
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+
     const [
       totalArticles,
       totalUsers,
       totalComments,
       totalGuestbook,
       todayVisits,
-      popularArticles
+      popularArticles,
+      recentArticles,
+      visitLogs
     ] = await Promise.all([
       db.article.count({ where: { deletedAt: null } }),
       db.user.count(),
@@ -33,8 +38,31 @@ export async function getDashboardStats(user: CurrentUser): Promise<{ stats: Das
         orderBy: { viewCount: "desc" },
         take: 5,
         select: { title: true, slug: true, viewCount: true }
+      }),
+      db.article.findMany({
+        where: { status: ArticleStatus.PUBLISHED, deletedAt: null },
+        orderBy: { publishedAt: "desc" },
+        take: 8,
+        select: { id: true, title: true, slug: true, publishedAt: true }
+      }),
+      db.visitLog.findMany({
+        where: { createdAt: { gte: sevenDaysAgo } },
+        select: { createdAt: true }
       })
     ]);
+
+    // Build visit trend (last 7 days)
+    const trendMap = new Map<string, number>();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(sevenDaysAgo);
+      d.setDate(d.getDate() + i);
+      trendMap.set(d.toISOString().slice(0, 10), 0);
+    }
+    for (const log of visitLogs) {
+      const key = log.createdAt.toISOString().slice(0, 10);
+      trendMap.set(key, (trendMap.get(key) ?? 0) + 1);
+    }
+    const visitTrend = Array.from(trendMap.entries()).map(([date, count]) => ({ date, count }));
 
     return {
       stats: {
@@ -43,7 +71,14 @@ export async function getDashboardStats(user: CurrentUser): Promise<{ stats: Das
         totalComments,
         totalGuestbook,
         todayVisits,
-        popularArticles
+        popularArticles,
+        recentArticles: recentArticles.map((a) => ({
+          id: a.id,
+          title: a.title,
+          slug: a.slug,
+          publishedAt: a.publishedAt
+        })),
+        visitTrend
       }
     };
   } catch (error) {

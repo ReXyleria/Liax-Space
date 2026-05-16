@@ -8,13 +8,10 @@ datasource db {
 }
 
 enum UserRole {
-  VISITOR
   USER
-  FRIEND
-  VIP
-  EDITOR
-  ADMIN
-  OWNER
+  SVIP
+  SSVIP
+  Administer
 }
 
 enum UserStatus {
@@ -25,11 +22,9 @@ enum UserStatus {
 enum ContentVisibility {
   PUBLIC
   LOGIN_REQUIRED
-  FRIEND_ONLY
-  VIP_ONLY
-  EDITOR_ONLY
-  ADMIN_ONLY
-  OWNER_ONLY
+  SVIP_ONLY
+  SSVIP_ONLY
+  Administer_ONLY
 }
 
 enum ArticleStatus {
@@ -569,4 +564,11 @@ model BackupRecord {
   @@index([status])
   @@index([createdAt])
   @@index([createdById])
+}
+
+model SystemInstallation {
+  id                String    @id @default("main")
+  installed         Boolean   @default(false)
+  installedAt       DateTime?
+  setupTokenDeleted Boolean   @default(false)
 }

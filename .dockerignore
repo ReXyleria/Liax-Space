@@ -15,6 +15,7 @@ public/uploads
 pet-runs
 *.log
 *.sql
+!prisma/migrations/**/migration.sql
 *.dump
 *.tar.gz
 *.tgz

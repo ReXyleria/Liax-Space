@@ -38,7 +38,7 @@ declare module "@tiptap/core" {
   }
 }
 
-const trailingNodeNames = new Set(["table", "codeBlock", "details"]);
+const trailingNodeNames = new Set(["table", "codeBlock", "details", "blockquote"]);
 
 function parseColWidth(value: string | null) {
   if (!value) {

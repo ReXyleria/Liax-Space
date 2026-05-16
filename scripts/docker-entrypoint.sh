@@ -6,9 +6,9 @@ CONFIG_DIR="${SETUP_CONFIG_DIR:-/app/storage/config}"
 UPLOAD_DIR="${UPLOAD_DIR:-/app/public/uploads}"
 BACKUP_DIR="${BACKUP_DIR:-$STORAGE_DIR/backups}"
 CACHE_DIR="${CACHE_DIR:-$STORAGE_DIR/cache}"
-CONFIG_FILE="$CONFIG_DIR/runtime.env"
 TOKEN_FILE="$CONFIG_DIR/setup-token"
 STATUS_FILE="$CONFIG_DIR/setup-status.json"
+INSTALL_LOCK="$CONFIG_DIR/install.lock"
 PRISMA_BIN="./node_modules/.bin/prisma"
 RUNTIME_USER="nextjs"
 RUNTIME_GROUP="nodejs"
@@ -37,14 +37,6 @@ if ! prepare_runtime_dirs; then
   exit 1
 fi
 
-if [ -f "$CONFIG_FILE" ]; then
-  echo "[setup] Loading runtime config from $CONFIG_FILE"
-  set -a
-  # shellcheck disable=SC1090
-  . "$CONFIG_FILE"
-  set +a
-fi
-
 derive_database_url() {
   if [ -n "${DATABASE_URL:-}" ]; then
     return
@@ -69,23 +61,22 @@ NODE
   echo "[setup] DATABASE_URL derived from MYSQL_* environment variables."
 }
 
-cleanup_sensitive_setup_files() {
-  if [ "${CLEAN_SETUP_FILES:-true}" = "false" ]; then
-    return
-  fi
+log_database_url_requirements() {
+  missing=""
+  [ -z "${MYSQL_HOST:-}" ] && missing="$missing MYSQL_HOST"
+  [ -z "${MYSQL_DATABASE:-}" ] && missing="$missing MYSQL_DATABASE"
+  [ -z "${MYSQL_USER:-}" ] && missing="$missing MYSQL_USER"
+  [ -z "${MYSQL_PASSWORD:-}" ] && missing="$missing MYSQL_PASSWORD"
 
-  if [ -f "$CONFIG_FILE" ] && [ -z "${MYSQL_PASSWORD:-}" ] && [ "${ALLOW_RUNTIME_ENV_CLEANUP_WITHOUT_ENV:-false}" != "true" ]; then
-    echo "[setup] Keeping $CONFIG_FILE because MYSQL_PASSWORD is not available from the environment."
-    echo "[setup] Set MYSQL_PASSWORD for the app service to allow runtime.env cleanup after setup."
-    rm -f "$TOKEN_FILE" "$STATUS_FILE" 2>/dev/null || true
-    return
+  echo "[setup] DATABASE_URL is not configured and could not be derived from MYSQL_*."
+  if [ -n "$missing" ]; then
+    echo "[setup] Missing MYSQL_* variables in the app container:$missing"
+    echo "[setup] Compose reminder: variables set on the mysql service are not visible to the app service."
+    echo "[setup] Add MYSQL_PASSWORD: \${MYSQL_PASSWORD} to services.app.environment or provide DATABASE_URL."
+  else
+    echo "[setup] MYSQL_* variables are present, but DATABASE_URL generation did not complete."
   fi
-
-  rm -f "$CONFIG_FILE" "$TOKEN_FILE" "$STATUS_FILE" 2>/dev/null || true
-  echo "[setup] Cleaned sensitive setup files from $CONFIG_DIR."
 }
-
-derive_database_url
 
 write_status() {
   STATUS_STATE="$1" STATUS_ERROR="${2:-}" STATUS_FILE="$STATUS_FILE" node - <<'NODE'
@@ -105,18 +96,73 @@ fs.writeFileSync(statusFile, JSON.stringify(payload, null, 2) + "\n", { mode: 0o
 NODE
 }
 
+check_installation_exists() {
+  node - <<'NODE'
+const { Prisma, PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
+const databaseName = (() => {
+  try {
+    return decodeURIComponent(new URL(process.env.DATABASE_URL).pathname.replace(/^\//, ""));
+  } catch {
+    return process.env.MYSQL_DATABASE || "";
+  }
+})();
+const requiredTables = ["SystemInstallation", "User"];
+prisma.$queryRaw`
+  SELECT TABLE_NAME AS tableName
+  FROM INFORMATION_SCHEMA.TABLES
+  WHERE TABLE_SCHEMA = ${databaseName}
+    AND TABLE_NAME IN (${Prisma.join(requiredTables)})
+`
+  .then(rows => {
+    const existing = new Set(rows.map(row => row.tableName));
+    if (!requiredTables.every(table => existing.has(table))) {
+      process.exit(1);
+    }
+    return prisma.systemInstallation.findUnique({ where: { id: "main" } });
+  })
+  .then(row => {
+    if (row && row.installed) {
+      process.exit(0);
+    }
+    // Fallback: check for Administer user
+    return prisma.user.count({ where: { role: "Administer" } });
+  })
+  .then(count => {
+    if (typeof count === "number" && count > 0) {
+      process.exit(0);
+    }
+    process.exit(1);
+  })
+  .catch(() => process.exit(1));
+NODE
+}
+
+generate_setup_token() {
+  if [ -n "${SETUP_TOKEN:-}" ]; then
+    return
+  fi
+
+  if [ -f "$TOKEN_FILE" ]; then
+    SETUP_TOKEN="$(cat "$TOKEN_FILE")"
+  else
+    SETUP_TOKEN="$(node -e "process.stdout.write(require('crypto').randomBytes(24).toString('hex'))")"
+    printf "%s\n" "$SETUP_TOKEN" > "$TOKEN_FILE"
+    chmod 600 "$TOKEN_FILE" 2>/dev/null || true
+    echo "[setup] Generated one-time setup token. Read it from $TOKEN_FILE or this log line:"
+    echo "[setup] SETUP_TOKEN=$SETUP_TOKEN"
+  fi
+  export SETUP_TOKEN
+}
+
+derive_database_url
+
 if [ -z "${DATABASE_URL:-}" ]; then
+  log_database_url_requirements
+  write_status "database-url-missing" "DATABASE_URL is not configured and could not be derived from MYSQL_* in the app container."
+
   if [ -z "${SETUP_TOKEN:-}" ]; then
-    if [ -f "$TOKEN_FILE" ]; then
-      SETUP_TOKEN="$(cat "$TOKEN_FILE")"
-    else
-      SETUP_TOKEN="$(node -e "process.stdout.write(require('crypto').randomBytes(24).toString('hex'))")"
-      printf "%s\n" "$SETUP_TOKEN" > "$TOKEN_FILE"
-      chmod 600 "$TOKEN_FILE" 2>/dev/null || true
-      echo "[setup] Generated one-time setup token. Read it from $TOKEN_FILE or this log line:"
-      echo "[setup] SETUP_TOKEN=$SETUP_TOKEN"
-    fi
-    export SETUP_TOKEN
+    generate_setup_token
   fi
 
   echo "[setup] DATABASE_URL is not configured. Starting setup-safe web server."
@@ -142,18 +188,14 @@ if [ "${RUN_SEED:-false}" = "true" ]; then
   fi
 fi
 
-if [ "${RUN_BOOTSTRAP:-true}" != "false" ]; then
-  echo "[setup] Running idempotent setup bootstrap."
-  if node scripts/setup-bootstrap.mjs; then
-    echo "[setup] Bootstrap completed."
-  else
-    echo "[setup] Bootstrap failed. Starting setup-safe web server."
-    write_status "migration-failed" "Database migration succeeded, but OWNER or base settings bootstrap failed. Check OWNER_* configuration."
-    export SETUP_REQUIRED=true
-    exec node server.js
-  fi
+if [ -f "$INSTALL_LOCK" ] || check_installation_exists; then
+  echo "[setup] System is already installed (SystemInstallation record or Administer user found)."
+  rm -f "$TOKEN_FILE" "$STATUS_FILE" 2>/dev/null || true
+  exec node server.js
 fi
 
-cleanup_sensitive_setup_files
-
+generate_setup_token
+echo "[setup] Database migrated but no installation record found. Starting setup wizard."
+echo "[setup] Open /setup and use SETUP_TOKEN from env, $TOKEN_FILE, or the log above."
+export SETUP_REQUIRED=true
 exec node server.js

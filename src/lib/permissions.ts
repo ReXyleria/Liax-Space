@@ -16,13 +16,10 @@ export class PermissionError extends Error {
 }
 
 const roleRank: Record<UserRole, number> = {
-  VISITOR: 0,
-  USER: 1,
-  FRIEND: 2,
-  VIP: 3,
-  EDITOR: 4,
-  ADMIN: 5,
-  OWNER: 6
+  USER: 0,
+  SVIP: 1,
+  SSVIP: 2,
+  Administer: 3
 };
 
 type RoleLike = UserRole | null | undefined;
@@ -33,11 +30,11 @@ type UserLike = (Pick<User, "role"> & {
 }) | null | undefined;
 
 export function getRoleRank(role: RoleLike) {
-  return role ? roleRank[role] : roleRank.VISITOR;
+  return role ? roleRank[role] : roleRank.USER;
 }
 
 export function getUserRole(user: UserLike): UserRole {
-  return user?.role ?? UserRole.VISITOR;
+  return user?.role ?? UserRole.USER;
 }
 
 function parsePermissionSet(value: unknown) {
@@ -60,7 +57,7 @@ function getIdentityPermissionSet(user: UserLike) {
 export function hasPermission(user: UserLike, permissionKey: string, fallbackRole?: UserRole) {
   const role = getUserRole(user);
 
-  if (role === UserRole.OWNER) {
+  if (role === UserRole.Administer) {
     return true;
   }
 
@@ -83,7 +80,7 @@ export function canViewContent(user: UserLike, visibility: ContentVisibility) {
     return true;
   }
 
-  if (role === UserRole.OWNER) {
+  if (role === UserRole.Administer) {
     return true;
   }
 
@@ -91,20 +88,16 @@ export function canViewContent(user: UserLike, visibility: ContentVisibility) {
     return getRoleRank(role) >= getRoleRank(UserRole.USER);
   }
 
-  if (visibility === ContentVisibility.FRIEND_ONLY) {
-    return getRoleRank(role) >= getRoleRank(UserRole.FRIEND);
+  if (visibility === ContentVisibility.SVIP_ONLY) {
+    return getRoleRank(role) >= getRoleRank(UserRole.SVIP);
   }
 
-  if (visibility === ContentVisibility.VIP_ONLY) {
-    return getRoleRank(role) >= getRoleRank(UserRole.VIP);
+  if (visibility === ContentVisibility.SSVIP_ONLY) {
+    return getRoleRank(role) >= getRoleRank(UserRole.SSVIP);
   }
 
-  if (visibility === ContentVisibility.EDITOR_ONLY) {
-    return getRoleRank(role) >= getRoleRank(UserRole.EDITOR);
-  }
-
-  if (visibility === ContentVisibility.ADMIN_ONLY) {
-    return getRoleRank(role) >= getRoleRank(UserRole.ADMIN);
+  if (visibility === ContentVisibility.Administer_ONLY) {
+    return getRoleRank(role) >= getRoleRank(UserRole.Administer);
   }
 
   return false;
@@ -115,47 +108,47 @@ export function canAccessAdmin(user: UserLike) {
 }
 
 export function canManageArticles(user: UserLike) {
-  return hasPermission(user, "articles.manage", UserRole.EDITOR);
+  return hasPermission(user, "articles.manage", UserRole.Administer);
 }
 
 export function canManageMoments(user: UserLike) {
-  return hasPermission(user, "moments.manage", UserRole.EDITOR);
+  return hasPermission(user, "moments.manage", UserRole.Administer);
 }
 
 export function canManageComments(user: UserLike) {
-  return hasPermission(user, "comments.manage", UserRole.ADMIN);
+  return hasPermission(user, "comments.manage", UserRole.Administer);
 }
 
 export function canManageGuestbook(user: UserLike) {
-  return hasPermission(user, "comments.manage", UserRole.ADMIN);
+  return hasPermission(user, "comments.manage", UserRole.Administer);
 }
 
 export function canManageUsers(user: UserLike) {
-  return hasPermission(user, "users.manage", UserRole.ADMIN);
+  return hasPermission(user, "users.manage", UserRole.Administer);
 }
 
 export function canManageIdentities(user: UserLike) {
-  return hasPermission(user, "identities.manage", UserRole.ADMIN);
+  return hasPermission(user, "identities.manage", UserRole.Administer);
 }
 
 export function canManageSettings(user: UserLike) {
-  return hasPermission(user, "settings.manage", UserRole.ADMIN);
+  return hasPermission(user, "settings.manage", UserRole.Administer);
 }
 
 export function canManageCodeInjection(user: UserLike) {
-  return getUserRole(user) === UserRole.OWNER;
+  return getUserRole(user) === UserRole.Administer;
 }
 
 export function canViewAnalytics(user: UserLike) {
-  return hasPermission(user, "analytics.view", UserRole.ADMIN);
+  return hasPermission(user, "analytics.view", UserRole.Administer);
 }
 
 export function canManageMailTemplates(user: UserLike) {
-  return hasPermission(user, "mailTemplates.manage", UserRole.ADMIN);
+  return hasPermission(user, "mailTemplates.manage", UserRole.Administer);
 }
 
 export function canManageBackups(user: UserLike) {
-  return hasPermission(user, "backupRestore.manage", UserRole.ADMIN);
+  return hasPermission(user, "backupRestore.manage", UserRole.Administer);
 }
 
 export function assertPermission(allowed: boolean, message?: string) {

@@ -29,7 +29,7 @@ const defaultRolePermissions = {
   VIP: [],
   EDITOR: ["articles.manage", "moments.manage", "tags.manage"],
   ADMIN: allPermissionKeys.filter((key) => key !== "codeInjection.manage"),
-  OWNER: allPermissionKeys
+  Administer: allPermissionKeys
 };
 
 const publicIdentityTiers = [
@@ -113,7 +113,7 @@ async function writeStatus(state, error) {
 
 async function ensureOwner() {
   const ownerEmail = process.env.OWNER_EMAIL?.trim().toLowerCase();
-  const ownerUsername = process.env.OWNER_USERNAME?.trim() || ownerEmail?.split("@")[0] || "owner";
+  const ownerUsername = process.env.OWNER_USERNAME?.trim() || ownerEmail?.split("@")[0] || "Administer";
   const ownerNickname = process.env.OWNER_NICKNAME?.trim() || "站主";
 
   if (!ownerEmail) {
@@ -121,7 +121,7 @@ async function ensureOwner() {
   }
 
   const existingOwner = await prisma.user.findFirst({
-    where: { role: UserRole.OWNER },
+    where: { role: UserRole.Administer },
     orderBy: { createdAt: "asc" }
   });
 
@@ -132,7 +132,7 @@ async function ensureOwner() {
         email: ownerEmail,
         username: ownerUsername,
         nickname: ownerNickname,
-        role: UserRole.OWNER,
+        role: UserRole.Administer,
         status: UserStatus.ACTIVE,
         emailVerified: true
       }
@@ -150,7 +150,7 @@ async function ensureOwner() {
       username: ownerUsername,
       nickname: ownerNickname,
       passwordHash: await bcrypt.hash(process.env.OWNER_PASSWORD, 12),
-      role: UserRole.OWNER,
+      role: UserRole.Administer,
       status: UserStatus.ACTIVE,
       emailVerified: true
     }

@@ -42,6 +42,7 @@ export default async function EditArticlePage({
     contentJson: article.contentJson,
     contentHtml: article.contentHtml,
     status: article.status,
+    publishedAt: article.publishedAt?.toISOString() ?? null,
     visibility: article.visibility,
     allowComments: article.allowComments,
     pinned: article.pinned,

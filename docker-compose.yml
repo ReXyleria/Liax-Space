@@ -14,7 +14,7 @@ services:
       - ${APP_PATH:?APP_PATH is required}/data/mysql:/var/lib/mysql
 
   app:
-    image: rexyleria/liax-space:latest
+    image: rexyleria/liax-space:test
     container_name: liax-space-app
     restart: unless-stopped
     depends_on:

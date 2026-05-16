@@ -34,7 +34,18 @@ export async function beginTotpSetup(user: CurrentUser) {
   }
 
   const secret = generateSecret();
-  const issuer = process.env.PASSKEY_RP_NAME || "Liax-Space";
+  let issuer = process.env.PASSKEY_RP_NAME || "";
+
+  if (!issuer) {
+    try {
+      const setting = await db.setting.findUnique({ where: { key: "passkey.rpName" } });
+      issuer = setting?.value || "";
+    } catch {
+      // Ignore, use fallback
+    }
+  }
+
+  issuer = issuer || "Liax-Space";
   const otpauthUrl = generateURI({
     issuer,
     label: user.email,

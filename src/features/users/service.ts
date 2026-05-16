@@ -18,7 +18,7 @@ async function getDefaultRegistrationRole() {
     select: { value: true }
   });
 
-  return isUserRole(setting?.value) && setting.value !== UserRole.OWNER ? setting.value : UserRole.USER;
+  return isUserRole(setting?.value) && setting.value !== UserRole.Administer ? setting.value : UserRole.USER;
 }
 
 export async function listUsers(
@@ -104,7 +104,7 @@ export async function getOwnerProfile() {
   try {
     const owner = await db.user.findFirst({
       where: {
-        role: UserRole.OWNER,
+        role: UserRole.Administer,
         status: UserStatus.ACTIVE
       },
       orderBy: { createdAt: "asc" },
@@ -123,7 +123,7 @@ export async function getOwnerProfile() {
 
     const admin = await db.user.findFirst({
       where: {
-        role: UserRole.ADMIN,
+        role: UserRole.Administer,
         status: UserStatus.ACTIVE
       },
       orderBy: { createdAt: "asc" },
@@ -160,7 +160,7 @@ export async function updateUserRoleStatus(user: CurrentUser, input: unknown) {
     throw new Error("未找到用户。");
   }
 
-  if (target.role === UserRole.OWNER && user.role !== UserRole.OWNER) {
+  if (target.role === UserRole.Administer && user.role !== UserRole.Administer) {
     throw new Error("只有站长可以修改另一位站长。");
   }
 
@@ -176,20 +176,20 @@ export async function updateUserRoleStatus(user: CurrentUser, input: unknown) {
     throw new Error("未找到身份。");
   }
 
-  if (user.role !== UserRole.OWNER && getRoleRank(target.role) >= getRoleRank(user.role)) {
+  if (user.role !== UserRole.Administer && getRoleRank(target.role) >= getRoleRank(user.role)) {
     throw new Error("你不能修改权限相同或更高的用户。");
   }
 
   const effectiveRole = identity?.builtInRole ?? target.role;
 
-  if (effectiveRole === UserRole.OWNER && user.role !== UserRole.OWNER) {
+  if (effectiveRole === UserRole.Administer && user.role !== UserRole.Administer) {
     throw new Error("只有站长可以分配站长系统等级。");
   }
 
-  if (target.role === UserRole.OWNER && (effectiveRole !== UserRole.OWNER || parsed.status !== UserStatus.ACTIVE)) {
+  if (target.role === UserRole.Administer && (effectiveRole !== UserRole.Administer || parsed.status !== UserStatus.ACTIVE)) {
     const ownerCount = await db.user.count({
       where: {
-        role: UserRole.OWNER,
+        role: UserRole.Administer,
         status: UserStatus.ACTIVE
       }
     });
@@ -248,11 +248,11 @@ export async function createManagedUser(user: CurrentUser, input: unknown) {
   const defaultRole = await getDefaultRegistrationRole();
   const effectiveRole = identity?.builtInRole ?? defaultRole;
 
-  if (effectiveRole === UserRole.OWNER && user.role !== UserRole.OWNER) {
+  if (effectiveRole === UserRole.Administer && user.role !== UserRole.Administer) {
     throw new Error("只有站长可以创建另一位站长。");
   }
 
-  if (user.role !== UserRole.OWNER && getRoleRank(effectiveRole) >= getRoleRank(user.role)) {
+  if (user.role !== UserRole.Administer && getRoleRank(effectiveRole) >= getRoleRank(user.role)) {
     throw new Error("你不能创建权限相同或更高的用户。");
   }
 
@@ -277,7 +277,7 @@ export async function deleteManagedUser(user: CurrentUser, targetUserId: string)
   }
 
   if (!targetUserId) {
-    throw new Error("需要提供用户 ID。");
+    throw new Error("需要提供用�?ID。");
   }
 
   if (targetUserId === user.id) {
@@ -293,9 +293,9 @@ export async function deleteManagedUser(user: CurrentUser, targetUserId: string)
     throw new Error("未找到用户。");
   }
 
-  if (target.role === UserRole.OWNER) {
+  if (target.role === UserRole.Administer) {
     const activeOwnerCount = await db.user.count({
-      where: { role: UserRole.OWNER, status: UserStatus.ACTIVE }
+      where: { role: UserRole.Administer, status: UserStatus.ACTIVE }
     });
 
     if (activeOwnerCount <= 1 && target.status === UserStatus.ACTIVE) {
@@ -303,7 +303,7 @@ export async function deleteManagedUser(user: CurrentUser, targetUserId: string)
     }
   }
 
-  if (user.role !== UserRole.OWNER && getRoleRank(target.role) >= getRoleRank(user.role)) {
+  if (user.role !== UserRole.Administer && getRoleRank(target.role) >= getRoleRank(user.role)) {
     throw new Error("你不能删除权限相同或更高的用户。");
   }
 

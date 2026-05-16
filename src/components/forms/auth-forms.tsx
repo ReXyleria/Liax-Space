@@ -125,6 +125,7 @@ async function postJson(path: string, body: unknown) {
   const response = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
     body: JSON.stringify(body)
   });
 
@@ -132,7 +133,6 @@ async function postJson(path: string, body: unknown) {
 }
 
 export function LoginForm({ callbackUrl = "/admin", locale = "zh-CN" }: { callbackUrl?: string; locale?: Locale }) {
-  const router = useRouter();
   const text = useMemo(() => authText[locale] ?? authText["zh-CN"], [locale]);
   const [state, setState] = useState<ApiState>({});
   const [account, setAccount] = useState("");
@@ -153,8 +153,7 @@ export function LoginForm({ callbackUrl = "/admin", locale = "zh-CN" }: { callba
       setPendingToken(null);
       setSecondFactors([]);
       setTrustDevice(false);
-      router.push(result.redirectTo ?? callbackUrl);
-      router.refresh();
+      window.location.assign(result.redirectTo ?? callbackUrl);
       return;
     }
 
@@ -175,6 +174,7 @@ export function LoginForm({ callbackUrl = "/admin", locale = "zh-CN" }: { callba
       const optionsResponse = await fetch("/api/auth/passkey/login/options", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify(payload)
       });
       const options = await optionsResponse.json();
