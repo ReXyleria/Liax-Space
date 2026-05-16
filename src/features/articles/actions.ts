@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { ZodError } from "zod";
 import { requireUser } from "@/lib/auth";
 import { getAdminLocale, type Locale } from "@/lib/i18n";
+import { assertPermission, canManageArticles } from "@/lib/permissions";
 import {
   createArticle,
   deleteArticle,
@@ -13,6 +14,7 @@ import {
   setArticleStatus,
   updateArticle
 } from "@/features/articles/service";
+import { generateArticleSeo } from "@/features/articles/seo-service";
 import { articleMutationSchema } from "@/features/articles/validators";
 
 export type ArticleActionState = {
@@ -20,6 +22,13 @@ export type ArticleActionState = {
   message: string;
   fieldErrors: Record<string, string[]>;
   redirectTo?: string;
+};
+
+export type ArticleSeoActionState = {
+  ok: boolean;
+  message: string;
+  seoTitle?: string;
+  seoDescription?: string;
 };
 
 function parseBoolean(value: FormDataEntryValue | null) {
@@ -199,6 +208,34 @@ export async function restoreArticleVersionAction(articleId: string, versionId: 
   revalidatePath("/admin/articles");
   revalidatePath(`/admin/articles/${article.id}/edit`);
   redirect(`/admin/articles/${article.id}/edit`);
+}
+
+export async function generateArticleSeoAction(formData: FormData): Promise<ArticleSeoActionState> {
+  try {
+    const user = await requireUser();
+    assertPermission(canManageArticles(user), "You do not have permission to generate article SEO.");
+
+    const title = String(formData.get("title") ?? "").trim();
+    const summary = String(formData.get("summary") ?? "").trim();
+    const contentHtml = String(formData.get("contentHtml") ?? "");
+
+    if (!title && !summary && !contentHtml.trim()) {
+      return { ok: false, message: "请先填写标题、摘要或正文后再生成 SEO。" };
+    }
+
+    const result = await generateArticleSeo({ title, summary, contentHtml });
+    return {
+      ok: true,
+      message: "SEO 已生成，可继续手动调整。",
+      seoTitle: result.seoTitle,
+      seoDescription: result.seoDescription
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "AI SEO 生成失败。"
+    };
+  }
 }
 
 export async function publishArticleAction(formData: FormData) {

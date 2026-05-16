@@ -94,7 +94,7 @@ export function AdminShell({
       {/* Left Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-30 flex flex-col border-r border-white/70 bg-card/90 px-3 py-4 shadow-soft backdrop-blur-xl transition-all duration-200",
+          "fixed inset-y-0 left-0 z-50 flex h-screen flex-col overflow-hidden border-r border-white/70 bg-card/90 px-3 py-4 shadow-soft backdrop-blur-xl transition-all duration-200",
           collapsed ? "w-16" : "w-56"
         )}
       >
@@ -118,7 +118,7 @@ export function AdminShell({
         </Link>
 
         {/* Sidebar Groups */}
-        <nav className="flex-1 space-y-1 overflow-y-auto">
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto">
           {visibleGroups.map((group) => {
             const isActive = activeGroup?.key === group.key;
             const Icon = iconMap[group.iconKey];
@@ -185,9 +185,9 @@ export function AdminShell({
       </aside>
 
       {/* Main Content Area */}
-      <div className={cn("transition-all duration-200", collapsed ? "md:pl-16" : "md:pl-56")}>
+      <div className={cn("relative z-0 transition-all duration-200", collapsed ? "md:pl-16" : "md:pl-56")}>
         {/* Top Header */}
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-white/70 bg-background/85 px-6 backdrop-blur-xl">
+        <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-white/70 bg-background/85 px-6 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <UserAvatar src={user.avatar} name={user.nickname} className="h-10 w-10" />
             <div>
@@ -203,7 +203,7 @@ export function AdminShell({
 
         {/* Tabs Bar */}
         {visibleTabs.length > 1 && (
-          <div className="sticky top-16 z-10 border-b border-white/60 bg-card/80 px-6 backdrop-blur-lg">
+          <div className="sticky top-16 z-30 border-b border-white/60 bg-card/90 px-6 backdrop-blur-lg">
             <div className="flex gap-0 overflow-x-auto">
               {visibleTabs.map((tab) => {
                 const isActive =

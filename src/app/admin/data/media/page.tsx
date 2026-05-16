@@ -46,6 +46,7 @@ export default async function AdminDataMediaPage({
           options={[
             { value: "all", label: t(locale, "allMedia") },
             { value: "used", label: t(locale, "usedMedia") },
+            { value: "unreferenced", label: t(locale, "unreferencedMedia") },
             { value: "unused", label: t(locale, "unusedMedia") },
             { value: "older-unused", label: t(locale, "olderUnusedMedia") }
           ]}

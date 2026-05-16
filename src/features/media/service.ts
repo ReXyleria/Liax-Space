@@ -205,6 +205,7 @@ export async function listMediaAssets(
     const assets = await db.mediaAsset.findMany({
       where: {
         ...(filters.status === "unused" ? { isUnused: true } : {}),
+        ...(filters.status === "unreferenced" ? { references: { none: {} } } : {}),
         ...(filters.status === "used" ? { references: { some: {} } } : {}),
         ...(filters.status === "older-unused"
           ? {

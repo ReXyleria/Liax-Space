@@ -4,7 +4,30 @@ import { assertPermission, canViewAnalytics } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
 import type { DashboardStats } from "@/features/analytics/types";
 
-export async function getDashboardStats(user: CurrentUser): Promise<{ stats: DashboardStats | null; error?: string }> {
+type DashboardRangeDays = DashboardStats["rangeDays"];
+
+const ALLOWED_RANGES: DashboardRangeDays[] = [7, 14, 30];
+
+function normalizeRangeDays(value?: number): DashboardRangeDays {
+  return ALLOWED_RANGES.includes(value as DashboardRangeDays) ? (value as DashboardRangeDays) : 7;
+}
+
+function getDateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function buildDateKeys(startDate: Date, days: number) {
+  return Array.from({ length: days }, (_, index) => {
+    const date = new Date(startDate);
+    date.setDate(date.getDate() + index);
+    return getDateKey(date);
+  });
+}
+
+export async function getDashboardStats(
+  user: CurrentUser,
+  rangeDaysInput = 7
+): Promise<{ stats: DashboardStats | null; error?: string }> {
   assertPermission(canViewAnalytics(user), "You do not have permission to view analytics.");
 
   if (!isDatabaseConfigured()) {
@@ -12,11 +35,12 @@ export async function getDashboardStats(user: CurrentUser): Promise<{ stats: Das
   }
 
   try {
+    const rangeDays = normalizeRangeDays(rangeDaysInput);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - (rangeDays - 1));
 
     const [
       totalArticles,
@@ -46,26 +70,60 @@ export async function getDashboardStats(user: CurrentUser): Promise<{ stats: Das
         select: { id: true, title: true, slug: true, publishedAt: true }
       }),
       db.visitLog.findMany({
-        where: { createdAt: { gte: sevenDaysAgo } },
-        select: { createdAt: true }
+        where: { createdAt: { gte: startDate } },
+        select: {
+          createdAt: true,
+          countryCode: true,
+          searchEngine: true
+        }
       })
     ]);
 
-    // Build visit trend (last 7 days)
-    const trendMap = new Map<string, number>();
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(sevenDaysAgo);
-      d.setDate(d.getDate() + i);
-      trendMap.set(d.toISOString().slice(0, 10), 0);
-    }
+    const dateKeys = buildDateKeys(startDate, rangeDays);
+    const trendMap = new Map(dateKeys.map((date) => [date, 0]));
+    const countryTotals = new Map<string, number>();
+    const countryByDate = new Map<string, Map<string, number>>();
+    const searchEngineTotals = new Map<string, number>();
+
     for (const log of visitLogs) {
-      const key = log.createdAt.toISOString().slice(0, 10);
-      trendMap.set(key, (trendMap.get(key) ?? 0) + 1);
+      const dateKey = getDateKey(log.createdAt);
+      const countryCode = (log.countryCode || "Unknown").trim() || "Unknown";
+      const searchEngine = (log.searchEngine || "Direct").trim() || "Direct";
+
+      trendMap.set(dateKey, (trendMap.get(dateKey) ?? 0) + 1);
+      countryTotals.set(countryCode, (countryTotals.get(countryCode) ?? 0) + 1);
+      searchEngineTotals.set(searchEngine, (searchEngineTotals.get(searchEngine) ?? 0) + 1);
+
+      const dailyCountries = countryByDate.get(dateKey) ?? new Map<string, number>();
+      dailyCountries.set(countryCode, (dailyCountries.get(countryCode) ?? 0) + 1);
+      countryByDate.set(dateKey, dailyCountries);
     }
-    const visitTrend = Array.from(trendMap.entries()).map(([date, count]) => ({ date, count }));
+
+    const topCountries = Array.from(countryTotals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([countryCode]) => countryCode);
+
+    const visitTrend = dateKeys.map((date) => ({ date, count: trendMap.get(date) ?? 0 }));
+    const countryTimeline = dateKeys.map((date) => {
+      const dailyCountries = countryByDate.get(date) ?? new Map<string, number>();
+      return {
+        date,
+        countries: topCountries
+          .map((countryCode) => ({
+            countryCode,
+            count: dailyCountries.get(countryCode) ?? 0
+          }))
+          .sort((a, b) => b.count - a.count)
+      };
+    });
+    const searchEngineSources = Array.from(searchEngineTotals.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
 
     return {
       stats: {
+        rangeDays,
         totalArticles,
         totalUsers,
         totalComments,
@@ -78,7 +136,9 @@ export async function getDashboardStats(user: CurrentUser): Promise<{ stats: Das
           slug: a.slug,
           publishedAt: a.publishedAt
         })),
-        visitTrend
+        visitTrend,
+        countryTimeline,
+        searchEngineSources
       }
     };
   } catch (error) {

@@ -1,100 +1,46 @@
 # Liax-Space
 
-Liax-Space 是一个面向个人博客、独立站点和小型内容社区的内容发布系统。它提供公开博客页面、后台内容管理、文章编辑能力，适合部署在自有服务器上长期运行。
+## 项目介绍
 
-系统支持 Docker 镜像部署。部署者从 GitHub Container Registry 拉取镜像并启动容器，首次访问 `/setup` 页面后填写数据库连接、站点域名和管理员账号，即可完成初始化。
+Liax-Space 是一个面向个人站点、独立博客和小型内容社区的发布系统。它把公开阅读、后台管理、账号登录、邮件通知、附件管理、访问统计、备份恢复和站点外观配置放在同一个可部署应用里，适合长期运行在自己的服务器上。
 
-## 项目概述
+系统采用 Next.js App Router、Prisma、MySQL 和 Docker 部署。文章、用户、设置、评论、访问记录等结构化数据存入 MySQL；上传文件、备份和运行时配置通过宿主机目录持久化，方便迁移、升级和恢复。
 
-Liax-Space 的设计目标是让个人站点具备完整的内容管理能力，同时保持部署流程清晰、数据可迁移、运行结构稳定。
+## 同类项目对比优势
 
-主要能力包括：
+- **安装路径更短**：推荐直接使用 Docker Compose，不需要在服务器上安装 Node.js 或手动构建源码。
+- **首装流程更清楚**：首次访问 `/setup` 完成数据库、站点域名和管理员账号初始化，缺表、迁移失败、数据库不可用等状态会给出明确提示。
+- **后台体验更完整**：内容、附件、访问统计、站点设置、邮件、备份和搜索引擎推送集中在后台，常用管理动作不需要切换多个工具。
+- **数据更容易迁移**：MySQL 数据、上传文件、备份文件和运行时配置都有明确持久化目录，重建容器不会丢失业务数据。
+- **面向读者体验**：公开页面支持响应式布局、访问统计、文章可见性、评论、瞬间、归档、标签和可配置首页背景，适合实际发布而不是临时演示。
+- **更适合自托管维护**：启动脚本会修复上传和存储目录权限，容器内应用降权运行；部署配置避免依赖 `./storage` 这类容易混淆的相对路径。
 
-- 公开页面：主页、文章、标签、归档、瞬间、联系页。
-- 内容管理：文章发布、标签管理、瞬间管理、评论管理、附件管理。
-- 权限控制：用户身份（Administer / Admin / Editor / SSVIP / SVIP / User）、文章可见范围、后台操作权限。
-- 安全能力：登录、设备管理、TOTP、Passkey。
-- 站点配置：站点标题、域名、背景、主题色、联系方式、页脚。
-- 数据管理：完整备份、上传还原、数据库主数据源、附件持久化。
-- 访问体验：缓存预热、响应式布局、平滑页面过渡动画。
+## 安装教程
 
-运行时数据以数据库为主数据源。上传文件、备份文件和运行时配置保存在挂载目录中，便于迁移和恢复。
-
-## 相比同类项目的优势
-
-- **部署更直接**：通过 GitHub Container Registry 拉取镜像，不要求服务器安装 Node.js，也不要求在服务器上构建源码。
-- **初始化更清晰**：站点域名、数据库连接和管理员账号都在 `/setup` 页面填写，安装状态通过数据库 `SystemInstallation` 表管理，不需要把业务初始化信息写进环境文件。
-- **数据更完整**：文章、用户、设置、译文和媒体元数据存入数据库，附件和备份通过挂载目录持久化。
-- **后台功能更集中**：内置文章、标签、瞬间、用户、身份、附件、备份和设置管理。Dashboard 提供访问趋势、热门文章和最近发布概览。
-- **权限边界更明确**：文章访问和后台操作都由服务端校验，不依赖前端隐藏按钮作为安全边界。最高权限角色为 Administer。
-- **更适合长期运行**：支持生产迁移、缓存预热、完整备份和 Docker Compose 升级。
-- **文章管理灵活**：支持手动设置发布时间，方便从其他平台导入历史文章时保留原始发布日期。
-
-## Docker 部署
-
-单容器部署适合已经有 MySQL 数据库的场景。
-
-拉取镜像：
+### 1. 准备目录
 
 ```bash
-docker pull rexyleria/liax-space:test
-```
-
-创建持久化目录：
-
-```bash
-APP_PATH=/opt/liax-space
-mkdir -p "$APP_PATH/data/storage" "$APP_PATH/data/storage/config" "$APP_PATH/data/storage/backups" "$APP_PATH/data/storage/cache" "$APP_PATH/data/uploads"
-```
-
-启动容器：
-
-```bash
-docker run -d \
-  --name liax-space \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  -v "$APP_PATH/data/uploads:/app/public/uploads" \
-  -v "$APP_PATH/data/storage:/app/storage" \
-  rexyleria/liax-space:test
-```
-
-查看安装令牌：
-
-```bash
-docker logs liax-space
-```
-
-启动后访问：
-
-```text
-http://服务器地址:3000/setup
-```
-
-在安装页面填写已有 MySQL 数据库连接、站点域名和管理员账号。提交后，系统会写入运行时配置、创建 Administer 管理员账号，并在数据库 `SystemInstallation` 表中记录安装状态。
-
-## Docker Compose 部署
-
-Docker Compose 部署适合同时运行应用和 MySQL 数据库，是推荐方式。
-
-创建部署目录：
-
-```bash
-mkdir -p /opt/liax-space/data/storage /opt/liax-space/data/storage/config /opt/liax-space/data/storage/backups /opt/liax-space/data/storage/cache /opt/liax-space/data/uploads /opt/liax-space/data/mysql
+mkdir -p /opt/liax-space/data/storage/config
+mkdir -p /opt/liax-space/data/storage/backups
+mkdir -p /opt/liax-space/data/storage/cache
+mkdir -p /opt/liax-space/data/uploads
+mkdir -p /opt/liax-space/data/mysql
 cd /opt/liax-space
 ```
 
-写入 `.env`：
+### 2. 创建 `.env`
 
-```bash
+`.env` 必须和 `compose.yaml` 分开保存，不能把 Compose 内容写进 `.env`。
+
+```dotenv
 APP_PATH=/opt/liax-space
 MYSQL_PASSWORD=change_this_database_password
 MYSQL_ROOT_PASSWORD=change_this_root_password
 ```
 
-写入 `compose.yaml`：
+### 3. 创建 `compose.yaml`
 
-```bash
+```yaml
 services:
   mysql:
     image: mysql:8.4
@@ -109,7 +55,7 @@ services:
       - ${APP_PATH:?APP_PATH is required}/data/mysql:/var/lib/mysql
 
   app:
-    image: rexyleria/liax-space:test
+    image: rexyleria/liax-space:latest
     container_name: liax-space-app
     restart: unless-stopped
     depends_on:
@@ -127,69 +73,40 @@ services:
       - ${APP_PATH:?APP_PATH is required}/data/storage:/app/storage
 ```
 
-启动服务：
+重点检查：
+
+- `app.environment` 必须包含 `MYSQL_PASSWORD: ${MYSQL_PASSWORD}`。
+- 上传目录使用 `${APP_PATH}/data/uploads:/app/public/uploads`。
+- 存储目录使用 `${APP_PATH}/data/storage:/app/storage`。
+- MySQL 数据目录使用 `${APP_PATH}/data/mysql:/var/lib/mysql`。
+
+### 4. 启动服务
 
 ```bash
 docker compose up -d
+docker compose logs -f app
 ```
 
-查看安装令牌：
-
-```bash
-docker compose logs app
-```
-
-启动后访问：
+如果日志显示迁移成功，访问：
 
 ```text
-http://服务器地址:3000/setup
+http://服务器地址:3006/setup
 ```
 
-## 首次安装
+按照页面填写安装令牌、站点域名、数据库连接和管理员账号。使用上面的 Compose 配置时，数据库主机填写 `mysql`，端口填写 `3306`，数据库名和用户名填写 `liax_space`，密码填写 `.env` 中的 `MYSQL_PASSWORD`。
 
-首次安装通过 `/setup` 页面完成。站点域名和管理员账号不需要提前写入容器配置。安装状态通过数据库 `SystemInstallation` 表管理，安装完成后该表标记 `installed = true` 并记录安装时间。
+### 5. 迁移和重建提醒
 
-安装页面需要填写：
+如果你是全新安装，建议使用空的 MySQL 数据目录启动。应用镜像会在启动时执行 Prisma 迁移并创建基础表。
 
-- 安装令牌：从容器日志中获取。
-- 数据库主机：使用上面的 Compose 配置时填写 `mysql`。
-- 数据库端口：使用上面的 Compose 配置时填写 `3306`。
-- 数据库名称：使用上面的 Compose 配置时填写 `liax_space`。
-- 数据库用户名：使用上面的 Compose 配置时填写 `liax_space`。
-- 数据库密码：填写 `.env` 中的 `MYSQL_PASSWORD`。
-- 站点域名：例如 `https://blog.example.com`。
-- 管理员邮箱。
-- 管理员用户名。
-- 管理员昵称。
-- 管理员密码。
+如果服务器已有旧的 `/opt/liax-space/data/mysql`，并且其中存在失败的 `_prisma_migrations` 记录，不能直接覆盖迁移历史。确认没有需要保留的生产数据后，再清空旧 MySQL 数据目录或换一个空数据库重新部署。
 
-提交后，系统会将数据库连接、站点域名和管理员初始化信息写入持久化运行配置。随后容器会自动重启。重启后系统会执行数据库迁移、创建 Administer 管理员账号、写入基础站点设置、在 `SystemInstallation` 表中标记安装完成。初始化完成后，`/setup` 不再作为业务配置入口。
+### 6. 常用排查命令
 
-## 角色体系
+```bash
+docker compose ps
+docker compose logs -f mysql
+docker compose logs -f app
+```
 
-系统内置以下用户角色（权限由低到高）：
-
-| 角色       | 说明                               |
-| ---------- | ---------------------------------- |
-| Visitor    | 未登录访客                         |
-| User       | 注册用户                           |
-| SVIP       | 标准 VIP 读者                      |
-| SSVIP      | 顶级可见读者                       |
-| Editor     | 编辑者，可管理文章和瞬间           |
-| Admin      | 管理员，可管理用户、设置、备份等   |
-| Administer | 最高权限，可管理代码注入等所有功能 |
-
-## 编辑器特性
-
-文章编辑器基于 Tiptap 构建，支持：
-
-- 斜杠命令菜单快速插入块
-- 代码块（自动补尾段落）
-- 表格（列宽拖拽、行列增删、自动补尾段落）
-- 引用块（自动补尾段落）
-- 折叠详情块
-- 图片拖拽缩放
-- 字体大小、颜色、高亮
-- 文章版本历史与恢复
-- 手动设置发布时间（用于导入历史文章）
-- 后台卡片式瞬间管理，支持手动设置发布时间（用于导入历史记录）
+数据库可用但提示缺表时，重点查看 app 日志中 `Prisma migrations applied` 或 `prisma migrate deploy` 相关输出。上传文件存在但浏览器访问失败时，确认 `${APP_PATH}/data/uploads` 已正确挂载到 `/app/public/uploads`。

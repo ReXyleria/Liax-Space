@@ -1,18 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  Eye,
-  FileText,
-  MessageSquare,
-  MessageSquareText,
-  Pencil,
-  TrendingUp,
-  Users
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Eye, FileText, MessageSquare, MessageSquareText, Pencil, Users } from "lucide-react";
+import { DashboardEcharts } from "@/components/admin/dashboard-echarts";
+import { Card, CardContent } from "@/components/ui/card";
+import { getDashboardStats } from "@/features/analytics/service";
 import { requireAdminAccess } from "@/lib/admin-guard";
 import { canManageArticles, canViewAnalytics } from "@/lib/permissions";
-import { getDashboardStats } from "@/features/analytics/service";
 
 export const dynamic = "force-dynamic";
 
@@ -45,24 +38,11 @@ function StatCard({
   );
 }
 
-function SimpleBar({ value, max, label }: { value: number; max: number; label: string }) {
-  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{label}</span>
-      <div className="relative h-5 flex-1 rounded-sm bg-muted/50">
-        <div
-          className="h-full rounded-sm bg-gradient-to-r from-primary/60 to-accent/60 transition-all duration-500"
-          style={{ width: `${Math.max(pct, 2)}%` }}
-        />
-      </div>
-      <span className="w-10 text-xs tabular-nums text-muted-foreground">{value}</span>
-    </div>
-  );
-}
-
 function formatDate(date: Date | null | undefined) {
-  if (!date) return "—";
+  if (!date) {
+    return "未发布";
+  }
+
   return new Date(date).toLocaleDateString("zh-CN", {
     year: "numeric",
     month: "short",
@@ -72,19 +52,29 @@ function formatDate(date: Date | null | undefined) {
   });
 }
 
-export default async function AdminDashboardPage() {
+function parseRange(range?: string) {
+  const value = Number(range);
+  return value === 14 || value === 30 ? value : 7;
+}
+
+export default async function AdminDashboardPage({
+  searchParams
+}: {
+  searchParams?: Promise<{ range?: string }>;
+}) {
   const user = await requireAdminAccess("/admin");
 
   if (!canViewAnalytics(user)) {
     redirect(canManageArticles(user) ? "/admin/articles" : "/admin/account?section=profile");
   }
 
-  const { stats, error } = await getDashboardStats(user);
+  const params = (await searchParams) ?? {};
+  const rangeDays = parseRange(params.range);
+  const { stats, error } = await getDashboardStats(user, rangeDays);
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="mt-1 text-sm text-muted-foreground">站点数据概览</p>
@@ -100,7 +90,6 @@ export default async function AdminDashboardPage() {
         ) : null}
       </div>
 
-      {/* Error state */}
       {error ? (
         <Card className="flex items-center justify-between gap-4 border-destructive/20 bg-destructive/5 p-5">
           <div>
@@ -118,7 +107,6 @@ export default async function AdminDashboardPage() {
 
       {stats ? (
         <>
-          {/* Stats grid */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <StatCard label="文章" value={stats.totalArticles} icon={FileText} gradient="bg-blue-500" />
             <StatCard label="用户" value={stats.totalUsers} icon={Users} gradient="bg-emerald-500" />
@@ -127,49 +115,22 @@ export default async function AdminDashboardPage() {
             <StatCard label="今日访问" value={stats.todayVisits} icon={Eye} gradient="bg-rose-500" />
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-            {/* Visit trend */}
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                  <CardTitle className="text-base">近 7 天访问趋势</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2.5">
-                  {stats.visitTrend.map((day) => (
-                    <SimpleBar
-                      key={day.date}
-                      value={day.count}
-                      max={Math.max(...stats.visitTrend.map((d) => d.count), 1)}
-                      label={day.date.slice(5)}
-                    />
-                  ))}
-                </div>
-                <p className="mt-4 text-center text-sm text-muted-foreground">
-                  合计 {stats.visitTrend.reduce((sum, d) => sum + d.count, 0)} 次访问
-                </p>
-              </CardContent>
-            </Card>
+          <DashboardEcharts
+            rangeDays={stats.rangeDays}
+            visitTrend={stats.visitTrend}
+            countryTimeline={stats.countryTimeline}
+            searchEngineSources={stats.searchEngineSources}
+          />
 
-            {/* Recent articles */}
+          <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
             <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <CardTitle className="text-base">最近发布</CardTitle>
-                  </div>
-                  <Link
-                    href="/admin/articles"
-                    className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-                  >
+              <CardContent className="p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-semibold">最近发布</h2>
+                  <Link href="/admin/articles" className="text-xs text-muted-foreground hover:text-foreground">
                     查看全部
                   </Link>
                 </div>
-              </CardHeader>
-              <CardContent>
                 {stats.recentArticles.length ? (
                   <div className="space-y-1.5">
                     {stats.recentArticles.map((article) => (
@@ -178,12 +139,13 @@ export default async function AdminDashboardPage() {
                         className="flex items-center justify-between rounded-lg p-2.5 transition-colors hover:bg-muted/50"
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium truncate">{article.title}</p>
+                          <p className="truncate text-sm font-medium">{article.title}</p>
                           <p className="text-xs text-muted-foreground">{formatDate(article.publishedAt)}</p>
                         </div>
                         <Link
                           href={`/admin/articles/${article.id}/edit`}
                           className="ml-3 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          title="编辑文章"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Link>
@@ -195,40 +157,34 @@ export default async function AdminDashboardPage() {
                 )}
               </CardContent>
             </Card>
-          </div>
 
-          {/* Popular articles */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                <CardTitle className="text-base">热门文章</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {stats.popularArticles.length ? (
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {stats.popularArticles.map((article, i) => (
-                    <Link
-                      key={article.slug}
-                      href={`/articles/${article.slug}`}
-                      className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50"
-                    >
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
-                        {i + 1}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{article.title}</p>
-                        <p className="text-xs text-muted-foreground">{article.viewCount} 阅读</p>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <p className="py-6 text-center text-sm text-muted-foreground">暂无文章数据。</p>
-              )}
-            </CardContent>
-          </Card>
+            <Card>
+              <CardContent className="p-5">
+                <h2 className="mb-3 font-semibold">热门文章</h2>
+                {stats.popularArticles.length ? (
+                  <div className="space-y-2">
+                    {stats.popularArticles.map((article, index) => (
+                      <Link
+                        key={article.slug}
+                        href={`/articles/${article.slug}`}
+                        className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50"
+                      >
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{article.title}</p>
+                          <p className="text-xs text-muted-foreground">{article.viewCount} 阅读</p>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="py-6 text-center text-sm text-muted-foreground">暂无文章数据。</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </>
       ) : (
         <Card className="border-dashed py-12 text-center">

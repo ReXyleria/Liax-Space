@@ -107,6 +107,7 @@ export const adminSidebarGroups: AdminSidebarGroup[] = [
       { href: "/admin/mail/smtp", labelKey: "adminSmtp", iconKey: "mail", visibility: "settings" },
       { href: "/admin/mail/templates", labelKey: "adminMailTemplates", iconKey: "templates", visibility: "mailTemplates" },
       { href: "/admin/mail/logs", labelKey: "adminMailLogs", iconKey: "logs", visibility: "mailTemplates" },
+      { href: "/admin/site-push", labelKey: "adminSitePush", iconKey: "sitePush", visibility: "settings" },
       { href: "/admin/data/backups", labelKey: "adminBackup", iconKey: "backup", visibility: "backups" }
     ]
   },

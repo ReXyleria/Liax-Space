@@ -17,6 +17,7 @@ import {
   Mail,
   MessageSquare,
   PanelBottom,
+  Send,
   Settings,
   ShieldCheck,
   Smartphone,
@@ -47,6 +48,7 @@ export type AdminNavIconKey =
   | "logs"
   | "media"
   | "backup"
+  | "sitePush"
   | "account"
   | "security"
   | "totp"
@@ -72,6 +74,7 @@ export const iconMap: Record<AdminNavIconKey, LucideIcon> = {
   logs: Bell,
   media: HardDrive,
   backup: DatabaseBackup,
+  sitePush: Send,
   account: UserCircle,
   security: ShieldCheck,
   totp: KeyRound,

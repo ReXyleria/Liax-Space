@@ -15,6 +15,7 @@ import {
   resolveArticleDisplayTranslation,
   scheduleArticleTranslationSync
 } from "@/features/articles/translation-service";
+import { pushArticleUrlAfterPublish } from "@/features/site-push/service";
 import { normalizeTagSlug } from "@/features/tags/utils";
 import {
   getPublicIdentityRank,
@@ -43,6 +44,15 @@ const articleInclude = {
 
 type ArticleWithRelations = Prisma.ArticleGetPayload<{ include: typeof articleInclude }>;
 type PublicArticle = ReturnType<typeof mapArticle>;
+
+function scheduleArticleSitePush(articleId: string) {
+  void pushArticleUrlAfterPublish(articleId).catch((error) => {
+    console.warn("[site-push] automatic article push failed", {
+      articleId,
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+  });
+}
 
 function isDefined<T>(value: T | null | undefined): value is T {
   return value !== null && value !== undefined;
@@ -555,6 +565,9 @@ export async function createArticle(user: CurrentUser, input: unknown) {
   const versionArticle = await db.article.findUniqueOrThrow({ where: { id: article.id }, include: articleInclude });
   await recordArticleVersion(versionArticle, parsed.tagNames, user.id);
   scheduleArticleTranslationSync(article);
+  if (article.status === ArticleStatus.PUBLISHED) {
+    scheduleArticleSitePush(article.id);
+  }
 
   return article;
 }
@@ -603,6 +616,9 @@ export async function updateArticle(user: CurrentUser, id: string, input: unknow
   const versionArticle = await db.article.findUniqueOrThrow({ where: { id: article.id }, include: articleInclude });
   await recordArticleVersion(versionArticle, parsed.tagNames, user.id);
   scheduleArticleTranslationSync(article);
+  if (article.status === ArticleStatus.PUBLISHED) {
+    scheduleArticleSitePush(article.id);
+  }
 
   return article;
 }
@@ -690,6 +706,9 @@ export async function setArticleStatus(user: CurrentUser, id: string, status: Ar
   });
 
   scheduleArticleTranslationSync(article);
+  if (article.status === ArticleStatus.PUBLISHED) {
+    scheduleArticleSitePush(article.id);
+  }
   return article;
 }
 

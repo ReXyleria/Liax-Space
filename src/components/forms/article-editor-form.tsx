@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArticleStatus, ContentVisibility } from "@prisma/client";
-import { AlertTriangle, Eye, History, Save, Send, Settings } from "lucide-react";
+import { AlertTriangle, Eye, History, Save, Send, Settings, Sparkles } from "lucide-react";
 import { BlockEditor } from "@/components/editor/block-editor/block-editor";
 import { EditorToc } from "@/components/editor/editor-toc";
 import { ArticleEditorErrorBoundary } from "@/components/forms/article-editor-error-boundary";
@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ImageUploadField } from "@/components/forms/image-upload-field";
 import {
   createArticleAction,
+  generateArticleSeoAction,
   restoreArticleVersionAction,
   updateArticleAction,
   type ArticleActionState
@@ -221,6 +222,20 @@ function parseJsonDraft(value: string) {
   }
 }
 
+function createShortUuid() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID().replaceAll("-", "").slice(0, 16).toLowerCase();
+  }
+
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    return Array.from(crypto.getRandomValues(new Uint8Array(8)))
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  return Math.random().toString(16).slice(2, 18).padEnd(16, "0");
+}
+
 export function ArticleEditorForm({
   article,
   tagOptions = [],
@@ -242,6 +257,8 @@ export function ArticleEditorForm({
   const articleVisibilityOptions = visibilityOptions(locale);
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const seoTitleRef = useRef<HTMLInputElement>(null);
+  const seoDescriptionRef = useRef<HTMLTextAreaElement>(null);
   const returnToListRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | null>(null);
   const action = article ? updateArticleAction.bind(null, article.id) : createArticleAction;
@@ -251,7 +268,7 @@ export function ArticleEditorForm({
     initialArticleActionState
   );
   const [title, setTitle] = useState(article?.title ?? "");
-  const [slug, setSlug] = useState(article?.slug ?? "");
+  const [slug, setSlug] = useState(article?.slug ?? createShortUuid);
   const [status, setStatus] = useState<string>(article?.status ?? ArticleStatus.DRAFT);
   const [visibility, setVisibility] = useState<string>(article?.visibility ?? ContentVisibility.PUBLIC);
   const [publishedAt, setPublishedAt] = useState<string>(
@@ -280,6 +297,9 @@ export function ArticleEditorForm({
   const [restoreConfirm, setRestoreConfirm] = useState<string | null>(null);
   const [restoreError, setRestoreError] = useState("");
   const [isRestoring, startRestoreTransition] = useTransition();
+  const [isGeneratingSeo, startSeoTransition] = useTransition();
+  const [seoMessage, setSeoMessage] = useState("");
+  const [seoError, setSeoError] = useState("");
 
   const tagSelectOptions = useMemo(
     () => Array.from(new Set([...tagOptions.map((tag) => tag.name), ...selectedTags]))
@@ -437,6 +457,42 @@ export function ArticleEditorForm({
     } finally {
       setVersionsLoading(false);
     }
+  }
+
+  function handleGenerateSeo() {
+    const draft = collectDraft();
+    if (!draft || isGeneratingSeo) {
+      return;
+    }
+
+    setSeoError("");
+    setSeoMessage("");
+    const formData = new FormData();
+    formData.set("title", draft.title);
+    formData.set("summary", draft.summary);
+    formData.set("contentHtml", draft.contentHtml);
+
+    startSeoTransition(() => {
+      void generateArticleSeoAction(formData)
+        .then((result) => {
+          if (!result.ok) {
+            setSeoError(result.message);
+            return;
+          }
+
+          if (result.seoTitle && seoTitleRef.current) {
+            seoTitleRef.current.value = result.seoTitle;
+          }
+          if (result.seoDescription && seoDescriptionRef.current) {
+            seoDescriptionRef.current.value = result.seoDescription;
+          }
+          setSeoMessage(result.message);
+          scheduleDraftSave();
+        })
+        .catch((error) => {
+          setSeoError(error instanceof Error ? error.message : "AI SEO 生成失败。");
+        });
+    });
   }
 
   function handleRestore(versionId: string) {
@@ -706,10 +762,36 @@ export function ArticleEditorForm({
               />
               <FieldError messages={state.fieldErrors.tagNames} />
             </label>
-            <Input name="seoTitle" placeholder={text.seoTitleLabel} defaultValue={article?.seoTitle ?? ""} />
-            <FieldError messages={state.fieldErrors.seoTitle} />
-            <Textarea name="seoDescription" placeholder={text.seoDescriptionLabel} defaultValue={article?.seoDescription ?? ""} />
-            <FieldError messages={state.fieldErrors.seoDescription} />
+            <div className="rounded-lg border bg-muted/20 p-3">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">SEO</p>
+                  <p className="text-xs text-muted-foreground">使用翻译页的 AI 接口配置生成，生成后可继续手动修改。</p>
+                </div>
+                <Button type="button" variant="secondary" onClick={handleGenerateSeo} disabled={isGeneratingSeo}>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  {isGeneratingSeo ? "生成中..." : "AI 生成 SEO"}
+                </Button>
+              </div>
+              <div className="space-y-3">
+                <Input
+                  ref={seoTitleRef}
+                  name="seoTitle"
+                  placeholder={text.seoTitleLabel}
+                  defaultValue={article?.seoTitle ?? ""}
+                />
+                <FieldError messages={state.fieldErrors.seoTitle} />
+                <Textarea
+                  ref={seoDescriptionRef}
+                  name="seoDescription"
+                  placeholder={text.seoDescriptionLabel}
+                  defaultValue={article?.seoDescription ?? ""}
+                />
+                <FieldError messages={state.fieldErrors.seoDescription} />
+                {seoError ? <p className="text-xs text-destructive">{seoError}</p> : null}
+                {seoMessage ? <p className="text-xs text-emerald-700">{seoMessage}</p> : null}
+              </div>
+            </div>
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">{text.publishedAtLabel}</span>
               <Input

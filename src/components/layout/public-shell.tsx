@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { UserRole } from "@prisma/client";
+import { VisitTracker } from "@/components/analytics/visit-tracker";
 import { CodeInjectionRenderer } from "@/components/layout/code-injection-renderer";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { SiteBackground, resolveSiteBackground } from "@/components/layout/site-background";
@@ -89,6 +90,7 @@ export async function PublicShell({
 
   return (
     <div className={cn("relative isolate flex flex-col", homePage ? "h-screen overflow-hidden" : "min-h-screen")}>
+      <VisitTracker />
       <SiteBackground src={sharedBackground} variant={homePage ? "home" : "frosted"} />
 
       <header

@@ -99,6 +99,25 @@ enum BackupStatus {
   FAILED
 }
 
+enum SitePushProvider {
+  BAIDU
+  BING
+  GOOGLE
+}
+
+enum SitePushAction {
+  MANUAL
+  BATCH
+  AUTO
+}
+
+enum SitePushStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
 enum SettingType {
   TEXT
   TEXTAREA
@@ -501,20 +520,25 @@ model MailSendLog {
 }
 
 model VisitLog {
-  id        String   @id @default(cuid())
-  path      String
-  articleId String?
-  userId    String?
-  ipHash    String
-  userAgent String?  @db.Text
-  referrer  String?  @db.Text
-  createdAt DateTime @default(now())
-  article   Article? @relation(fields: [articleId], references: [id], onDelete: SetNull)
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id           String   @id @default(cuid())
+  path         String
+  articleId    String?
+  userId       String?
+  ipHash       String
+  userAgent    String?  @db.Text
+  referrer     String?  @db.Text
+  referrerHost String?
+  searchEngine String?
+  countryCode  String?  @db.VarChar(16)
+  createdAt    DateTime @default(now())
+  article      Article? @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([path])
   @@index([articleId])
   @@index([userId])
+  @@index([countryCode])
+  @@index([searchEngine])
   @@index([createdAt])
 }
 
@@ -564,6 +588,24 @@ model BackupRecord {
   @@index([status])
   @@index([createdAt])
   @@index([createdById])
+}
+
+model SitePushRecord {
+  id           String           @id @default(cuid())
+  provider     SitePushProvider
+  url          String           @db.Text
+  action       SitePushAction
+  status       SitePushStatus   @default(PENDING)
+  httpStatus   Int?
+  responseBody String?          @db.Text
+  error        String?          @db.Text
+  createdAt    DateTime         @default(now())
+  submittedAt  DateTime?
+
+  @@index([provider])
+  @@index([status])
+  @@index([createdAt])
+  @@index([submittedAt])
 }
 
 model SystemInstallation {
