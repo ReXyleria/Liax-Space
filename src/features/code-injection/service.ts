@@ -7,43 +7,22 @@ export const codeInjectionDefinitions = [
   {
     key: "code.globalHead",
     enabledKey: "code.globalHead.enabled",
-    label: "全局头部",
-    description: "注入到公开页面 document head 的 HTML。",
+    label: "全局 head 标签",
+    description: "注入代码到所有页面的 head 标签部分。",
     defaultValue: ""
   },
   {
     key: "code.articleHead",
     enabledKey: "code.articleHead.enabled",
-    label: "文章头部",
-    description: "仅注入文章详情页 document head 的 HTML。",
+    label: "内容页 head 标签",
+    description: "注入代码到文章页面和自定义页面的 head 标签部分。",
     defaultValue: ""
   },
   {
     key: "code.globalFooter",
     enabledKey: "code.globalFooter.enabled",
-    label: "全局底部",
-    description: "渲染在法律页脚上方的独立底部注入区域。",
-    defaultValue: ""
-  },
-  {
-    key: "code.customHtml",
-    enabledKey: "code.customHtml.enabled",
-    label: "自定义 HTML",
-    description: "渲染在独立底部注入区域中的自定义 HTML。",
-    defaultValue: ""
-  },
-  {
-    key: "code.customCss",
-    enabledKey: "code.customCss.enabled",
-    label: "自定义 CSS",
-    description: "注入到 document head 的受管 style 标签中的 CSS。",
-    defaultValue: ""
-  },
-  {
-    key: "code.customJs",
-    enabledKey: "code.customJs.enabled",
-    label: "自定义 JavaScript",
-    description: "注入到 document head 的受管 script 标签中的 JavaScript。",
+    label: "页脚",
+    description: "注入代码到所有页面的页脚部分。",
     defaultValue: ""
   }
 ];

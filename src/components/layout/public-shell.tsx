@@ -82,11 +82,7 @@ export async function PublicShell({
     { href: "/moments", label: t(locale, "moments") },
     { href: "/archives", label: t(locale, "archives") }
   ];
-  const footerInjectionEnabled =
-    getEnabledCodeInjection(codeInjection, "code.globalFooter") ||
-    getEnabledCodeInjection(codeInjection, "code.customHtml") ||
-    getEnabledCodeInjection(codeInjection, "code.customCss") ||
-    getEnabledCodeInjection(codeInjection, "code.customJs");
+  const footerInjectionEnabled = getEnabledCodeInjection(codeInjection, "code.globalFooter");
 
   return (
     <div className={cn("relative isolate flex flex-col", homePage ? "h-screen overflow-hidden" : "min-h-screen")}>
@@ -105,7 +101,7 @@ export async function PublicShell({
               className={cn(
                 "grid h-9 w-9 place-items-center overflow-hidden rounded-lg text-sm shadow-sm",
                 transparentHeader
-                  ? "bg-white/16 text-white ring-1 ring-white/24"
+                  ? "bg-white/16 text-white"
                   : "bg-gradient-to-br from-blue-200 to-purple-200 text-primary"
               )}
               style={
@@ -180,12 +176,8 @@ export async function PublicShell({
         >
           {footerInjectionEnabled ? (
             <CodeInjectionRenderer
-              globalHead=""
               articleHead=""
               globalFooter={getEnabledCodeInjection(codeInjection, "code.globalFooter")}
-              customHtml={getEnabledCodeInjection(codeInjection, "code.customHtml")}
-              customCss={getEnabledCodeInjection(codeInjection, "code.customCss")}
-              customJs={getEnabledCodeInjection(codeInjection, "code.customJs")}
               mode="footer"
             />
           ) : null}

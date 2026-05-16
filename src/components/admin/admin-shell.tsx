@@ -61,12 +61,14 @@ export function AdminShell({
   user,
   locale,
   siteTitle,
+  siteLogo,
   backgroundImage,
   children
 }: {
   user: CurrentUser;
   locale: Locale;
   siteTitle: string;
+  siteLogo?: string;
   backgroundImage?: string;
   children: React.ReactNode;
 }) {
@@ -102,12 +104,19 @@ export function AdminShell({
         <Link
           href="/"
           className={cn(
-            "mb-4 flex items-center gap-3 rounded-lg border border-white/70 bg-background/70 p-2 transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md",
+            "mb-4 flex items-center gap-3 rounded-lg bg-background/70 p-2 transition hover:-translate-y-0.5 hover:shadow-md",
             collapsed && "justify-center"
           )}
         >
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-accent text-sm font-semibold text-primary-foreground">
-            {(siteTitle.trim().slice(0, 2) || "SB").toUpperCase()}
+          <span
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-accent text-sm font-semibold text-primary-foreground bg-cover bg-center"
+            style={
+              siteLogo
+                ? { backgroundImage: `url(${siteLogo})` }
+                : undefined
+            }
+          >
+            {siteLogo ? null : (siteTitle.trim().slice(0, 2) || "SB").toUpperCase()}
           </span>
           {!collapsed && (
             <span className="min-w-0">

@@ -64,7 +64,11 @@ export function CodeInjectionForm({ settings }: { settings: CodeInjectionMap }) 
       {state.message ? (
         <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{state.message}</p>
       ) : null}
-      <Button type="submit" disabled={isPending}>{isPending ? "保存中..." : "保存代码注入"}</Button>
+      <div className="fixed bottom-6 right-6 z-50">
+        <Button type="submit" disabled={isPending} className="shadow-lg h-12 px-6 text-base">
+          {isPending ? "保存中..." : "保存代码注入"}
+        </Button>
+      </div>
     </form>
   );
 }

@@ -15,11 +15,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     getSettingsMap()
   ]);
 
+  const siteLogo = settings["site.logo"]?.trim();
+
   return (
     <AdminShell
       user={user}
       locale={locale}
       siteTitle={siteTitle}
+      siteLogo={siteLogo}
       backgroundImage={resolveSiteBackground(settings)}
     >
       {children}

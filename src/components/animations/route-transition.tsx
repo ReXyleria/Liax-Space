@@ -87,14 +87,14 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
       />
 
       {/* Page content with smooth crossfade */}
-      <div
-        key={pathname}
-        className={
-          isAdmin ? "route-transition-admin" : "route-transition-public"
-        }
-      >
-        {children}
-      </div>
+      {/* Admin routes skip key-based animation so the sidebar layout stays mounted */}
+      {isAdmin ? (
+        <>{children}</>
+      ) : (
+        <div key={pathname} className="route-transition-public">
+          {children}
+        </div>
+      )}
     </>
   );
 }
