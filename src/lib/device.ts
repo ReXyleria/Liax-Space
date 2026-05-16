@@ -1,8 +1,11 @@
 export function getSafeDeviceName(userAgent: string | null | undefined) {
   const source = userAgent ?? "";
 
+  // Windows NT 10.0 is used by both Windows 10 and Windows 11 —
+  // the build number (not present in most UA strings) differentiates them.
+  // Just report "Windows" to avoid misleading version numbers.
   const os = source.includes("Windows")
-    ? `Windows ${(source.match(/Windows NT (\d+\.\d+)/) ?? [])[1] ?? ""}`.replace(/\s+$/, "")
+    ? "Windows"
     : source.includes("Mac OS")
       ? `macOS ${(source.match(/Mac OS X (\d+[._]\d+)/) ?? [])[1]?.replace(/_/g, ".") ?? ""}`.replace(/\s+$/, "")
       : source.includes("Android")

@@ -216,6 +216,13 @@ export default async function ArticleDetailPage({
                     <MotionItem key={comment.id}>
                       <Card className="p-4">
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          {comment.user.avatar ? (
+                            <img
+                              src={comment.user.avatar}
+                              alt=""
+                              className="h-6 w-6 rounded-full object-cover"
+                            />
+                          ) : null}
                           <p className="text-sm font-medium">{comment.user.nickname}</p>
                           <p className="text-xs text-muted-foreground">{formatDate(comment.createdAt)}</p>
                         </div>

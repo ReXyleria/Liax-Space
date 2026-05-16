@@ -407,6 +407,7 @@ model Comment {
   content       String        @db.Text
   deviceName    String?
   status        CommentStatus @default(PENDING)
+  pinned        Boolean       @default(false)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -416,7 +417,7 @@ model Comment {
   parent        Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
   replies       Comment[]     @relation("CommentReplies")
 
-  @@index([articleId, status])
+  @@index([articleId, status, pinned])
   @@index([userId])
   @@index([parentId])
 }

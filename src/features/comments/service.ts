@@ -7,13 +7,13 @@ import { commentCreateSchema, commentStatusSchema } from "@/features/comments/va
 
 async function commentsRequireApproval() {
   if (!isDatabaseConfigured()) {
-    return true;
+    return false;
   }
 
   return withDatabase(async () => {
     const setting = await db.setting.findUnique({ where: { key: "comments.requireApproval" } });
-    return setting?.value !== "false";
-  }, true);
+    return setting?.value === "true";
+  }, false);
 }
 
 export async function listArticleComments(articleId: string) {
@@ -24,7 +24,7 @@ export async function listArticleComments(articleId: string) {
   return withDatabase(() => db.comment.findMany({
       where: { articleId, status: CommentStatus.APPROVED, deletedAt: null },
       include: { user: { select: { nickname: true, avatar: true } } },
-      orderBy: { createdAt: "asc" }
+      orderBy: [{ pinned: "desc" }, { createdAt: "asc" }]
     }), []);
 }
 
@@ -121,14 +121,26 @@ export async function listAdminComments(user: CurrentUser) {
       comments: await db.comment.findMany({
         where: { deletedAt: null },
         include: {
-          article: { select: { title: true } },
-          user: { select: { nickname: true, email: true } }
+          article: { select: { title: true, slug: true } },
+          user: { select: { nickname: true, email: true, avatar: true } }
         },
-        orderBy: { createdAt: "desc" }
+        orderBy: [{ pinned: "desc" }, { createdAt: "desc" }]
       }),
       error: null as string | null
     };
   }, { comments: [], error: "评论读取超时或失败。" });
+}
+
+export async function toggleCommentPin(user: CurrentUser, commentId: string) {
+  assertPermission(canManageComments(user), "你没有权限管理评论。");
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL 未配置。");
+  }
+  const comment = await db.comment.findUnique({ where: { id: commentId }, select: { pinned: true } });
+  if (!comment) {
+    throw new Error("评论不存在。");
+  }
+  return db.comment.update({ where: { id: commentId }, data: { pinned: !comment.pinned } });
 }
 
 export async function updateCommentStatus(user: CurrentUser, input: unknown) {
