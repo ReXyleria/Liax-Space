@@ -188,7 +188,7 @@ export async function PublicShell({
               homePage ? "border-white/12 text-white/84" : "border-white/70"
             )}
           >
-            <span>&copy; {new Date().getFullYear()} {siteTitle}. All rights reserved.</span>
+            <span>&copy; {settings["footer.copyright"] || `${new Date().getFullYear()} ${siteTitle}. All rights reserved.`}</span>
             <span className="flex flex-wrap gap-x-3 gap-y-1">
               {icp || police ? (
                 <>

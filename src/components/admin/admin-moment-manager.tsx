@@ -34,6 +34,7 @@ const initialState: MomentActionState = { ok: false, message: "", fieldErrors: {
 function text(locale: Locale) {
   return locale === "en"
     ? {
+        title: "Moments",
         createTitle: "Publish moment",
         createDescription: "Write a short update, add images, and set its visibility.",
         editTitle: "Edit moment",
@@ -57,6 +58,7 @@ function text(locale: Locale) {
         publicLabel: "Public"
       }
     : {
+        title: "瞬间",
         createTitle: "发布瞬间",
         createDescription: "写一条短动态，上传图片，设置可见范围和发布时间。",
         editTitle: "编辑瞬间",
@@ -281,11 +283,7 @@ export function AdminMomentManager({ locale, moments }: { locale: Locale; moment
   return (
     <div className="space-y-6">
       {/* Header with create button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">瞬间</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{copy.createDescription}</p>
-        </div>
+      <div className="flex items-center justify-end">
         <Button type="button" onClick={() => setCreateOpen(true)}>
           <Send className="mr-2 h-4 w-4" />
           {copy.publish}

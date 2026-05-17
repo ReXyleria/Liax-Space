@@ -50,7 +50,8 @@ export async function getDashboardStats(
       todayVisits,
       popularArticles,
       recentArticles,
-      visitLogs
+      visitLogs,
+      loginSessions
     ] = await Promise.all([
       db.article.count({ where: { deletedAt: null } }),
       db.user.count(),
@@ -76,6 +77,9 @@ export async function getDashboardStats(
           countryCode: true,
           searchEngine: true
         }
+      }),
+      db.authSession.findMany({
+        select: { deviceName: true }
       })
     ]);
 
@@ -117,7 +121,14 @@ export async function getDashboardStats(
           .sort((a, b) => b.count - a.count)
       };
     });
-    const searchEngineSources = Array.from(searchEngineTotals.entries())
+
+    const deviceTotals = new Map<string, number>();
+    for (const session of loginSessions) {
+      const device = session.deviceName || "Unknown";
+      const browser = device.includes("·") ? device.split("·")[0].trim() : device;
+      deviceTotals.set(browser, (deviceTotals.get(browser) ?? 0) + 1);
+    }
+    const deviceSources = Array.from(deviceTotals.entries())
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
 
@@ -138,7 +149,7 @@ export async function getDashboardStats(
         })),
         visitTrend,
         countryTimeline,
-        searchEngineSources
+        deviceSources
       }
     };
   } catch (error) {

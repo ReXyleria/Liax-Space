@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Send, Settings2 } from "lucide-react";
+import { Download, Send, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -170,7 +170,7 @@ export function SitePushPanel({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">批量推送</CardTitle>
+            <CardTitle className="text-base">批量推送 & Sitemap</CardTitle>
           </CardHeader>
           <CardContent>
             <form action={batchAction} className="space-y-4">
@@ -182,6 +182,19 @@ export function SitePushPanel({
                 {batchPending ? "提交中..." : "推送已发布文章"}
               </Button>
             </form>
+            <div className="mt-4 border-t pt-4">
+              <a
+                href="/api/admin/sitemap"
+                download
+                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
+              >
+                <Download className="h-4 w-4" />
+                导出 sitemap.xml
+              </a>
+              <p className="mt-2 text-xs text-muted-foreground">
+                生成包含所有静态页面和已发布文章的 sitemap，可供手动提交到百度/Bing/Google 或放置在站点根目录。
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>

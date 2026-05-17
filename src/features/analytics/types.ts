@@ -12,5 +12,5 @@ export type DashboardStats = {
     date: string;
     countries: Array<{ countryCode: string; count: number }>;
   }>;
-  searchEngineSources: Array<{ name: string; value: number }>;
+  deviceSources: Array<{ name: string; value: number }>;
 };

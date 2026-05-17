@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 import { listAssignableIdentities } from "@/features/identity/service";
 import { listUsers } from "@/features/users/service";
 import { requireAdminPermission } from "@/lib/admin-guard";
+import { getAdminLocale, t } from "@/lib/i18n";
 import { canManageUsers } from "@/lib/permissions";
 import { statusLabels } from "@/lib/role-labels";
 import { formatDate } from "@/lib/utils";
@@ -21,7 +22,10 @@ export default async function AdminUsersPage({
   searchParams?: Promise<{ q?: string; status?: string; identityId?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const user = await requireAdminPermission(canManageUsers, "/admin/users");
+  const [user, locale] = await Promise.all([
+    requireAdminPermission(canManageUsers, "/admin/users"),
+    getAdminLocale()
+  ]);
   const [{ users, error }, identities] = await Promise.all([
     listUsers(user, params.q ?? "", {
       status: params.status,
@@ -34,20 +38,18 @@ export default async function AdminUsersPage({
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold">用户管理</h1>
-          <p className="mt-2 text-muted-foreground">
-            搜索用户并按身份或状态筛选。身份是唯一可编辑的权限入口，系统安全等级由服务端自动维护。
-          </p>
+          <h1 className="text-3xl font-semibold">{t(locale, "adminUserManagement")}</h1>
+          <p className="mt-2 text-muted-foreground">{t(locale, "adminUserDescription")}</p>
         </div>
         <CreateUserDialog identities={identities} currentUserRole={user.role} />
       </div>
       <form className="grid gap-2 md:grid-cols-[1fr_180px_220px_auto]">
-        <Input name="q" placeholder="搜索邮箱、用户名或昵称" defaultValue={params.q ?? ""} />
+        <Input name="q" placeholder={t(locale, "adminUserSearchPlaceholder")} defaultValue={params.q ?? ""} />
         <Select
           name="status"
           defaultValue={params.status ?? ""}
           options={[
-            { value: "", label: "全部状态" },
+            { value: "", label: t(locale, "adminUserAllStatus") },
             ...Object.values(UserStatus).map((status) => ({
               value: status,
               label: statusLabels[status]
@@ -58,26 +60,26 @@ export default async function AdminUsersPage({
           name="identityId"
           defaultValue={params.identityId ?? ""}
           options={[
-            { value: "", label: "全部身份" },
+            { value: "", label: t(locale, "adminUserAllIdentity") },
             ...identities.map((identity) => ({
               value: identity.id,
               label: identity.name
             }))
           ]}
         />
-        <Button>搜索</Button>
+        <Button>{t(locale, "adminUserSearch")}</Button>
       </form>
       {error ? (
         <Card className="flex items-center justify-between gap-4 border-destructive/20 bg-destructive/5 p-5">
           <div>
-            <p className="font-medium text-destructive">用户列表加载失败</p>
+            <p className="font-medium text-destructive">{t(locale, "adminUserLoadFailed")}</p>
             <p className="mt-2 text-sm text-muted-foreground">{error}</p>
           </div>
           <Link
             href="/admin/users"
             className="inline-flex h-10 items-center justify-center rounded-md border border-destructive/20 bg-background px-4 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:border-destructive/30 hover:bg-muted"
           >
-            重新加载
+            {t(locale, "adminUserRetry")}
           </Link>
         </Card>
       ) : null}
@@ -111,8 +113,8 @@ export default async function AdminUsersPage({
           </div>
         ) : (
           <div className="space-y-4 p-8 text-center">
-            <p className="text-sm text-muted-foreground">没有找到用户。</p>
-            <p className="text-xs text-muted-foreground">可以尝试调整筛选条件，或者点击右上角创建新用户。</p>
+            <p className="text-sm text-muted-foreground">{t(locale, "adminUserNotFound")}</p>
+            <p className="text-xs text-muted-foreground">{t(locale, "adminUserNotFoundHint")}</p>
           </div>
         )}
       </Card>

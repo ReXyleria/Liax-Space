@@ -5,6 +5,7 @@ import { DashboardEcharts } from "@/components/admin/dashboard-echarts";
 import { Card, CardContent } from "@/components/ui/card";
 import { getDashboardStats } from "@/features/analytics/service";
 import { requireAdminAccess } from "@/lib/admin-guard";
+import { getAdminLocale, t, type Locale } from "@/lib/i18n";
 import { canManageArticles, canViewAnalytics } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
@@ -38,12 +39,13 @@ function StatCard({
   );
 }
 
-function formatDate(date: Date | null | undefined) {
+function formatArticleDate(locale: Locale, date: Date | null | undefined) {
   if (!date) {
-    return "未发布";
+    return t(locale, "adminUnpublished");
   }
 
-  return new Date(date).toLocaleDateString("zh-CN", {
+  const lang = locale === "en" ? "en-US" : "zh-CN";
+  return new Date(date).toLocaleDateString(lang, {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -62,7 +64,10 @@ export default async function AdminDashboardPage({
 }: {
   searchParams?: Promise<{ range?: string }>;
 }) {
-  const user = await requireAdminAccess("/admin");
+  const [user, locale] = await Promise.all([
+    requireAdminAccess("/admin"),
+    getAdminLocale()
+  ]);
 
   if (!canViewAnalytics(user)) {
     redirect(canManageArticles(user) ? "/admin/articles" : "/admin/account?section=profile");
@@ -76,8 +81,8 @@ export default async function AdminDashboardPage({
     <div className="space-y-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">站点数据概览</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t(locale, "adminDashboard")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t(locale, "adminDashboardDescription")}</p>
         </div>
         {stats ? (
           <Link
@@ -85,7 +90,7 @@ export default async function AdminDashboardPage({
             className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-all hover:opacity-90 active:scale-[0.98]"
           >
             <FileText className="h-4 w-4" />
-            新建文章
+            {t(locale, "adminNewArticle")}
           </Link>
         ) : null}
       </div>
@@ -93,14 +98,14 @@ export default async function AdminDashboardPage({
       {error ? (
         <Card className="flex items-center justify-between gap-4 border-destructive/20 bg-destructive/5 p-5">
           <div>
-            <p className="font-medium text-destructive">Dashboard 数据加载失败</p>
+            <p className="font-medium text-destructive">{t(locale, "adminDashboardLoadFailed")}</p>
             <p className="mt-1 text-sm text-muted-foreground">{error}</p>
           </div>
           <Link
             href="/admin"
             className="inline-flex h-9 items-center rounded-md border border-destructive/20 bg-background px-3 text-sm font-medium transition-all hover:border-destructive/30 hover:bg-muted"
           >
-            重试
+            {t(locale, "adminRetry")}
           </Link>
         </Card>
       ) : null}
@@ -108,27 +113,28 @@ export default async function AdminDashboardPage({
       {stats ? (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <StatCard label="文章" value={stats.totalArticles} icon={FileText} gradient="bg-blue-500" />
-            <StatCard label="用户" value={stats.totalUsers} icon={Users} gradient="bg-emerald-500" />
-            <StatCard label="评论" value={stats.totalComments} icon={MessageSquare} gradient="bg-violet-500" />
-            <StatCard label="留言" value={stats.totalGuestbook} icon={MessageSquareText} gradient="bg-amber-500" />
-            <StatCard label="今日访问" value={stats.todayVisits} icon={Eye} gradient="bg-rose-500" />
+            <StatCard label={t(locale, "adminArticles")} value={stats.totalArticles} icon={FileText} gradient="bg-blue-500" />
+            <StatCard label={t(locale, "adminUsersLabel")} value={stats.totalUsers} icon={Users} gradient="bg-emerald-500" />
+            <StatCard label={t(locale, "adminCommentsLabel")} value={stats.totalComments} icon={MessageSquare} gradient="bg-violet-500" />
+            <StatCard label={t(locale, "adminGuestbookLabel")} value={stats.totalGuestbook} icon={MessageSquareText} gradient="bg-amber-500" />
+            <StatCard label={t(locale, "adminTodayVisits")} value={stats.todayVisits} icon={Eye} gradient="bg-rose-500" />
           </div>
 
           <DashboardEcharts
             rangeDays={stats.rangeDays}
             visitTrend={stats.visitTrend}
             countryTimeline={stats.countryTimeline}
-            searchEngineSources={stats.searchEngineSources}
+            deviceSources={stats.deviceSources}
+            locale={locale}
           />
 
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
             <Card>
               <CardContent className="p-5">
                 <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-semibold">最近发布</h2>
+                  <h2 className="font-semibold">{t(locale, "adminRecentPublished")}</h2>
                   <Link href="/admin/articles" className="text-xs text-muted-foreground hover:text-foreground">
-                    查看全部
+                    {t(locale, "adminViewAll")}
                   </Link>
                 </div>
                 {stats.recentArticles.length ? (
@@ -140,12 +146,12 @@ export default async function AdminDashboardPage({
                       >
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">{article.title}</p>
-                          <p className="text-xs text-muted-foreground">{formatDate(article.publishedAt)}</p>
+                          <p className="text-xs text-muted-foreground">{formatArticleDate(locale, article.publishedAt)}</p>
                         </div>
                         <Link
                           href={`/admin/articles/${article.id}/edit`}
                           className="ml-3 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                          title="编辑文章"
+                          title={t(locale, "adminEditArticle")}
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Link>
@@ -153,14 +159,14 @@ export default async function AdminDashboardPage({
                     ))}
                   </div>
                 ) : (
-                  <p className="py-6 text-center text-sm text-muted-foreground">暂无已发布文章。</p>
+                  <p className="py-6 text-center text-sm text-muted-foreground">{t(locale, "adminNoPublishedArticles")}</p>
                 )}
               </CardContent>
             </Card>
 
             <Card>
               <CardContent className="p-5">
-                <h2 className="mb-3 font-semibold">热门文章</h2>
+                <h2 className="mb-3 font-semibold">{t(locale, "adminPopularArticles")}</h2>
                 {stats.popularArticles.length ? (
                   <div className="space-y-2">
                     {stats.popularArticles.map((article, index) => (
@@ -174,13 +180,13 @@ export default async function AdminDashboardPage({
                         </span>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">{article.title}</p>
-                          <p className="text-xs text-muted-foreground">{article.viewCount} 阅读</p>
+                          <p className="text-xs text-muted-foreground">{article.viewCount} {t(locale, "adminReadsLabel")}</p>
                         </div>
                       </Link>
                     ))}
                   </div>
                 ) : (
-                  <p className="py-6 text-center text-sm text-muted-foreground">暂无文章数据。</p>
+                  <p className="py-6 text-center text-sm text-muted-foreground">{t(locale, "adminNoArticleData")}</p>
                 )}
               </CardContent>
             </Card>
@@ -189,9 +195,9 @@ export default async function AdminDashboardPage({
       ) : (
         <Card className="border-dashed py-12 text-center">
           <FileText className="mx-auto h-8 w-8 text-muted-foreground/40" />
-          <p className="mt-3 font-medium">暂无 Dashboard 数据</p>
+          <p className="mt-3 font-medium">{t(locale, "adminNoDashboardData")}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            数据库刚初始化完成，或者统计查询暂时没有返回结果。
+            {t(locale, "adminNoDashboardDataDescription")}
           </p>
         </Card>
       )}

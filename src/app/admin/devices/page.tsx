@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { revokeTrustedDeviceFormAction, revokeUserSessionFormAction } from "@/features/users/actions";
 import { listAllLoginSessions, listAllTrustedDevices } from "@/features/users/service";
 import { requireAdminPermission } from "@/lib/admin-guard";
+import { getAdminLocale, t } from "@/lib/i18n";
 import { canManageUsers } from "@/lib/permissions";
 import { formatDate } from "@/lib/utils";
 
@@ -16,22 +17,22 @@ export default async function AdminDevicesPage({
   searchParams?: Promise<{ q?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const user = await requireAdminPermission(canManageUsers, "/admin/devices");
+  const [user, locale] = await Promise.all([
+    requireAdminPermission(canManageUsers, "/admin/devices"),
+    getAdminLocale()
+  ]);
   const { sessions, error } = await listAllLoginSessions(user, params.q ?? "");
   const { devices, error: trustedError } = await listAllTrustedDevices(user, params.q ?? "");
 
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-sm font-medium text-primary">用户</p>
-        <h1 className="text-3xl font-semibold">设备管理</h1>
-        <p className="mt-2 text-muted-foreground">
-          查看全站登录会话并撤销异常设备。设备标签经过简化，不展示完整 user agent 或敏感 IP。
-        </p>
+        <h1 className="text-3xl font-semibold">{t(locale, "adminDeviceManagement")}</h1>
+        <p className="mt-2 text-muted-foreground">{t(locale, "adminDeviceDescription")}</p>
       </div>
       <form className="grid gap-2 md:grid-cols-[1fr_auto]">
-        <Input name="q" placeholder="搜索邮箱、用户名或昵称" defaultValue={params.q ?? ""} />
-        <Button>搜索</Button>
+        <Input name="q" placeholder={t(locale, "adminDeviceSearchPlaceholder")} defaultValue={params.q ?? ""} />
+        <Button>{t(locale, "adminDeviceSearch")}</Button>
       </form>
       {error ? <Card className="p-5 text-destructive">{error}</Card> : null}
       {trustedError ? <Card className="p-5 text-destructive">{trustedError}</Card> : null}
@@ -46,21 +47,21 @@ export default async function AdminDevicesPage({
                     {session.user.email} · {session.user.role}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {session.deviceName || "未知设备"} · 最近使用 {formatDate(session.lastUsedAt)} · 过期 {formatDate(session.expiresAt)}
+                    {session.deviceName || t(locale, "adminDeviceUnknownDevice")} · {locale === "en" ? "Last used" : "最近使用"} {formatDate(session.lastUsedAt)} · {locale === "en" ? "Expires" : "过期"} {formatDate(session.expiresAt)}
                   </p>
                 </div>
                 <DeviceRevokeButton
                   id={session.id}
-                  label="撤销会话"
-                  title="确认撤销会话"
-                  description="该登录会话会立即失效，对应用户需要重新登录。"
+                  label={t(locale, "adminDeviceRevokeSession")}
+                  title={t(locale, "adminDeviceConfirmRevokeSession")}
+                  description={t(locale, "adminDeviceRevokeSessionDescription")}
                   action={revokeUserSessionFormAction}
                 />
               </div>
             ))}
           </div>
         ) : (
-          <div className="p-8 text-center text-muted-foreground">暂无登录会话。</div>
+          <div className="p-8 text-center text-muted-foreground">{t(locale, "adminDeviceNoSessions")}</div>
         )}
       </Card>
       <Card className="overflow-hidden">
@@ -74,21 +75,21 @@ export default async function AdminDevicesPage({
                     {device.user.email} · {device.user.role}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {device.deviceName || "未知设备"} · 最近使用 {formatDate(device.lastUsedAt)} · 过期 {formatDate(device.expiresAt)}
+                    {device.deviceName || t(locale, "adminDeviceUnknownDevice")} · {locale === "en" ? "Last used" : "最近使用"} {formatDate(device.lastUsedAt)} · {locale === "en" ? "Expires" : "过期"} {formatDate(device.expiresAt)}
                   </p>
                 </div>
                 <DeviceRevokeButton
                   id={device.id}
-                  label="撤销信任设备"
-                  title="确认撤销信任设备"
-                  description="该设备之后不能再跳过二次验证，需要重新完成信任流程。"
+                  label={t(locale, "adminDeviceRevokeTrustedDevice")}
+                  title={t(locale, "adminDeviceConfirmRevokeTrustedDevice")}
+                  description={t(locale, "adminDeviceRevokeTrustedDeviceDescription")}
                   action={revokeTrustedDeviceFormAction}
                 />
               </div>
             ))}
           </div>
         ) : (
-          <div className="p-8 text-center text-muted-foreground">暂无信任设备。</div>
+          <div className="p-8 text-center text-muted-foreground">{t(locale, "adminDeviceNoTrustedDevices")}</div>
         )}
       </Card>
     </div>

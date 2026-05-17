@@ -12,11 +12,7 @@ export default async function AdminSecuritySettingsPage() {
       locale={locale}
       eyebrow={t(locale, "adminSystem")}
       title={t(locale, "adminSecurity")}
-      description={
-        locale === "en"
-          ? "Manage registration, comment approval, and guestbook approval switches."
-          : "管理注册、评论审核和留言审核等站点安全开关。"
-      }
+      description={t(locale, "adminSecuritySettingsDescription")}
       emptyText={t(locale, "settingsMissingDefinitions")}
       settingKeys={["register.enabled", "comments.requireApproval", "guestbook.requireApproval"]}
     />

@@ -5,12 +5,13 @@ import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { t, type Locale } from "@/lib/i18n";
 import type { DashboardStats } from "@/features/analytics/types";
 
 type DashboardEchartsProps = Pick<
   DashboardStats,
-  "rangeDays" | "visitTrend" | "countryTimeline" | "searchEngineSources"
->;
+  "rangeDays" | "visitTrend" | "countryTimeline" | "deviceSources"
+> & { locale: Locale };
 
 const RANGE_OPTIONS: DashboardStats["rangeDays"][] = [7, 14, 30];
 
@@ -131,8 +132,8 @@ function getCountryOption(countryTimeline: DashboardStats["countryTimeline"]): e
   };
 }
 
-function getSearchEngineOption(searchEngineSources: DashboardStats["searchEngineSources"]): echarts.EChartsOption {
-  const data = searchEngineSources.length ? searchEngineSources : [{ name: "No data", value: 0 }];
+function getDeviceSourceOption(deviceSources: DashboardStats["deviceSources"]): echarts.EChartsOption {
+  const data = deviceSources.length ? deviceSources : [{ name: "No data", value: 0 }];
 
   return {
     color: ["#2563eb", "#0f766e", "#f59e0b", "#db2777", "#7c3aed", "#0891b2", "#65a30d", "#64748b"],
@@ -144,7 +145,7 @@ function getSearchEngineOption(searchEngineSources: DashboardStats["searchEngine
     },
     series: [
       {
-        name: "来源",
+        name: "Device",
         type: "pie",
         radius: ["16%", "68%"],
         center: ["50%", "45%"],
@@ -162,7 +163,8 @@ export function DashboardEcharts({
   rangeDays,
   visitTrend,
   countryTimeline,
-  searchEngineSources
+  deviceSources,
+  locale
 }: DashboardEchartsProps) {
   const visitRef = useRef<HTMLDivElement>(null);
   const countryRef = useRef<HTMLDivElement>(null);
@@ -170,7 +172,7 @@ export function DashboardEcharts({
 
   const visitOption = useMemo(() => getVisitTrendOption(visitTrend), [visitTrend]);
   const countryOption = useMemo(() => getCountryOption(countryTimeline), [countryTimeline]);
-  const sourceOption = useMemo(() => getSearchEngineOption(searchEngineSources), [searchEngineSources]);
+  const sourceOption = useMemo(() => getDeviceSourceOption(deviceSources), [deviceSources]);
 
   useChart(visitRef, visitOption);
   useChart(countryRef, countryOption);
@@ -180,8 +182,8 @@ export function DashboardEcharts({
     <section className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">访问分析</h2>
-          <p className="text-sm text-muted-foreground">三个图表共用同一日期范围。</p>
+          <h2 className="text-lg font-semibold tracking-tight">{t(locale, "adminAnalytics")}</h2>
+          <p className="text-sm text-muted-foreground">{t(locale, "adminAnalyticsDescription")}</p>
         </div>
         <div className="inline-flex w-fit rounded-lg border bg-card p-1">
           {RANGE_OPTIONS.map((range) => (
@@ -193,7 +195,7 @@ export function DashboardEcharts({
               )}
               href={`/admin?range=${range}`}
             >
-              {range} 天
+              {range} {t(locale, "adminDays")}
             </Link>
           ))}
         </div>
@@ -202,7 +204,7 @@ export function DashboardEcharts({
       <div className="grid gap-4 xl:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">每日访问量</CardTitle>
+            <CardTitle className="text-base">{t(locale, "adminDailyVisits")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div ref={visitRef} className="h-[320px] w-full" />
@@ -211,7 +213,7 @@ export function DashboardEcharts({
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">各国访问排名变化</CardTitle>
+            <CardTitle className="text-base">{t(locale, "adminCountryRanking")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div ref={countryRef} className="h-[320px] w-full" />
@@ -220,7 +222,7 @@ export function DashboardEcharts({
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">搜索引擎来源占比</CardTitle>
+            <CardTitle className="text-base">{t(locale, "adminDeviceRatio")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div ref={sourceRef} className="h-[320px] w-full" />

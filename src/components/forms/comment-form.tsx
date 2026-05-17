@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -13,6 +14,7 @@ type CommentApiResult = {
 export function CommentForm({ articleId }: { articleId: string }) {
   const [result, setResult] = useState<CommentApiResult | null>(null);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
   return (
     <form
@@ -34,6 +36,7 @@ export function CommentForm({ articleId }: { articleId: string }) {
           setResult(nextResult);
           if (nextResult.ok) {
             form.reset();
+            router.refresh();
           }
         });
       }}

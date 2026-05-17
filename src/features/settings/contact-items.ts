@@ -3,12 +3,18 @@ import type { SettingsMap } from "@/features/settings/types";
 
 export const contactItemSchema = z.object({
   id: z.string().trim().min(1),
-  label: z.string().trim().min(1, "联系方式名称不能为空。").max(40, "联系方式名称不能超过 40 个字符。"),
-  value: z.string().trim().min(1, "联系方式内容不能为空。").max(200, "联系方式内容不能超过 200 个字符。"),
-  href: z.string().trim().min(1, "跳转链接不能为空。").max(500, "跳转链接不能超过 500 个字符。"),
+  label: z.string().max(40, "联系方式名称不能超过 40 个字符。"),
+  value: z.string().max(200, "联系方式内容不能超过 200 个字符。"),
+  href: z.string().max(500, "跳转链接不能超过 500 个字符。"),
   kind: z.string().trim().min(1).max(30),
   enabled: z.boolean().default(true),
   sort: z.number().int().min(0).default(0)
+}).refine((data) => {
+  if (!data.enabled) return true;
+  return data.label.trim().length > 0 && data.value.trim().length > 0 && data.href.trim().length > 0;
+}, {
+  message: "Enabled contact items must have label, value, and href.",
+  path: ["enabled"]
 });
 
 export const contactItemsSchema = z.array(contactItemSchema).max(20, "最多保留 20 条联系方式。");

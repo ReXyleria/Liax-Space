@@ -26,6 +26,7 @@ export const settingDefinitions: SettingDefinition[] = [
   { key: "record.icpUrl", label: "ICP filing URL", group: "Footer", type: SettingType.TEXT, defaultValue: "https://beian.miit.gov.cn/" },
   { key: "record.police", label: "Police filing", group: "Footer", type: SettingType.TEXT, defaultValue: "" },
   { key: "record.policeUrl", label: "Police filing URL", group: "Footer", type: SettingType.TEXT, defaultValue: "https://www.beian.gov.cn/portal/registerSystemInfo" },
+  { key: "footer.copyright", label: "Copyright", group: "Footer", type: SettingType.TEXT, defaultValue: "" },
   { key: "contact.items", label: "Contact items", group: "Contact", type: SettingType.JSON, defaultValue: "[]" },
   { key: "contact.email", label: "Email", group: "Contact", type: SettingType.TEXT, defaultValue: "" },
   { key: "contact.github", label: "GitHub", group: "Contact", type: SettingType.TEXT, defaultValue: "" },
@@ -88,7 +89,8 @@ const localizedSettingDefinitions: Record<Locale, Record<string, { label: string
     "guestbook.requireApproval": { label: "留言需要审核", group: "留言" },
     "passkey.rpId": { label: "Passkey RP ID", group: "通行密钥" },
     "passkey.origin": { label: "Passkey Origin", group: "通行密钥" },
-    "passkey.rpName": { label: "Passkey RP 名称", group: "通行密钥" }
+    "passkey.rpName": { label: "Passkey RP 名称", group: "通行密钥" },
+    "footer.copyright": { label: "版权声明", group: "页脚" }
   }
 };
 
