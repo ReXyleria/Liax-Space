@@ -194,7 +194,7 @@ export function ArticleSettingsDialog({
         </label>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{text.coverLabel}</span>
-          <ImageUploadField name="cover" defaultValue={article.cover ?? ""} />
+          <ImageUploadField name="cover" defaultValue={article.cover ?? ""} showRandomOption />
         </label>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{text.visibilityLabel}</span>

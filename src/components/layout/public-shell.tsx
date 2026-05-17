@@ -86,6 +86,7 @@ export async function PublicShell({
     { href: "/articles", label: t(locale, "articles") },
     { href: "/tags", label: t(locale, "tags") },
     { href: "/moments", label: t(locale, "moments") },
+    { href: "/guestbook", label: t(locale, "guestbook") },
     { href: "/archives", label: t(locale, "archives") }
   ];
   const footerInjectionEnabled = getEnabledCodeInjection(codeInjection, "code.globalFooter");

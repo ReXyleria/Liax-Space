@@ -2,7 +2,8 @@ import {
   ArticleStatus,
   ContentVisibility,
   MediaReferenceSource,
-  Prisma
+  Prisma,
+  TranslationStatus
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
@@ -11,9 +12,12 @@ import { sanitizeArticleHtml } from "@/lib/sanitize";
 import type { CurrentUser } from "@/lib/auth";
 import { articleMutationSchema, articleMetaSchema, articleQuerySchema } from "@/features/articles/validators";
 import {
+  hashArticleSource,
+  normalizeTranslationLocale,
   resolveArticleDisplayTranslation,
   scheduleArticleTranslationSync
 } from "@/features/articles/translation-service";
+import { getTranslationConfig } from "@/features/settings/translation-settings";
 import { pushArticleUrlAfterPublish } from "@/features/site-push/service";
 import { normalizeTagSlug } from "@/features/tags/utils";
 import { mediaUrlMatchesReference, normalizeMediaReferenceUrl } from "@/lib/media-reference";
@@ -111,11 +115,21 @@ function normalizeDisplayLocale(locale?: string | null) {
   return locale;
 }
 
-function mapArticle(article: ArticleWithRelations, locale?: string | null) {
+function mapArticle(article: ArticleWithRelations, locale?: string | null, translationTargetLocale = "en") {
   const display = resolveArticleDisplayTranslation(article, locale);
-  const { tags, translations: ignoredTranslations, ...rest } = article;
-  void ignoredTranslations;
+  const { tags, translations, ...rest } = article;
   const normalizedLocale = normalizeDisplayLocale(locale);
+  const contentHash = hashArticleSource({
+    title: article.title,
+    summary: article.summary,
+    contentHtml: article.contentHtml
+  });
+  const normalizedTargetLocale = normalizeTranslationLocale(translationTargetLocale);
+  const targetTranslation = translations.find((translation) => translation.locale === normalizedTargetLocale);
+  const translationReady =
+    Boolean(targetTranslation) &&
+    targetTranslation?.status === TranslationStatus.TRANSLATED &&
+    targetTranslation.contentHash === contentHash;
 
   return {
     ...rest,
@@ -125,6 +139,9 @@ function mapArticle(article: ArticleWithRelations, locale?: string | null) {
     translationLocale: normalizedLocale,
     translationStatus: display.status,
     translationError: display.error,
+    translationTargetLocale: normalizedTargetLocale,
+    translationReady,
+    targetTranslationStatus: targetTranslation?.status ?? null,
     publishedAt: rest.publishedAt?.toISOString() ?? null,
     tags: tags.map((item) => item.tag).filter(isDefined)
   };
@@ -337,6 +354,8 @@ export async function listAdminArticles(user: CurrentUser) {
   }
 
   return withDatabase(async () => {
+    const config = await getTranslationConfig().catch(() => null);
+    const translationTargetLocale = normalizeTranslationLocale(config?.targetLang ?? "en");
     const articles = await db.article.findMany({
       where: { deletedAt: null },
       include: articleInclude,
@@ -344,7 +363,10 @@ export async function listAdminArticles(user: CurrentUser) {
       take: 100
     });
 
-    return { articles: articles.map((article) => mapArticle(article)), error: null as string | null };
+    return {
+      articles: articles.map((article) => mapArticle(article, null, translationTargetLocale)),
+      error: null as string | null
+    };
   }, { articles: [], error: "Failed to load admin articles." });
 }
 

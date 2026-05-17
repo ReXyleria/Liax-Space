@@ -96,6 +96,8 @@ function templateLabel(locale: Locale, scene: MailTemplateScene) {
         return { name: "Moment received a new comment", description: "Sent to the author when a logged-in user comments on their moment." };
       case MailTemplateScene.LOGIN_ALERT:
         return { name: "New device login", description: "Sent when a new device label logs in." };
+      case MailTemplateScene.LOGIN_CODE:
+        return { name: "Login verification code", description: "Sent when a new device needs email verification." };
       case MailTemplateScene.COMMENT_REPLY:
         return { name: "Someone replied to me", description: "Sent when a comment or message receives a reply." };
       case MailTemplateScene.EMAIL_VERIFY:
@@ -116,8 +118,10 @@ function templateLabel(locale: Locale, scene: MailTemplateScene) {
   switch (scene) {
     case MailTemplateScene.MOMENT_COMMENT:
       return { name: "瞬间收到新评论", description: "当登录用户评论你的瞬间时发送给作者。" };
-    case MailTemplateScene.LOGIN_ALERT:
-      return { name: "新设备登录提醒", description: "当新的设备标签登录时发送。" };
+      case MailTemplateScene.LOGIN_ALERT:
+        return { name: "新设备登录提醒", description: "当新的设备标签登录时发送。" };
+    case MailTemplateScene.LOGIN_CODE:
+      return { name: "登录验证码", description: "新设备登录需要邮箱二次验证时发送。" };
     case MailTemplateScene.COMMENT_REPLY:
       return { name: "有人回复我", description: "当评论或留言收到回复时发送。" };
     case MailTemplateScene.EMAIL_VERIFY:
@@ -133,6 +137,8 @@ function templateLabel(locale: Locale, scene: MailTemplateScene) {
     case MailTemplateScene.GUESTBOOK_REPLY:
       return { name: "留言回复", description: "当留言收到回复时发送。" };
   }
+
+  return { name: scene, description: "" };
 }
 
 function renderPreview(template: string) {

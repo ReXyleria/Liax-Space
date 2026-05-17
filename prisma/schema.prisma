@@ -61,6 +61,7 @@ enum WebAuthnChallengeType {
 enum MailTemplateScene {
   MOMENT_COMMENT
   LOGIN_ALERT
+  LOGIN_CODE
   COMMENT_REPLY
   EMAIL_VERIFY
   PASSWORD_RESET
@@ -152,6 +153,7 @@ model User {
   moments            Moment[]
   momentLikes        MomentLike[]
   momentComments     MomentComment[]
+  guestbookMessages  GuestbookMessage[]
   passkeys           PasskeyCredential[]
   totpRecovery       TotpRecoveryCode[]
   webauthnChallenges WebAuthnChallenge[]
@@ -325,6 +327,10 @@ model ArticleTranslation {
   contentHtml     String            @db.LongText
   contentJson     Json?
   status          TranslationStatus @default(NOT_TRANSLATED)
+  progress        Int               @default(0)
+  completedUnits  Int               @default(0)
+  totalUnits      Int               @default(0)
+  progressMessage String?           @db.Text
   error           String?           @db.Text
   contentHash     String?           @db.VarChar(64)
   sourceUpdatedAt DateTime?
@@ -471,18 +477,23 @@ model MomentComment {
 }
 
 model GuestbookMessage {
-  id        String          @id @default(cuid())
-  nickname  String
-  email     String
-  content   String          @db.Text
-  reply     String?         @db.Text
-  status    GuestbookStatus @default(PENDING)
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-  deletedAt DateTime?
+  id         String          @id @default(cuid())
+  userId     String?
+  nickname   String
+  email      String
+  content    String          @db.Text
+  reply      String?         @db.Text
+  notifyOnly Boolean         @default(false)
+  status     GuestbookStatus @default(PENDING)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  deletedAt  DateTime?
+  user       User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([deletedAt])
+  @@index([userId])
+  @@index([notifyOnly, status])
 }
 
 model Setting {

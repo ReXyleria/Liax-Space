@@ -40,6 +40,8 @@ const defaultSettings: Array<{
   { key: "smtp.user", value: "", group: "smtp", type: "TEXT" },
   { key: "smtp.pass", value: "", group: "smtp", type: "PASSWORD" },
   { key: "smtp.from", value: "", group: "smtp", type: "TEXT" },
+  { key: "smtp.fromName", value: "", group: "smtp", type: "TEXT" },
+  { key: "smtp.encryption", value: "starttls", group: "smtp", type: "TEXT" },
   { key: "smtp.notificationsEnabled", value: "true", group: "smtp", type: "BOOLEAN" },
   { key: "register.enabled", value: "true", group: "register", type: "BOOLEAN" },
   { key: "register.defaultRole", value: "USER", group: "identity", type: "TEXT" },

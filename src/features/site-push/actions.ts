@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import {
   pushManualUrl,
@@ -44,6 +44,7 @@ export async function saveSitePushSettingsAction(
   try {
     const user = await requireUser();
     await saveSitePushSettings(user, formData);
+    revalidateTag("settings");
     revalidatePath("/admin/site-push");
     return { ok: true, message: text.saved };
   } catch (error) {

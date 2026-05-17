@@ -82,6 +82,8 @@ const defaultSettings: [string, string, string, SettingType][] = [
   ["smtp.user", "", "smtp", SettingType.TEXT],
   ["smtp.pass", "", "smtp", SettingType.PASSWORD],
   ["smtp.from", "", "smtp", SettingType.TEXT],
+  ["smtp.fromName", "", "smtp", SettingType.TEXT],
+  ["smtp.encryption", "starttls", "smtp", SettingType.TEXT],
   ["smtp.notificationsEnabled", "true", "smtp", SettingType.BOOLEAN],
   ["register.enabled", "true", "register", SettingType.BOOLEAN],
   ["register.defaultRole", "USER", "identity", SettingType.TEXT],

@@ -13,14 +13,24 @@ const backupVersion = 2;
 const legacyJsonBackupVersion = 1;
 const scheduleEnabledKey = "backup.schedule.enabled";
 const scheduleFrequencyKey = "backup.schedule.frequency";
+const scheduleRetentionDaysKey = "backup.schedule.retentionDays";
 const scheduleGroup = "Data and Backup";
 
 export type BackupScheduleFrequency = "daily" | "weekly" | "monthly";
+export type BackupRetentionDays = 1 | 3 | 5 | 7 | 30;
 
 export type BackupScheduleConfig = {
   enabled: boolean;
   frequency: BackupScheduleFrequency;
+  retentionDays: BackupRetentionDays;
 };
+
+const retentionOptions = [1, 3, 5, 7, 30] as const;
+
+function normalizeRetentionDays(value: unknown): BackupRetentionDays {
+  const parsed = Number(value);
+  return retentionOptions.includes(parsed as BackupRetentionDays) ? parsed as BackupRetentionDays : 7;
+}
 
 async function ensureBackupRoot() {
   await mkdir(backupRoot, { recursive: true });
@@ -239,14 +249,14 @@ export async function getBackupScheduleConfig(user: CurrentUser) {
 
   if (!isDatabaseConfigured()) {
     return {
-      config: { enabled: false, frequency: "daily" as BackupScheduleFrequency },
+      config: { enabled: false, frequency: "daily" as BackupScheduleFrequency, retentionDays: 7 as BackupRetentionDays },
       error: "DATABASE_URL is not configured."
     };
   }
 
   try {
     const settings = await db.setting.findMany({
-      where: { key: { in: [scheduleEnabledKey, scheduleFrequencyKey] } }
+      where: { key: { in: [scheduleEnabledKey, scheduleFrequencyKey, scheduleRetentionDaysKey] } }
     });
     const map = new Map(settings.map((setting) => [setting.key, setting.value]));
     const rawFrequency = map.get(scheduleFrequencyKey);
@@ -256,14 +266,15 @@ export async function getBackupScheduleConfig(user: CurrentUser) {
     return {
       config: {
         enabled: map.get(scheduleEnabledKey) === "true",
-        frequency
+        frequency,
+        retentionDays: normalizeRetentionDays(map.get(scheduleRetentionDaysKey))
       },
       error: null as string | null
     };
   } catch (error) {
     console.error("Failed to read backup schedule config", error);
     return {
-      config: { enabled: false, frequency: "daily" as BackupScheduleFrequency },
+      config: { enabled: false, frequency: "daily" as BackupScheduleFrequency, retentionDays: 7 as BackupRetentionDays },
       error: "Failed to load backup schedule config."
     };
   }
@@ -278,11 +289,13 @@ export async function updateBackupScheduleConfig(user: CurrentUser, input: unkno
   const data = input instanceof FormData
     ? {
         enabled: input.get("enabled") === "true",
-        frequency: String(input.get("frequency") ?? "daily")
+        frequency: String(input.get("frequency") ?? "daily"),
+        retentionDays: input.get("retentionDays")
       }
-    : input as Partial<{ enabled: boolean; frequency: string }>;
+    : input as Partial<{ enabled: boolean; frequency: string; retentionDays: unknown }>;
   const frequency: BackupScheduleFrequency =
     data.frequency === "weekly" || data.frequency === "monthly" ? data.frequency : "daily";
+  const retentionDays = normalizeRetentionDays(data.retentionDays);
 
   await db.$transaction([
     db.setting.upsert({
@@ -304,10 +317,40 @@ export async function updateBackupScheduleConfig(user: CurrentUser, input: unkno
         group: scheduleGroup,
         type: SettingType.TEXT
       }
+    }),
+    db.setting.upsert({
+      where: { key: scheduleRetentionDaysKey },
+      update: { value: String(retentionDays) },
+      create: {
+        key: scheduleRetentionDaysKey,
+        value: String(retentionDays),
+        group: scheduleGroup,
+        type: SettingType.NUMBER
+      }
     })
   ]);
 
-  return { enabled: Boolean(data.enabled), frequency };
+  return { enabled: Boolean(data.enabled), frequency, retentionDays };
+}
+
+async function pruneScheduledBackups(retentionDays: BackupRetentionDays) {
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+  const expired = await db.backupRecord.findMany({
+    where: {
+      reason: "scheduled-cli",
+      createdAt: { lt: cutoff }
+    },
+    select: { id: true, filePath: true }
+  });
+
+  for (const backup of expired) {
+    await db.backupRecord.delete({ where: { id: backup.id } }).catch(() => undefined);
+    try {
+      await unlink(safeBackupPath(backup.filePath)).catch(() => undefined);
+    } catch {
+      // Ignore unsafe legacy paths during retention cleanup; the record is already removed.
+    }
+  }
 }
 
 export async function createBackup(user: CurrentUser, reason = "manual") {
@@ -338,7 +381,7 @@ export async function createBackup(user: CurrentUser, reason = "manual") {
 
     await writeFile(filePath, archive);
     const fileStat = await stat(filePath);
-    return db.backupRecord.create({
+    const record = await db.backupRecord.create({
       data: {
         filename,
         filePath,
@@ -347,9 +390,14 @@ export async function createBackup(user: CurrentUser, reason = "manual") {
         createdById: user.id
       }
     });
+    if (reason === "scheduled-cli") {
+      const { config } = await getBackupScheduleConfig(user);
+      await pruneScheduledBackups(config.retentionDays);
+    }
+    return record;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Backup failed.";
-    return db.backupRecord.create({
+    const record = await db.backupRecord.create({
       data: {
         filename,
         filePath,
@@ -360,6 +408,11 @@ export async function createBackup(user: CurrentUser, reason = "manual") {
         createdById: user.id
       }
     });
+    if (reason === "scheduled-cli") {
+      const { config } = await getBackupScheduleConfig(user);
+      await pruneScheduledBackups(config.retentionDays);
+    }
+    return record;
   }
 }
 

@@ -16,7 +16,7 @@ export function hashArticleSource(input: { title: string; summary: string | null
     .digest("hex");
 }
 
-function normalizeLocale(value: string) {
+export function normalizeTranslationLocale(value: string) {
   const lower = value.toLowerCase();
   if (lower.startsWith("en")) {
     return "en";
@@ -55,7 +55,7 @@ export function resolveArticleDisplayTranslation(
   article: ArticleTranslationDisplaySource,
   locale?: string | null
 ) {
-  const normalizedLocale = locale ? normalizeLocale(locale) : null;
+  const normalizedLocale = locale ? normalizeTranslationLocale(locale) : null;
   const sourceHash = hashArticleSource({
     title: article.title,
     summary: article.summary,
@@ -121,7 +121,49 @@ export async function listArticleTranslations(user: CurrentUser, articleId: stri
   });
 }
 
-async function markTranslationInProgress(article: ArticleTranslationSource, locale: string, contentHash: string) {
+export async function getArticleTranslationProgress(user: CurrentUser, articleId: string, targetLocale: string) {
+  assertPermission(canManageArticles(user), "You do not have permission to view article translation progress.");
+
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL is not configured.");
+  }
+
+  const locale = normalizeTranslationLocale(targetLocale);
+  return db.articleTranslation.findUnique({
+    where: { articleId_locale: { articleId, locale } },
+    select: {
+      articleId: true,
+      locale: true,
+      status: true,
+      progress: true,
+      completedUnits: true,
+      totalUnits: true,
+      progressMessage: true,
+      error: true,
+      updatedAt: true
+    }
+  });
+}
+
+function toProgressPercent(completedUnits: number, totalUnits: number) {
+  if (totalUnits <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round((completedUnits / totalUnits) * 100)));
+}
+
+async function markTranslationInProgress(
+  article: ArticleTranslationSource,
+  locale: string,
+  contentHash: string,
+  progress: {
+    completedUnits?: number;
+    totalUnits?: number;
+    message?: string;
+  } = {}
+) {
+  const completedUnits = progress.completedUnits ?? 0;
+  const totalUnits = progress.totalUnits ?? 0;
   await db.articleTranslation.upsert({
     where: { articleId_locale: { articleId: article.id, locale } },
     update: {
@@ -133,7 +175,11 @@ async function markTranslationInProgress(article: ArticleTranslationSource, loca
       error: null,
       contentHash,
       sourceUpdatedAt: article.updatedAt,
-      translatedAt: null
+      translatedAt: null,
+      progress: toProgressPercent(completedUnits, totalUnits),
+      completedUnits,
+      totalUnits,
+      progressMessage: progress.message ?? "Translation queued"
     },
     create: {
       articleId: article.id,
@@ -145,7 +191,29 @@ async function markTranslationInProgress(article: ArticleTranslationSource, loca
       status: TranslationStatus.TRANSLATING,
       error: null,
       contentHash,
-      sourceUpdatedAt: article.updatedAt
+      sourceUpdatedAt: article.updatedAt,
+      progress: toProgressPercent(completedUnits, totalUnits),
+      completedUnits,
+      totalUnits,
+      progressMessage: progress.message ?? "Translation queued"
+    }
+  });
+}
+
+async function updateTranslationProgress(
+  articleId: string,
+  locale: string,
+  completedUnits: number,
+  totalUnits: number,
+  message: string
+) {
+  await db.articleTranslation.update({
+    where: { articleId_locale: { articleId, locale } },
+    data: {
+      progress: toProgressPercent(completedUnits, totalUnits),
+      completedUnits,
+      totalUnits,
+      progressMessage: message
     }
   });
 }
@@ -165,7 +233,7 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
     throw new Error("Translation API is not configured.");
   }
 
-  const locale = normalizeLocale(targetLocale);
+  const locale = normalizeTranslationLocale(targetLocale);
   const article = await db.article.findUnique({
     where: { id: articleId },
     select: {
@@ -197,12 +265,19 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
   await markTranslationInProgress(article, locale, contentHash);
 
   try {
-    const translated = await callTranslationApi(config, {
-      title: article.title,
-      summary: article.summary,
-      contentHtml: article.contentHtml,
-      targetLocale: locale
-    });
+    const translated = await callTranslationApi(
+      config,
+      {
+        title: article.title,
+        summary: article.summary,
+        contentHtml: article.contentHtml,
+        targetLocale: locale
+      },
+      {
+        onProgress: (progress) =>
+          updateTranslationProgress(article.id, locale, progress.completedUnits, progress.totalUnits, progress.message)
+      }
+    );
 
     await db.articleTranslation.update({
       where: { articleId_locale: { articleId, locale } },
@@ -213,7 +288,9 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
         error: null,
         contentHash,
         sourceUpdatedAt: article.updatedAt,
-        translatedAt: new Date()
+        translatedAt: new Date(),
+        progress: 100,
+        progressMessage: "Translation complete"
       }
     });
   } catch (error) {
@@ -223,7 +300,8 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
         status: TranslationStatus.FAILED,
         error: error instanceof Error ? error.message : "Translation failed.",
         contentHash,
-        sourceUpdatedAt: article.updatedAt
+        sourceUpdatedAt: article.updatedAt,
+        progressMessage: error instanceof Error ? error.message : "Translation failed."
       }
     });
     throw error;
@@ -282,7 +360,11 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
         error: null,
         contentHash,
         sourceUpdatedAt: article.updatedAt,
-        translatedAt: null
+        translatedAt: null,
+        progress: 0,
+        completedUnits: 0,
+        totalUnits: 0,
+        progressMessage: "Source content changed"
       }
     });
   }
@@ -296,8 +378,8 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
     return;
   }
 
-  const locale = normalizeLocale(config.targetLang);
-  if (normalizeLocale(config.sourceLang) === locale) {
+  const locale = normalizeTranslationLocale(config.targetLang);
+  if (normalizeTranslationLocale(config.sourceLang) === locale) {
     return;
   }
 
@@ -309,12 +391,19 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
   await markTranslationInProgress(article, locale, contentHash);
 
   try {
-    const translated = await callTranslationApi(config, {
-      title: article.title,
-      summary: article.summary,
-      contentHtml: article.contentHtml,
-      targetLocale: locale
-    });
+    const translated = await callTranslationApi(
+      config,
+      {
+        title: article.title,
+        summary: article.summary,
+        contentHtml: article.contentHtml,
+        targetLocale: locale
+      },
+      {
+        onProgress: (progress) =>
+          updateTranslationProgress(article.id, locale, progress.completedUnits, progress.totalUnits, progress.message)
+      }
+    );
 
     await db.articleTranslation.update({
       where: { articleId_locale: { articleId: article.id, locale } },
@@ -325,7 +414,9 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
         error: null,
         contentHash,
         sourceUpdatedAt: article.updatedAt,
-        translatedAt: new Date()
+        translatedAt: new Date(),
+        progress: 100,
+        progressMessage: "Translation complete"
       }
     });
   } catch (error) {
@@ -335,7 +426,8 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
         status: TranslationStatus.FAILED,
         error: error instanceof Error ? error.message : "Translation failed.",
         contentHash,
-        sourceUpdatedAt: article.updatedAt
+        sourceUpdatedAt: article.updatedAt,
+        progressMessage: error instanceof Error ? error.message : "Translation failed."
       }
     });
     console.error("Article translation sync failed", error);
@@ -374,7 +466,7 @@ export async function upsertManualArticleTranslation(
     throw new Error("Article not found.");
   }
 
-  const locale = normalizeLocale(input.locale);
+  const locale = normalizeTranslationLocale(input.locale);
   const contentHash = hashArticleSource(article);
   const sanitizedHtml = sanitizeArticleHtml(input.contentHtml);
 
@@ -389,7 +481,11 @@ export async function upsertManualArticleTranslation(
       error: null,
       contentHash,
       sourceUpdatedAt: article.updatedAt,
-      translatedAt: new Date()
+      translatedAt: new Date(),
+      progress: 100,
+      completedUnits: 1,
+      totalUnits: 1,
+      progressMessage: "Manual translation saved"
     },
     create: {
       articleId: article.id,
@@ -402,7 +498,11 @@ export async function upsertManualArticleTranslation(
       error: null,
       contentHash,
       sourceUpdatedAt: article.updatedAt,
-      translatedAt: new Date()
+      translatedAt: new Date(),
+      progress: 100,
+      completedUnits: 1,
+      totalUnits: 1,
+      progressMessage: "Manual translation saved"
     }
   });
 }

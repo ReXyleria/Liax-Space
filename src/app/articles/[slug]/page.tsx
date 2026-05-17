@@ -205,9 +205,9 @@ export default async function ArticleDetailPage({
                 </p>
               </MotionItem>
               <MotionItem>
-                <Card className="p-6 md:p-8">
+                <div className="px-0 py-2">
                   <SafeHtml html={prepared.html} />
-                </Card>
+                </div>
               </MotionItem>
             </article>
             <section className="mt-12 border-t pt-8">

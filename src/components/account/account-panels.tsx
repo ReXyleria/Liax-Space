@@ -3,7 +3,7 @@
 import { useActionState, useRef, useState, useTransition, type ReactNode } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Fingerprint, KeyRound, Laptop, ShieldCheck, UserRound } from "lucide-react";
+import { Copy, Download, Fingerprint, KeyRound, Laptop, ShieldCheck, UserRound } from "lucide-react";
 import { ImageUploadField } from "@/components/forms/image-upload-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -426,6 +426,31 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
     disableTotpAction,
     initialState
   );
+  const [recoveryCopyMessage, setRecoveryCopyMessage] = useState("");
+
+  function recoveryText() {
+    return confirmState.recoveryCodes?.join("\n") ?? "";
+  }
+
+  async function copyRecoveryCodes() {
+    const text = recoveryText();
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    setRecoveryCopyMessage("恢复码已复制。");
+  }
+
+  function downloadRecoveryCodes() {
+    const text = recoveryText();
+    if (!text) return;
+    const blob = new Blob([`${text}\n`], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "liax-space-totp-recovery-codes.txt";
+    link.click();
+    URL.revokeObjectURL(url);
+    setRecoveryCopyMessage("恢复码文件已生成。");
+  }
 
   return (
     <PanelShell
@@ -517,6 +542,17 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
                   </span>
                 ))}
               </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={copyRecoveryCodes}>
+                  <Copy className="mr-2 h-4 w-4" />
+                  复制恢复码
+                </Button>
+                <Button type="button" variant="secondary" onClick={downloadRecoveryCodes}>
+                  <Download className="mr-2 h-4 w-4" />
+                  下载恢复码
+                </Button>
+              </div>
+              {recoveryCopyMessage ? <p className="mt-2 text-xs">{recoveryCopyMessage}</p> : null}
             </div>
           ) : null}
         </div>

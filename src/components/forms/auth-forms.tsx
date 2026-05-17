@@ -15,7 +15,7 @@ type ApiState = {
   redirectTo?: string;
   requiresSecondFactor?: boolean;
   pendingToken?: string;
-  secondFactors?: Array<"totp" | "passkey">;
+  secondFactors?: Array<"email" | "totp" | "passkey">;
 };
 
 type AuthText = {
@@ -24,6 +24,8 @@ type AuthText = {
   accountPlaceholder: string;
   passwordPlaceholder: string;
   secondFactorRequired: string;
+  emailCodePlaceholder: string;
+  emailCodeHint: string;
   totpPlaceholder: string;
   recoveryPlaceholder: string;
   trustDevice: string;
@@ -59,6 +61,8 @@ const authText: Record<Locale, AuthText> = {
     accountPlaceholder: "用户名或邮箱",
     passwordPlaceholder: "密码",
     secondFactorRequired: "当前设备需要二次验证。",
+    emailCodePlaceholder: "邮箱验证码",
+    emailCodeHint: "邮箱验证码是默认二次验证方式。",
     totpPlaceholder: "6 位动态验证码",
     recoveryPlaceholder: "或恢复码",
     trustDevice: "信任此设备",
@@ -92,6 +96,8 @@ const authText: Record<Locale, AuthText> = {
     accountPlaceholder: "Username or email",
     passwordPlaceholder: "Password",
     secondFactorRequired: "This device requires second-factor verification.",
+    emailCodePlaceholder: "Email verification code",
+    emailCodeHint: "Email code is the default second-factor method.",
     totpPlaceholder: "6-digit authenticator code",
     recoveryPlaceholder: "Or recovery code",
     trustDevice: "Trust this device",
@@ -137,14 +143,16 @@ export function LoginForm({ callbackUrl = "/admin", locale = "zh-CN" }: { callba
   const [state, setState] = useState<ApiState>({});
   const [account, setAccount] = useState("");
   const [pendingToken, setPendingToken] = useState<string | null>(null);
-  const [secondFactors, setSecondFactors] = useState<Array<"totp" | "passkey">>([]);
+  const [secondFactors, setSecondFactors] = useState<Array<"email" | "totp" | "passkey">>([]);
   const [trustDevice, setTrustDevice] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [isPasskeyPending, startPasskeyTransition] = useTransition();
 
   const requiresSecondFactor = Boolean(pendingToken);
+  const allowEmail = secondFactors.includes("email");
   const allowTotp = secondFactors.includes("totp");
   const allowPasskey = secondFactors.includes("passkey");
+  const canSubmitSecondFactor = allowEmail || allowTotp;
 
   function applyResult(result: ApiState) {
     setState(result);
@@ -214,6 +222,7 @@ export function LoginForm({ callbackUrl = "/admin", locale = "zh-CN" }: { callba
               if (requiresSecondFactor && pendingToken) {
                 const result = await postJson("/api/auth/login/verify", {
                   pendingToken,
+                  emailCode: formData.get("emailCode"),
                   totpCode: formData.get("totpCode"),
                   recoveryCode: formData.get("recoveryCode"),
                   trustDevice,
@@ -249,6 +258,12 @@ export function LoginForm({ callbackUrl = "/admin", locale = "zh-CN" }: { callba
               {text.secondFactorRequired}
             </div>
           )}
+          {requiresSecondFactor && allowEmail ? (
+            <div className="space-y-2 rounded-md border bg-muted/35 p-3">
+              <Input name="emailCode" inputMode="numeric" placeholder={text.emailCodePlaceholder} maxLength={8} />
+              <p className="text-xs text-muted-foreground">{text.emailCodeHint}</p>
+            </div>
+          ) : null}
           {requiresSecondFactor && allowTotp ? (
             <div className="space-y-3 rounded-md border bg-muted/35 p-3">
               <Input name="totpCode" inputMode="numeric" placeholder={text.totpPlaceholder} maxLength={6} />
@@ -269,7 +284,7 @@ export function LoginForm({ callbackUrl = "/admin", locale = "zh-CN" }: { callba
               {state.message}
             </p>
           ) : null}
-          <Button className="w-full" disabled={isPending || (requiresSecondFactor && !allowTotp)}>
+          <Button className="w-full" disabled={isPending || (requiresSecondFactor && !canSubmitSecondFactor)}>
             {isPending ? text.signingIn : requiresSecondFactor ? text.verifyAndSignIn : text.signIn}
           </Button>
           <Button

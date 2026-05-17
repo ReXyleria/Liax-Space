@@ -62,24 +62,35 @@ export function SiteBackground({
     <>
       <div
         aria-hidden
-        className={cn("pointer-events-none fixed inset-0 -z-20 bg-center bg-cover bg-no-repeat", className)}
-        style={{ backgroundImage: `url(${image})` }}
+        className={cn("pointer-events-none fixed left-0 top-0 -z-20 h-dvh w-screen bg-center bg-cover bg-no-repeat", className)}
+        style={{
+          backgroundImage: `url(${image})`,
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+          backgroundSize: "cover",
+          height: "100dvh",
+          width: "100vw"
+        }}
       />
       <div
         aria-hidden
-        className="pointer-events-none fixed inset-0 -z-10"
+        className="pointer-events-none fixed left-0 top-0 -z-10 h-dvh w-screen"
         style={
           variant === "home" || variant === "auth"
             ? {
                 background:
                   "linear-gradient(115deg, rgb(3 7 18 / var(--site-background-overlay-opacity)), rgb(15 23 42 / calc(var(--site-background-overlay-opacity) * 0.55)) 45%, rgb(30 41 59 / calc(var(--site-background-overlay-opacity) * 0.2)))",
                 backdropFilter: variant === "auth" ? "blur(var(--site-background-blur))" : undefined,
-                WebkitBackdropFilter: variant === "auth" ? "blur(var(--site-background-blur))" : undefined
+                WebkitBackdropFilter: variant === "auth" ? "blur(var(--site-background-blur))" : undefined,
+                height: "100dvh",
+                width: "100vw"
               }
             : {
                 backgroundColor: "hsl(var(--background) / var(--site-background-overlay-opacity))",
                 backdropFilter: "blur(var(--site-background-blur))",
-                WebkitBackdropFilter: "blur(var(--site-background-blur))"
+                WebkitBackdropFilter: "blur(var(--site-background-blur))",
+                height: "100dvh",
+                width: "100vw"
               }
         }
       />

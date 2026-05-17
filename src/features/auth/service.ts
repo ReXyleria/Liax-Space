@@ -2,7 +2,7 @@ import { UserRole, UserStatus, VerificationCodeType } from "@prisma/client";
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import { clearSession, createSession, createTrustedDevice, resolveTrustedDevice } from "@/lib/auth";
 import { canAccessAdmin } from "@/lib/permissions";
-import { sendTemplatedMail, sendVerificationCodeMail } from "@/lib/mail";
+import { sendLoginCodeMail, sendTemplatedMail, sendVerificationCodeMail } from "@/lib/mail";
 import { generateNumericCode, generateOpaqueToken, hashPassword, hashToken, verifyPassword } from "@/lib/security";
 import { verifyTotpOrRecovery } from "@/features/account/totp-service";
 import { emailSchema, loginSchema, loginSecondFactorSchema, registerSchema } from "@/features/auth/validators";
@@ -10,6 +10,7 @@ import type { AuthResponse } from "@/features/auth/types";
 import { isHighPrivilegeIdentity } from "@/lib/permission-definitions";
 
 const REGISTER_CODE_TTL_MINUTES = 10;
+const LOGIN_CODE_TTL_MINUTES = 10;
 const PENDING_LOGIN_TTL_MINUTES = 10;
 
 function parsePublicRole(value: string | undefined | null): UserRole {
@@ -60,7 +61,7 @@ function normalizeUsername(username: string) {
   return username.trim().toLowerCase();
 }
 
-function buildSecondFactorMethods(user: { totpEnabled: boolean; passkeys: Array<{ id: string }> }) {
+function buildBackupSecondFactorMethods(user: { totpEnabled: boolean; passkeys: Array<{ id: string }> }) {
   const methods: Array<"totp" | "passkey"> = [];
   if (user.totpEnabled) {
     methods.push("totp");
@@ -69,6 +70,54 @@ function buildSecondFactorMethods(user: { totpEnabled: boolean; passkeys: Array<
     methods.push("passkey");
   }
   return methods;
+}
+
+async function sendLoginCode(user: { email: string; nickname: string }) {
+  const code = generateNumericCode();
+  await db.verificationCode.create({
+    data: {
+      email: user.email.toLowerCase(),
+      codeHash: await hashPassword(code),
+      type: VerificationCodeType.LOGIN,
+      expiresAt: new Date(Date.now() + LOGIN_CODE_TTL_MINUTES * 60 * 1000)
+    }
+  });
+
+  const mailResult = await sendLoginCodeMail(user.email, code);
+  if (!mailResult.ok) {
+    throw new Error(mailResult.message);
+  }
+}
+
+async function verifyLoginCode(email: string, code?: string | null) {
+  const normalizedCode = code?.trim();
+  if (!normalizedCode) {
+    return false;
+  }
+
+  const verificationCode = await db.verificationCode.findFirst({
+    where: {
+      email: email.toLowerCase(),
+      type: VerificationCodeType.LOGIN,
+      usedAt: null
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  if (!verificationCode || verificationCode.expiresAt <= new Date()) {
+    return false;
+  }
+
+  const matches = await verifyPassword(normalizedCode, verificationCode.codeHash);
+  if (!matches) {
+    return false;
+  }
+
+  await db.verificationCode.update({
+    where: { id: verificationCode.id },
+    data: { usedAt: new Date() }
+  });
+  return true;
 }
 
 async function createPendingLogin(userId: string) {
@@ -362,17 +411,35 @@ export async function loginUser(
     if (!user.emailVerified) {
       return { ok: false, message: "Email is not verified yet." };
     }
-    const secondFactorMethods = buildSecondFactorMethods(user);
-    if (secondFactorMethods.length) {
-      const trustedDevice = await resolveTrustedDevice(user.id);
-      if (!trustedDevice) {
-        const pendingToken = await createPendingLogin(user.id);
+    const trustedDevice = await resolveTrustedDevice(user.id);
+    if (!trustedDevice) {
+      const backupMethods = buildBackupSecondFactorMethods(user);
+      const pendingToken = await createPendingLogin(user.id);
+      try {
+        await sendLoginCode(user);
         return {
           ok: false,
           requiresSecondFactor: true,
           pendingToken,
-          secondFactors: secondFactorMethods,
-          message: "当前设备需要二次验证。"
+          secondFactors: ["email", ...backupMethods],
+          message: "当前设备需要二次验证，邮箱验证码已发送。"
+        };
+      } catch (error) {
+        if (!backupMethods.length) {
+          await clearPendingLogin(pendingToken);
+          return {
+            ok: false,
+            message: error instanceof Error ? error.message : "邮箱验证码发送失败，无法完成二次验证。"
+          };
+        }
+        return {
+          ok: false,
+          requiresSecondFactor: true,
+          pendingToken,
+          secondFactors: backupMethods,
+          message: error instanceof Error
+            ? `邮箱验证码发送失败，可使用备用方式验证：${error.message}`
+            : "邮箱验证码发送失败，可使用备用方式验证。"
         };
       }
     }
@@ -413,22 +480,18 @@ export async function verifyLoginSecondFactor(
       return { ok: false, message: "Email is not verified yet." };
     }
 
-    if (!user.totpEnabled) {
-      return { ok: false, message: "请使用通行密钥完成二次验证。" };
-    }
-
-    const secondFactorOk = await verifyTotpOrRecovery(
-      user.id,
-      parsed.data.totpCode,
-      parsed.data.recoveryCode
-    );
+    const emailOk = await verifyLoginCode(user.email, parsed.data.emailCode);
+    const totpOk = user.totpEnabled
+      ? await verifyTotpOrRecovery(user.id, parsed.data.totpCode, parsed.data.recoveryCode)
+      : false;
+    const secondFactorOk = emailOk || totpOk;
 
     if (!secondFactorOk) {
       return {
         ok: false,
-        message: parsed.data.totpCode || parsed.data.recoveryCode
+        message: parsed.data.emailCode || parsed.data.totpCode || parsed.data.recoveryCode
           ? "二次验证码错误。"
-          : "需要输入二次验证码。"
+          : "需要输入邮箱验证码、TOTP 验证码或恢复码。"
       };
     }
 

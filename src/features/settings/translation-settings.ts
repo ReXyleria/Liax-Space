@@ -41,6 +41,12 @@ export type TranslationConfig = {
   isConfigured: boolean;
 };
 
+export type TranslationProgressUpdate = {
+  completedUnits: number;
+  totalUnits: number;
+  message: string;
+};
+
 export type TranslationSettingsInput = {
   enabled: boolean;
   provider: string;
@@ -383,6 +389,9 @@ export async function callTranslationApi(
     summary: string | null;
     contentHtml: string;
     targetLocale: string;
+  },
+  options?: {
+    onProgress?: (progress: TranslationProgressUpdate) => void | Promise<void>;
   }
 ) {
   if (!config.enabled) {
@@ -396,6 +405,8 @@ export async function callTranslationApi(
 
   if (config.chunkingEnabled && input.contentHtml.length > maxChunkChars) {
     const chunks = splitHtmlIntoChunks(input.contentHtml, maxChunkChars);
+    const totalUnits = chunks.length + 1;
+    await options?.onProgress?.({ completedUnits: 0, totalUnits, message: "Preparing translation" });
     const meta = await requestTranslationApi(config, {
       title: input.title,
       summary: input.summary,
@@ -403,7 +414,14 @@ export async function callTranslationApi(
       targetLocale: input.targetLocale,
       purpose: "meta"
     });
-    const translatedChunks = await translateChunks(config, chunks, input.targetLocale);
+    await options?.onProgress?.({ completedUnits: 1, totalUnits, message: "Metadata translated" });
+    const translatedChunks = await translateChunks(config, chunks, input.targetLocale, async (completedChunks) => {
+      await options?.onProgress?.({
+        completedUnits: completedChunks + 1,
+        totalUnits,
+        message: `Translated ${completedChunks}/${chunks.length} content chunks`
+      });
+    });
 
     return {
       title: meta.title,
@@ -412,7 +430,10 @@ export async function callTranslationApi(
     };
   }
 
-  return requestTranslationApi(config, { ...input, purpose: "article" });
+  await options?.onProgress?.({ completedUnits: 0, totalUnits: 1, message: "Sending translation request" });
+  const translated = await requestTranslationApi(config, { ...input, purpose: "article" });
+  await options?.onProgress?.({ completedUnits: 1, totalUnits: 1, message: "Translation complete" });
+  return translated;
 }
 
 function splitHtmlIntoChunks(html: string, maxChunkChars: number) {
@@ -454,9 +475,15 @@ function splitHtmlIntoChunks(html: string, maxChunkChars: number) {
   });
 }
 
-async function translateChunks(config: TranslationConfig, chunks: string[], targetLocale: string) {
+async function translateChunks(
+  config: TranslationConfig,
+  chunks: string[],
+  targetLocale: string,
+  onChunkComplete?: (completedChunks: number) => void | Promise<void>
+) {
   const results = new Array<string>(chunks.length);
   let nextIndex = 0;
+  let completedChunks = 0;
   const concurrency = Math.min(4, Math.max(1, config.chunkConcurrency || 2));
 
   async function worker() {
@@ -472,6 +499,8 @@ async function translateChunks(config: TranslationConfig, chunks: string[], targ
           purpose: "chunk"
         });
         results[index] = translated.contentHtml;
+        completedChunks += 1;
+        await onChunkComplete?.(completedChunks);
       } catch (error) {
         const message = error instanceof Error ? error.message : "未知错误";
         throw new Error(`第 ${index + 1} 段翻译失败：${message}`);

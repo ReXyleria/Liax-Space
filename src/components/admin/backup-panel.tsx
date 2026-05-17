@@ -22,6 +22,13 @@ export type BackupPanelText = {
   enableScheduledBackup: string;
   enableScheduledBackupDescription: string;
   frequency: string;
+  retention: string;
+  retentionDescription: string;
+  retention1Day: string;
+  retention3Days: string;
+  retention5Days: string;
+  retention1Week: string;
+  retention1Month: string;
   daily: string;
   weekly: string;
   monthly: string;
@@ -61,6 +68,7 @@ type BackupItem = {
 type BackupSchedule = {
   enabled: boolean;
   frequency: "daily" | "weekly" | "monthly";
+  retentionDays: 1 | 3 | 5 | 7 | 30;
 };
 
 const initialState: BackupActionState = { ok: false, message: "" };
@@ -100,7 +108,7 @@ function ScheduleSection({
     <section className="rounded-lg border bg-card p-5">
       <h2 className="text-xl font-semibold">{text.scheduledBackups}</h2>
       <p className="mt-1 text-sm text-muted-foreground">{text.scheduledBackupsDescription}</p>
-      <form action={action} className="mt-4 grid gap-3 md:grid-cols-[1fr_220px_auto] md:items-end">
+      <form action={action} className="mt-4 grid gap-3 md:grid-cols-[1fr_180px_180px_auto] md:items-end">
         <ThemedCheckbox
           name="enabled"
           value="true"
@@ -120,6 +128,21 @@ function ScheduleSection({
               { value: "monthly", label: text.monthly }
             ]}
           />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">{text.retention}</span>
+          <Select
+            name="retentionDays"
+            defaultValue={String(schedule.retentionDays)}
+            options={[
+              { value: "1", label: text.retention1Day },
+              { value: "3", label: text.retention3Days },
+              { value: "5", label: text.retention5Days },
+              { value: "7", label: text.retention1Week },
+              { value: "30", label: text.retention1Month }
+            ]}
+          />
+          <p className="text-xs text-muted-foreground">{text.retentionDescription}</p>
         </label>
         <Button type="submit" disabled={pending}>
           {pending ? text.saving : text.saveSchedule}

@@ -1,4 +1,5 @@
 import { Loader2, Save } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -7,16 +8,22 @@ export function FloatingSettingsSubmit({
   message,
   ok,
   locale = "zh-CN",
-  className
+  className,
+  label,
+  savingLabel,
+  icon
 }: {
   pending?: boolean;
   message?: string;
   ok?: boolean;
   locale?: "zh-CN" | "en";
   className?: string;
+  label?: string;
+  savingLabel?: string;
+  icon?: ReactNode;
 }) {
-  const saveLabel = locale === "en" ? "Save settings" : "保存设置";
-  const savingLabel = locale === "en" ? "Saving..." : "保存中...";
+  const defaultSaveLabel = locale === "en" ? "Save settings" : "保存设置";
+  const defaultSavingLabel = locale === "en" ? "Saving..." : "保存中...";
 
   return (
     <div className={cn("fixed bottom-6 right-6 z-[80] flex max-w-[calc(100vw-3rem)] items-end gap-3", className)}>
@@ -31,8 +38,8 @@ export function FloatingSettingsSubmit({
         </div>
       ) : null}
       <Button type="submit" disabled={pending} className="h-12 rounded-full px-5 shadow-xl shadow-primary/25">
-        {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-        {pending ? savingLabel : saveLabel}
+        {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (icon ?? <Save className="mr-2 h-4 w-4" />)}
+        {pending ? (savingLabel ?? defaultSavingLabel) : (label ?? defaultSaveLabel)}
       </Button>
     </div>
   );

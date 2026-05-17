@@ -79,9 +79,24 @@ export default async function AdminArticlesPage() {
                 className="grid gap-3 p-5 transition hover:bg-muted/60 md:grid-cols-[1fr_120px_140px_140px_64px] md:items-center"
               >
                 <div>
-                  <Link href={`/admin/articles/${article.id}/edit`} className="font-medium hover:text-primary">
-                    {article.title}
-                  </Link>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link href={`/admin/articles/${article.id}/edit`} className="font-medium hover:text-primary">
+                      {article.title}
+                    </Link>
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        article.translationReady ? "bg-emerald-500" : "bg-red-500"
+                      }`}
+                      title={
+                        article.translationReady
+                          ? `已翻译：${article.translationTargetLocale}`
+                          : `未完成翻译：${article.translationTargetLocale}`
+                      }
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      {article.translationReady ? "已翻译" : "未翻译"}
+                    </span>
+                  </div>
                   <p className="mt-1 text-sm text-muted-foreground">{article.slug}</p>
                 </div>
                 <span className="text-sm text-muted-foreground">{articleStatusLabel(locale, article.status)}</span>

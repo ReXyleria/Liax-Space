@@ -29,6 +29,10 @@ export type ArticleRowData = {
   seoTitle: string | null;
   seoDescription: string | null;
   publishedAt: string | null;
+  createdAt: Date | string;
+  translationReady?: boolean;
+  translationTargetLocale?: string;
+  targetTranslationStatus?: string | null;
   tags: Array<{ name: string }>;
 };
 
@@ -71,6 +75,7 @@ export function ArticleActionsMenu({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [statusSubmitting, setStatusSubmitting] = useState(false);
+  const [menuPlacement, setMenuPlacement] = useState<"top" | "bottom">("bottom");
   const rootRef = useRef<HTMLDivElement>(null);
   const isPublished = article.status === ArticleStatus.PUBLISHED;
 
@@ -114,11 +119,26 @@ export function ArticleActionsMenu({
 
   return (
     <div ref={rootRef} className="relative flex justify-end">
-      <Button type="button" variant="ghost" className="h-9 w-9 p-0" onClick={() => setOpen((current) => !current)}>
+      <Button
+        type="button"
+        variant="ghost"
+        className="h-9 w-9 p-0"
+        onClick={() => {
+          const rect = rootRef.current?.getBoundingClientRect();
+          if (rect) {
+            setMenuPlacement(window.innerHeight - rect.bottom < 240 ? "top" : "bottom");
+          }
+          setOpen((current) => !current);
+        }}
+      >
         <MoreHorizontal className="h-4 w-4" />
       </Button>
       {open ? (
-        <div className="absolute right-0 top-10 z-50 w-44 rounded-lg border bg-card p-1 text-sm shadow-xl shadow-primary/10">
+        <div
+          className={`absolute right-0 z-50 w-44 rounded-lg border bg-card p-1 text-sm shadow-xl shadow-primary/10 ${
+            menuPlacement === "top" ? "bottom-10" : "top-10"
+          }`}
+        >
           <button
             type="button"
             disabled={statusSubmitting}

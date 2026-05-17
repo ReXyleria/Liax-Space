@@ -14,6 +14,7 @@ export type MailResult =
 
 export type MailTemplateScene =
   | "registerCode"
+  | "loginCode"
   | "commentReply"
   | "momentComment"
   | "guestbookReply"
@@ -24,12 +25,14 @@ export type MailTemplateScene =
   | "pageComment"
   | "articleComment";
 
-type SmtpConfig = {
+export type SmtpConfig = {
   host: string;
   port: number;
   user: string;
   pass: string;
   from: string;
+  fromName: string;
+  encryption: "none" | "starttls" | "ssl_tls";
 };
 
 type TemplateOverride = {
@@ -37,10 +40,19 @@ type TemplateOverride = {
   bodyHtml: string;
 };
 
-const smtpKeys = ["smtp.host", "smtp.port", "smtp.user", "smtp.pass", "smtp.from"];
+const smtpKeys = [
+  "smtp.host",
+  "smtp.port",
+  "smtp.user",
+  "smtp.pass",
+  "smtp.from",
+  "smtp.fromName",
+  "smtp.encryption"
+];
 
 const legacySceneMap: Partial<Record<MailTemplateScene, DbMailTemplateScene>> = {
   registerCode: DbMailTemplateScene.REGISTER_CODE,
+  loginCode: DbMailTemplateScene.LOGIN_CODE,
   commentReply: DbMailTemplateScene.COMMENT_REPLY,
   momentComment: DbMailTemplateScene.MOMENT_COMMENT,
   guestbookReply: DbMailTemplateScene.GUESTBOOK_REPLY,
@@ -57,13 +69,18 @@ function completeConfig(values: Record<string, string | undefined>): SmtpConfig 
   const user = values["smtp.user"]?.trim();
   const pass = values["smtp.pass"];
   const from = (values["smtp.from"] || user)?.trim();
+  const fromName = values["smtp.fromName"]?.trim() || "";
   const port = Number(values["smtp.port"] || 587);
+  const encryptionValue = values["smtp.encryption"]?.trim();
+  const encryption = encryptionValue === "none" || encryptionValue === "ssl_tls" || encryptionValue === "starttls"
+    ? encryptionValue
+    : "starttls";
 
   if (!host || !user || !pass || !from || !Number.isFinite(port)) {
     return null;
   }
 
-  return { host, port, user, pass, from };
+  return { host, port, user, pass, from, fromName, encryption };
 }
 
 async function getSettingsValues(keys: string[]) {
@@ -87,7 +104,9 @@ async function getSmtpConfig(): Promise<SmtpConfig | null> {
     "smtp.port": process.env.SMTP_PORT,
     "smtp.user": process.env.SMTP_USER,
     "smtp.pass": process.env.SMTP_PASS,
-    "smtp.from": process.env.SMTP_FROM
+    "smtp.from": process.env.SMTP_FROM,
+    "smtp.fromName": process.env.SMTP_FROM_NAME,
+    "smtp.encryption": process.env.SMTP_ENCRYPTION
   });
 
   if (envConfig) {
@@ -95,6 +114,24 @@ async function getSmtpConfig(): Promise<SmtpConfig | null> {
   }
 
   return completeConfig(await getSettingsValues(smtpKeys));
+}
+
+function createSmtpTransport(config: SmtpConfig) {
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.encryption === "ssl_tls",
+    requireTLS: config.encryption === "starttls",
+    ignoreTLS: config.encryption === "none",
+    auth: {
+      user: config.user,
+      pass: config.pass
+    }
+  });
+}
+
+function formatFrom(config: SmtpConfig) {
+  return config.fromName ? { name: config.fromName, address: config.from } : config.from;
 }
 
 function resolveScene(scene: MailTemplateScene | DbMailTemplateScene) {
@@ -238,19 +275,11 @@ export async function sendTemplatedMail({
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host: config.host,
-      port: config.port,
-      secure: config.port === 465,
-      auth: {
-        user: config.user,
-        pass: config.pass
-      }
-    });
+    const transporter = createSmtpTransport(config);
 
     await transporter.sendMail({
       to,
-      from: config.from,
+      from: formatFrom(config),
       subject,
       text,
       html
@@ -282,4 +311,52 @@ export async function sendVerificationCodeMail(email: string, code: string): Pro
     },
     respectNotificationToggle: false
   });
+}
+
+export async function sendLoginCodeMail(email: string, code: string): Promise<MailResult> {
+  return sendTemplatedMail({
+    to: email,
+    scene: "loginCode",
+    variables: {
+      nickname: email,
+      code
+    },
+    respectNotificationToggle: false
+  });
+}
+
+export async function sendSmtpTestMail(
+  to: string,
+  values?: Record<string, string | undefined>
+): Promise<MailResult> {
+  const config = values ? completeConfig(values) : await getSmtpConfig();
+
+  if (!config) {
+    return {
+      ok: false,
+      reason: "SMTP_NOT_CONFIGURED",
+      message: "SMTP is not configured. Configure SMTP host, port, user, password, and from address first."
+    };
+  }
+
+  try {
+    const site = await getSiteConfig();
+    const transporter = createSmtpTransport(config);
+    await transporter.verify();
+    await transporter.sendMail({
+      to,
+      from: formatFrom(config),
+      subject: `SMTP test - ${site.title}`,
+      text: `SMTP test from ${site.title}. If you received this message, mail delivery is working.`,
+      html: `<p>SMTP test from <strong>${escapeHtml(site.title)}</strong>.</p><p>If you received this message, mail delivery is working.</p>`
+    });
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "SMTP test failed.";
+    return {
+      ok: false,
+      reason: "SEND_FAILED",
+      message
+    };
+  }
 }

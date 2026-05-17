@@ -29,6 +29,7 @@ export const loginSchema = z.object({
 
 export const loginSecondFactorSchema = z.object({
   pendingToken: z.string().trim().min(1, "Second-factor session is missing."),
+  emailCode: z.string().optional(),
   totpCode: z.string().optional(),
   recoveryCode: z.string().optional(),
   trustDevice: z.boolean().optional(),

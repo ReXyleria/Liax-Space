@@ -695,6 +695,7 @@ export function ArticleEditorForm({
               <ImageUploadField
                 name="cover-preview"
                 value={cover}
+                showRandomOption
                 onValueChange={(nextCover) => {
                   setCover(nextCover);
                   scheduleDraftSave();

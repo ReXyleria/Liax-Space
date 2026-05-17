@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { ImageUp, Loader2, X } from "lucide-react";
+import { ImageUp, Loader2, Shuffle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,8 @@ export function ImageUploadField({
   helper,
   compact = false,
   previewFit = "cover",
+  showRandomOption = false,
+  randomUrl = "https://photo.toliax.com/random",
   onValueChange
 }: {
   name: string;
@@ -27,6 +29,8 @@ export function ImageUploadField({
   helper?: string;
   compact?: boolean;
   previewFit?: "cover" | "contain";
+  showRandomOption?: boolean;
+  randomUrl?: string;
   onValueChange?: (value: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -82,16 +86,23 @@ export function ImageUploadField({
             event.currentTarget.value = "";
           }}
         />
-        <Button
-          type="button"
-          variant="secondary"
-          className="shrink-0"
-          disabled={isUploading}
-          onClick={() => inputRef.current?.click()}
-        >
-          {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageUp className="mr-2 h-4 w-4" />}
-          上传
-        </Button>
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          {showRandomOption ? (
+            <Button type="button" variant="secondary" disabled={isUploading} onClick={() => setNextValue(randomUrl)}>
+              <Shuffle className="mr-2 h-4 w-4" />
+              随机图
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={isUploading}
+            onClick={() => inputRef.current?.click()}
+          >
+            {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageUp className="mr-2 h-4 w-4" />}
+            上传
+          </Button>
+        </div>
       </div>
       <div
         className={cn(

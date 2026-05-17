@@ -7,7 +7,7 @@ export type AuthResponse = {
   requiresTotp?: boolean;
   requiresSecondFactor?: boolean;
   pendingToken?: string;
-  secondFactors?: Array<"totp" | "passkey">;
+  secondFactors?: Array<"email" | "totp" | "passkey">;
 };
 
 export type SafeSessionUser = {

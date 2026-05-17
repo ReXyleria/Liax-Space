@@ -6,7 +6,6 @@ import {
   SitePushProvider,
   SitePushStatus
 } from "@prisma/client";
-import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { assertPermission, canManageSettings } from "@/lib/permissions";
@@ -456,7 +455,6 @@ export async function saveSitePushSettings(user: CurrentUser, formData: FormData
       })
     )
   );
-  revalidateTag("settings");
 }
 
 export async function listSitePushRecords(user: CurrentUser, take = 60) {

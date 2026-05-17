@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
-import { requireUser } from "@/lib/auth";
+import { getCurrentUser, requireUser } from "@/lib/auth";
 import { createGuestbookMessage, moderateGuestbookMessage } from "@/features/guestbook/service";
 import { guestbookCreateSchema } from "@/features/guestbook/validators";
 
@@ -39,7 +39,8 @@ export async function createGuestbookMessageAction(
   const input = {
     nickname: formData.get("nickname"),
     email: formData.get("email"),
-    content: formData.get("content")
+    content: formData.get("content"),
+    notifyOnly: formData.get("notifyOnly") === "true"
   };
   const parsed = guestbookCreateSchema.safeParse(input);
 
@@ -52,9 +53,15 @@ export async function createGuestbookMessageAction(
   }
 
   try {
-    await createGuestbookMessage(parsed.data);
+    const user = await getCurrentUser();
+    await createGuestbookMessage(parsed.data, user);
     revalidatePath("/guestbook");
-    return { ok: true, message: "留言已提交。", fieldErrors: {} };
+    revalidatePath("/admin/guestbook");
+    return {
+      ok: true,
+      message: parsed.data.notifyOnly ? "重要留言已发送到邮箱。" : "留言已提交。",
+      fieldErrors: {}
+    };
   } catch (error) {
     return stateFromError(error, "留言提交失败，请稍后重试。");
   }

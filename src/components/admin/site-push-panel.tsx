@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Download, Send, Settings2 } from "lucide-react";
+import { Send, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -69,12 +69,10 @@ function labels(locale: Locale) {
         manualPlaceholder: "https://example.com/articles/example",
         submitUrl: "Submit URL",
         pushing: "Submitting...",
-        batchTitle: "Batch push & Sitemap",
+        batchTitle: "Batch push",
         batchDescription: "Submit the latest 100 published articles to enabled, fully configured providers. Records show API responses only, not search indexing results.",
         pushPublished: "Push published articles",
         submitting: "Submitting...",
-        exportSitemap: "Export sitemap.xml",
-        sitemapHint: "The sitemap includes static public pages and published articles for manual submission.",
         recordsTitle: "Push records",
         noRecords: "No push records yet.",
         provider: "Provider",
@@ -124,12 +122,10 @@ function labels(locale: Locale) {
         manualPlaceholder: "https://example.com/articles/example",
         submitUrl: "提交 URL",
         pushing: "提交中...",
-        batchTitle: "批量推送 & Sitemap",
+        batchTitle: "批量推送",
         batchDescription: "将最近 100 篇已发布文章提交到已启用且配置完整的渠道。记录只代表接口响应，不承诺搜索引擎实际收录。",
         pushPublished: "推送已发布文章",
         submitting: "提交中...",
-        exportSitemap: "导出 sitemap.xml",
-        sitemapHint: "Sitemap 包含公共静态页面和已发布文章，可手动提交给搜索引擎。",
         recordsTitle: "推送记录",
         noRecords: "暂无推送记录。",
         provider: "渠道",
@@ -415,17 +411,6 @@ export function SitePushPanel({
                 {batchPending ? text.submitting : text.pushPublished}
               </Button>
             </form>
-            <div className="mt-4 border-t pt-4">
-              <a
-                href="/api/admin/sitemap"
-                download
-                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted"
-              >
-                <Download className="h-4 w-4" />
-                {text.exportSitemap}
-              </a>
-              <p className="mt-2 text-xs text-muted-foreground">{text.sitemapHint}</p>
-            </div>
           </CardContent>
         </Card>
       </div>

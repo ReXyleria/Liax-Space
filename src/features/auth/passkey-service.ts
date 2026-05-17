@@ -12,7 +12,7 @@ import {
 } from "@simplewebauthn/server";
 import type { AuthenticatorTransportFuture } from "@simplewebauthn/server";
 import { db, isDatabaseConfigured } from "@/lib/db";
-import { createSession, type CurrentUser } from "@/lib/auth";
+import { createSession, createTrustedDevice, type CurrentUser } from "@/lib/auth";
 import { canAccessAdmin } from "@/lib/permissions";
 import { sendTemplatedMail } from "@/lib/mail";
 
@@ -251,6 +251,7 @@ export async function verifyPasskeyAuthentication(
     cookieSecure?: boolean;
     expectedUserId?: string;
     allowUnboundChallenge?: boolean;
+    trustDevice?: boolean;
   }
 ) {
   if (!isDatabaseConfigured()) {
@@ -324,6 +325,9 @@ export async function verifyPasskeyAuthentication(
   ]);
 
   await createSession(credential.userId, meta?.deviceName, { secure: meta?.cookieSecure });
+  if (meta?.trustDevice) {
+    await createTrustedDevice(credential.userId, meta?.deviceName, { secure: meta.cookieSecure });
+  }
 
   if (isNewDevice) {
     void sendPasskeyLoginNotificationSafely({

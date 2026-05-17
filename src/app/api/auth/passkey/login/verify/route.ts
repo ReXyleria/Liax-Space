@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSafeDeviceName } from "@/lib/device";
 import { verifyPasskeyAuthentication } from "@/features/auth/passkey-service";
-import { createTrustedDevice, shouldUseSecureCookies } from "@/lib/auth";
+import { shouldUseSecureCookies } from "@/lib/auth";
 import { clearPendingLogin, getPendingLogin } from "@/features/auth/service";
 import { apiError } from "@/lib/api-response";
 
@@ -30,14 +30,9 @@ export async function POST(request: Request) {
       loginIp: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown",
       cookieSecure,
       expectedUserId: pending?.userId,
-      allowUnboundChallenge: !pendingToken
+      allowUnboundChallenge: !pendingToken,
+      trustDevice: pending ? trustDevice : true
     });
-
-    if (result.ok && pending && trustDevice) {
-      await createTrustedDevice(pending.userId, getSafeDeviceName(request.headers.get("user-agent")), {
-        secure: cookieSecure
-      });
-    }
 
     if (pendingToken) {
       await clearPendingLogin(pendingToken);

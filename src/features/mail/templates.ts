@@ -100,6 +100,20 @@ export const mailTemplateDefinitions: MailTemplateDefinition[] = [
     `)
   },
   {
+    scene: MailTemplateScene.LOGIN_CODE,
+    key: "loginCode",
+    category: "Auth",
+    name: "Login verification code",
+    description: "Sent when a new or untrusted device needs email second-factor verification.",
+    subject: "Login verification code 路 ${site.title}",
+    bodyHtml: html(`
+      <p>Hello \${nickname},</p>
+      <p>Your login verification code is:</p>
+      <p style="font-size:28px;letter-spacing:4px;font-weight:700">\${code}</p>
+      <p>This code is valid for a short time. If you did not try to sign in, review your account security.</p>
+    `)
+  },
+  {
     scene: MailTemplateScene.PASSWORD_RESET,
     key: "passwordReset",
     category: "Auth",
