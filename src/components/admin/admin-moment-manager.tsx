@@ -230,7 +230,9 @@ function MomentEditDialog({ locale, moment }: { locale: Locale; moment: AdminMom
             }}
           />
           <FieldError message={state.fieldErrors.content?.[0]} />
+          <FieldError message={state.fieldErrors.images?.[0]} />
           <FieldError message={state.fieldErrors.visibility?.[0]} />
+          <FieldError message={state.fieldErrors.createdAt?.[0]} />
           {state.message ? (
             <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{state.message}</p>
           ) : null}
@@ -315,7 +317,9 @@ export function AdminMomentManager({ locale, moments }: { locale: Locale; moment
         <form action={action} className="space-y-4">
           <MomentFormFields locale={locale} />
           <FieldError message={state.fieldErrors.content?.[0]} />
+          <FieldError message={state.fieldErrors.images?.[0]} />
           <FieldError message={state.fieldErrors.visibility?.[0]} />
+          <FieldError message={state.fieldErrors.createdAt?.[0]} />
           {state.message ? (
             <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{state.message}</p>
           ) : null}

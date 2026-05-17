@@ -4,6 +4,7 @@ import { VisitTracker } from "@/components/analytics/visit-tracker";
 import { CodeInjectionRenderer } from "@/components/layout/code-injection-renderer";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { MobilePublicNav } from "@/components/layout/mobile-public-nav";
+import { PublicSearch } from "@/components/layout/public-search";
 import { SiteBackground, resolveSiteBackground } from "@/components/layout/site-background";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { getCodeInjectionMap, getEnabledCodeInjection } from "@/features/code-injection/service";
@@ -153,6 +154,7 @@ export async function PublicShell({
                 </Link>
               ))}
             </div>
+            <PublicSearch locale={locale} transparent={transparentHeader} />
             <Link
               className={cn(
                 "inline-flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 shadow-sm",

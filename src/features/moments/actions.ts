@@ -21,6 +21,21 @@ function failure(message: string, fieldErrors: Record<string, string[]> = {}): M
   return { ok: false, message, fieldErrors };
 }
 
+function errorSummary(error: unknown, fallback: string) {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+  return fallback;
+}
+
+function logMomentError(scene: string, error: unknown) {
+  console.error(`[moments] ${scene} failed`, {
+    name: error instanceof Error ? error.name : typeof error,
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined
+  });
+}
+
 function parseMomentPayload(formData: FormData) {
   const createdAtRaw = formData.get("createdAt");
   return {
@@ -51,11 +66,12 @@ export async function createMomentAction(
     revalidateMomentPaths();
     return success("瞬间已发布。");
   } catch (error) {
+    logMomentError("create", error);
     if (error instanceof ZodError) {
-      return failure("请检查表单中标出的字段。", error.flatten().fieldErrors as Record<string, string[]>);
+      return failure("ZodError: 请检查表单中标出的字段。", error.flatten().fieldErrors as Record<string, string[]>);
     }
 
-    return failure(error instanceof Error ? error.message : "瞬间发布失败。");
+    return failure(errorSummary(error, "瞬间发布失败。"));
   }
 }
 
@@ -69,11 +85,12 @@ export async function updateMomentAction(
     revalidateMomentPaths();
     return success("瞬间已更新。");
   } catch (error) {
+    logMomentError("update", error);
     if (error instanceof ZodError) {
-      return failure("请检查表单中标出的字段。", error.flatten().fieldErrors as Record<string, string[]>);
+      return failure("ZodError: 请检查表单中标出的字段。", error.flatten().fieldErrors as Record<string, string[]>);
     }
 
-    return failure(error instanceof Error ? error.message : "瞬间更新失败。");
+    return failure(errorSummary(error, "瞬间更新失败。"));
   }
 }
 
@@ -87,7 +104,8 @@ export async function deleteMomentAction(
     revalidateMomentPaths();
     return success("瞬间已删除。");
   } catch (error) {
-    return failure(error instanceof Error ? error.message : "瞬间删除失败。");
+    logMomentError("delete", error);
+    return failure(errorSummary(error, "瞬间删除失败。"));
   }
 }
 

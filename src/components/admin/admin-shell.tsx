@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { adminSidebarGroups, type AdminTabItem } from "@/config/admin-nav";
-import { AdminGlobalSearch } from "@/components/admin/admin-global-search";
 import { LogoutButton } from "@/components/admin/logout-button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { SiteBackground } from "@/components/layout/site-background";
@@ -301,7 +300,6 @@ export function AdminShell({
               <p className="truncate font-medium">{user.nickname}</p>
             </div>
           </div>
-          <AdminGlobalSearch locale={locale} />
           <div className="flex shrink-0 items-center gap-3">
             <LanguageSwitcher locale={locale} />
             <LogoutButton />

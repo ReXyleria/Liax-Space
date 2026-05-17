@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArticleStatus, ContentVisibility } from "@prisma/client";
 import { MoreHorizontal } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArticleSettingsDialog } from "@/components/admin/article-settings-dialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
@@ -65,9 +66,11 @@ export function ArticleActionsMenu({
   locale?: Locale;
 }) {
   const text = labels(locale);
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [statusSubmitting, setStatusSubmitting] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const isPublished = article.status === ArticleStatus.PUBLISHED;
 
@@ -90,6 +93,25 @@ export function ArticleActionsMenu({
     };
   }, [confirmDelete]);
 
+  async function togglePublishStatus() {
+    if (statusSubmitting) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set("id", article.id);
+    setStatusSubmitting(true);
+    try {
+      await (isPublished ? unpublishArticleAction(formData) : publishArticleAction(formData));
+      setOpen(false);
+      router.refresh();
+    } catch (error) {
+      console.error("Failed to update article publish status", error);
+    } finally {
+      setStatusSubmitting(false);
+    }
+  }
+
   return (
     <div ref={rootRef} className="relative flex justify-end">
       <Button type="button" variant="ghost" className="h-9 w-9 p-0" onClick={() => setOpen((current) => !current)}>
@@ -97,12 +119,14 @@ export function ArticleActionsMenu({
       </Button>
       {open ? (
         <div className="absolute right-0 top-10 z-50 w-44 rounded-lg border bg-card p-1 text-sm shadow-xl shadow-primary/10">
-          <form action={isPublished ? unpublishArticleAction : publishArticleAction}>
-            <input type="hidden" name="id" value={article.id} />
-            <button type="submit" className="w-full rounded-md px-3 py-2 text-left hover:bg-muted">
-              {isPublished ? text.unpublish : text.publish}
-            </button>
-          </form>
+          <button
+            type="button"
+            disabled={statusSubmitting}
+            className="w-full rounded-md px-3 py-2 text-left hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={togglePublishStatus}
+          >
+            {isPublished ? text.unpublish : text.publish}
+          </button>
           <Link href={`/admin/articles/${article.id}/edit`} className="block rounded-md px-3 py-2 hover:bg-muted">
             {text.edit}
           </Link>

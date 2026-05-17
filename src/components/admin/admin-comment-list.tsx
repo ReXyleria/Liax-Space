@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { CommentStatus } from "@prisma/client";
 import { ChevronDown, Pin, PinOff, Trash2, VolumeX } from "lucide-react";
 import Link from "next/link";
@@ -24,7 +24,7 @@ type AdminComment = {
   pinned: boolean;
   createdAt: string | Date;
   deviceName: string | null;
-  article: { title: string; slug: string };
+  article: { id: string; title: string; slug: string };
   user: {
     id: string;
     nickname: string;
@@ -63,7 +63,7 @@ export function AdminCommentList({ comments }: { comments: AdminComment[] }) {
   const groups = useMemo(() => {
     const map = new Map<string, ArticleGroup>();
     for (const comment of comments) {
-      const key = comment.article.slug || "unknown";
+      const key = comment.article.id || comment.article.slug || "unknown";
       if (!map.has(key)) {
         map.set(key, {
           articleId: key,
@@ -77,7 +77,17 @@ export function AdminCommentList({ comments }: { comments: AdminComment[] }) {
     return Array.from(map.values());
   }, [comments]);
 
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(groups.map((group) => group.articleId)));
+
+  useEffect(() => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      for (const group of groups) {
+        next.add(group.articleId);
+      }
+      return next;
+    });
+  }, [groups]);
 
   function toggleGroup(key: string) {
     setExpanded((prev) => {

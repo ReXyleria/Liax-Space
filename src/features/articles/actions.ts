@@ -303,7 +303,8 @@ export async function updateArticleSettingsAction(
     return {
       ok: true,
       message: actionText(locale).articleSaved,
-      fieldErrors: {}
+      fieldErrors: {},
+      redirectTo: "/admin/articles"
     };
   } catch (error) {
     return actionErrorState(error, locale);

@@ -3,6 +3,7 @@ import { ArticleActionsMenu } from "@/components/admin/article-actions-menu";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { requireAdminPermission } from "@/lib/admin-guard";
+import { articleStatusLabel } from "@/lib/article-status";
 import { contentVisibilityBadgeClass, contentVisibilityLabel } from "@/lib/content-visibility";
 import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageArticles } from "@/lib/permissions";
@@ -83,13 +84,13 @@ export default async function AdminArticlesPage() {
                   </Link>
                   <p className="mt-1 text-sm text-muted-foreground">{article.slug}</p>
                 </div>
-                <span className="text-sm text-muted-foreground">{article.status}</span>
+                <span className="text-sm text-muted-foreground">{articleStatusLabel(locale, article.status)}</span>
                 <span
                   className={`w-fit rounded-full px-2.5 py-1 text-xs font-medium ${contentVisibilityBadgeClass(article.visibility)}`}
                 >
                   {contentVisibilityLabel(locale, article.visibility)}
                 </span>
-                <span className="text-sm text-muted-foreground">{formatDate(article.updatedAt)}</span>
+                <span className="text-sm text-muted-foreground">{formatDate(article.publishedAt ?? article.createdAt)}</span>
                 <ArticleActionsMenu article={article} tagOptions={tagOptions} locale={locale} />
               </div>
             ))}

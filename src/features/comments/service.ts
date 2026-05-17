@@ -121,7 +121,7 @@ export async function listAdminComments(user: CurrentUser) {
       comments: await db.comment.findMany({
         where: { deletedAt: null },
         include: {
-          article: { select: { title: true, slug: true } },
+          article: { select: { id: true, title: true, slug: true } },
           user: { select: { id: true, nickname: true, email: true, avatar: true, mutedUntil: true } }
         },
         orderBy: [{ pinned: "desc" }, { createdAt: "desc" }]

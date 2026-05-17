@@ -6,7 +6,7 @@ import {
   SitePushProvider,
   SitePushStatus
 } from "@prisma/client";
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { assertPermission, canManageSettings } from "@/lib/permissions";
@@ -457,7 +457,6 @@ export async function saveSitePushSettings(user: CurrentUser, formData: FormData
     )
   );
   revalidateTag("settings");
-  revalidatePath("/admin/site-push");
 }
 
 export async function listSitePushRecords(user: CurrentUser, take = 60) {
@@ -713,7 +712,6 @@ async function pushUrls(
     return;
   }
   await Promise.all(providers.map((provider) => pushWithProvider(settings, provider, normalizedUrls, action)));
-  revalidatePath("/admin/site-push");
 }
 
 export async function getIndexNowKey() {

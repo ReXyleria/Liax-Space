@@ -285,6 +285,7 @@ export function ArticleEditorForm({
   const [restoreError, setRestoreError] = useState("");
   const [isRestoring, startRestoreTransition] = useTransition();
   const [isGeneratingSeo, startSeoTransition] = useTransition();
+  const [submitLocked, setSubmitLocked] = useState(false);
   const [seoMessage, setSeoMessage] = useState("");
   const [seoError, setSeoError] = useState("");
 
@@ -366,7 +367,10 @@ export function ArticleEditorForm({
 
   function submitWithStatus(nextStatus: ArticleStatus, returnToList = false) {
     const form = formRef.current;
-    if (!form) {
+    if (!form || isPending || submitLocked) {
+      return;
+    }
+    if (!form.reportValidity()) {
       return;
     }
     const statusField = form.elements.namedItem("status");
@@ -376,6 +380,7 @@ export function ArticleEditorForm({
     if (returnToListRef.current) {
       returnToListRef.current.value = returnToList ? "1" : "0";
     }
+    setSubmitLocked(true);
     setStatus(nextStatus);
     form.requestSubmit();
   }
@@ -479,6 +484,12 @@ export function ArticleEditorForm({
   }, [draftKey, router, state.ok, state.redirectTo]);
 
   useEffect(() => {
+    if (!isPending) {
+      setSubmitLocked(false);
+    }
+  }, [isPending]);
+
+  useEffect(() => {
     if (Object.keys(state.fieldErrors).length) {
       setSettingsOpen(true);
     }
@@ -502,6 +513,7 @@ export function ArticleEditorForm({
   }, []);
 
   const isPublished = status === ArticleStatus.PUBLISHED;
+  const isSubmittingArticle = isPending || submitLocked;
   const statusText = text.statusLabels[status as ArticleStatus] ?? status;
   const dateLocale = locale === "en" ? "en-US" : "zh-CN";
 
@@ -582,7 +594,7 @@ export function ArticleEditorForm({
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" onClick={() => submitWithStatus(status as ArticleStatus)} disabled={isPending}>
+                  <Button type="button" variant="secondary" onClick={() => submitWithStatus(status as ArticleStatus)} disabled={isSubmittingArticle}>
                     <Save className="mr-2 h-4 w-4" />
                     {text.save}
                   </Button>
@@ -602,7 +614,7 @@ export function ArticleEditorForm({
                     <Settings className="mr-2 h-4 w-4" />
                     {text.settings}
                   </Button>
-                  <Button type="button" onClick={publishArticle} disabled={isPending}>
+                  <Button type="button" onClick={publishArticle} disabled={isSubmittingArticle}>
                     <Send className="mr-2 h-4 w-4" />
                     {isPublished ? text.updatePublish : text.publish}
                   </Button>
@@ -645,7 +657,7 @@ export function ArticleEditorForm({
               <Button type="button" variant="secondary" onClick={() => setSettingsOpen(false)}>
                 {text.close}
               </Button>
-              <Button type="button" onClick={() => submitWithStatus(ArticleStatus.PUBLISHED, true)} disabled={isPending}>
+              <Button type="button" onClick={() => submitWithStatus(ArticleStatus.PUBLISHED, true)} disabled={isSubmittingArticle}>
                 <Send className="mr-2 h-4 w-4" />
                 {isPublished ? text.updatePublish : text.publish}
               </Button>

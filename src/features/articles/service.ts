@@ -16,6 +16,7 @@ import {
 } from "@/features/articles/translation-service";
 import { pushArticleUrlAfterPublish } from "@/features/site-push/service";
 import { normalizeTagSlug } from "@/features/tags/utils";
+import { mediaUrlMatchesReference, normalizeMediaReferenceUrl } from "@/lib/media-reference";
 
 const articleInclude = {
   author: { select: { nickname: true } },
@@ -339,7 +340,7 @@ export async function listAdminArticles(user: CurrentUser) {
     const articles = await db.article.findMany({
       where: { deletedAt: null },
       include: articleInclude,
-      orderBy: [{ updatedAt: "desc" }],
+      orderBy: [{ pinned: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
       take: 100
     });
 
@@ -365,17 +366,27 @@ export async function getAdminArticle(user: CurrentUser, id: string) {
 async function syncTags(articleId: string, tagNames: string[]) {
   const cleanNames = Array.from(new Set(tagNames.map((name) => name.trim()).filter(Boolean)));
 
-  await db.articleTag.deleteMany({ where: { articleId } });
+  await db.$transaction(async (tx) => {
+    const tags = [];
+    for (const name of cleanNames) {
+      const slug = normalizeTagSlug(name) || name.toLowerCase();
+      const tag = await tx.tag.upsert({
+        where: { slug },
+        update: { name },
+        create: { name, slug }
+      });
+      tags.push(tag);
+    }
 
-  for (const name of cleanNames) {
-    const slug = normalizeTagSlug(name) || name.toLowerCase();
-    const tag = await db.tag.upsert({
-      where: { slug },
-      update: { name },
-      create: { name, slug }
-    });
-    await db.articleTag.create({ data: { articleId, tagId: tag.id } });
-  }
+    await tx.articleTag.deleteMany({ where: { articleId } });
+
+    if (tags.length) {
+      await tx.articleTag.createMany({
+        data: tags.map((tag) => ({ articleId, tagId: tag.id })),
+        skipDuplicates: true
+      });
+    }
+  });
 }
 
 function extractArticleMediaUrls(html: string, cover?: string | null) {
@@ -396,6 +407,7 @@ function extractArticleMediaUrls(html: string, cover?: string | null) {
 
 async function syncArticleMediaReferences(articleId: string, html: string, cover?: string | null) {
   const urls = extractArticleMediaUrls(html, cover);
+  const normalizedUrls = Array.from(new Set(urls.map(normalizeMediaReferenceUrl).filter(Boolean)));
 
   await db.mediaReference.deleteMany({
     where: {
@@ -404,21 +416,29 @@ async function syncArticleMediaReferences(articleId: string, html: string, cover
     }
   });
 
-  if (!urls.length) {
+  if (!urls.length && !normalizedUrls.length) {
     return;
   }
 
   const assets = await db.mediaAsset.findMany({
-    where: { url: { in: urls } },
-    select: { id: true }
+    where: {
+      OR: [
+        ...(urls.length ? [{ url: { in: urls } }] : []),
+        ...(normalizedUrls.length ? [{ url: { in: normalizedUrls } }] : [])
+      ]
+    },
+    select: { id: true, url: true }
   });
+  const referencedAssets = assets.filter((asset) =>
+    urls.some((url) => mediaUrlMatchesReference(url, asset.url))
+  );
 
-  if (!assets.length) {
+  if (!referencedAssets.length) {
     return;
   }
 
   await db.mediaReference.createMany({
-    data: assets.map((asset) => ({
+    data: referencedAssets.map((asset) => ({
       assetId: asset.id,
       source: MediaReferenceSource.ARTICLE,
       sourceId: articleId
@@ -427,7 +447,7 @@ async function syncArticleMediaReferences(articleId: string, html: string, cover
   });
 
   await db.mediaAsset.updateMany({
-    where: { id: { in: assets.map((asset) => asset.id) } },
+    where: { id: { in: referencedAssets.map((asset) => asset.id) } },
     data: { isUnused: false, unusedSince: null, lastScannedAt: new Date() }
   });
 }
@@ -593,11 +613,19 @@ export async function setArticleStatus(user: CurrentUser, id: string, status: Ar
     throw new Error("DATABASE_URL is not configured.");
   }
 
+  const existing = await db.article.findUnique({ where: { id } });
+  if (!existing) {
+    throw new Error("Article not found.");
+  }
+  if (existing.status === status) {
+    return existing;
+  }
+
   const article = await db.article.update({
     where: { id },
     data: {
       status,
-      publishedAt: status === ArticleStatus.PUBLISHED ? new Date() : undefined
+      publishedAt: status === ArticleStatus.PUBLISHED ? (existing.publishedAt ?? new Date()) : existing.publishedAt
     }
   });
 

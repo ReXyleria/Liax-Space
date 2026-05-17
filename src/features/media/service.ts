@@ -3,6 +3,7 @@ import { db, isDatabaseConfigured } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
 import { assertPermission, canManageSettings } from "@/lib/permissions";
 import { deleteUploadedFileByUrl } from "@/lib/upload";
+import { mediaUrlMatchesReference, normalizeMediaReferenceUrl } from "@/lib/media-reference";
 
 const UNUSED_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 const mediaReferenceSourceValues = Object.values(MediaReferenceSource);
@@ -31,7 +32,7 @@ function normalizeMediaSourceFilter(value?: string) {
 
 function jsonContainsUrl(value: unknown, url: string): boolean {
   if (typeof value === "string") {
-    return value.includes(url);
+    return value.includes(url) || mediaUrlMatchesReference(value, url);
   }
   if (Array.isArray(value)) {
     return value.some((item) => jsonContainsUrl(item, url));
@@ -103,9 +104,14 @@ export async function rescanMediaReferences(user: CurrentUser) {
 
   for (const asset of assets) {
     const references: Array<{ assetId: string; source: MediaReferenceSource; sourceId: string }> = [];
+    const normalizedAssetUrl = normalizeMediaReferenceUrl(asset.url);
 
     for (const article of articles) {
-      if (article.contentHtml.includes(asset.url) || article.cover === asset.url) {
+      if (
+        article.contentHtml.includes(asset.url) ||
+        (normalizedAssetUrl && article.contentHtml.includes(normalizedAssetUrl)) ||
+        mediaUrlMatchesReference(article.cover, asset.url)
+      ) {
         references.push({ assetId: asset.id, source: MediaReferenceSource.ARTICLE, sourceId: article.id });
       }
     }
@@ -117,31 +123,35 @@ export async function rescanMediaReferences(user: CurrentUser) {
     }
 
     for (const user of users) {
-      if (user.avatar && user.avatar.includes(asset.url)) {
+      if (user.avatar && (user.avatar.includes(asset.url) || mediaUrlMatchesReference(user.avatar, asset.url))) {
         references.push({ assetId: asset.id, source: MediaReferenceSource.USER_AVATAR, sourceId: user.id });
       }
     }
 
     for (const setting of [...settings, ...codeInjectionSettings]) {
-      if (setting.value.includes(asset.url)) {
+      if (setting.value.includes(asset.url) || (normalizedAssetUrl && setting.value.includes(normalizedAssetUrl))) {
         references.push({ assetId: asset.id, source: MediaReferenceSource.SETTING, sourceId: setting.id });
       }
     }
 
     for (const template of mailTemplates) {
-      if (template.bodyHtml.includes(asset.url)) {
+      if (template.bodyHtml.includes(asset.url) || (normalizedAssetUrl && template.bodyHtml.includes(normalizedAssetUrl))) {
         references.push({ assetId: asset.id, source: MediaReferenceSource.MAIL_TEMPLATE, sourceId: template.id });
       }
     }
 
     for (const version of articleVersions) {
-      if (version.contentHtml.includes(asset.url) || version.cover === asset.url) {
+      if (
+        version.contentHtml.includes(asset.url) ||
+        (normalizedAssetUrl && version.contentHtml.includes(normalizedAssetUrl)) ||
+        mediaUrlMatchesReference(version.cover, asset.url)
+      ) {
         references.push({ assetId: asset.id, source: MediaReferenceSource.ARTICLE_VERSION, sourceId: version.id });
       }
     }
 
     for (const comment of comments) {
-      if (comment.content.includes(asset.url)) {
+      if (comment.content.includes(asset.url) || (normalizedAssetUrl && comment.content.includes(normalizedAssetUrl))) {
         references.push({ assetId: asset.id, source: MediaReferenceSource.COMMENT, sourceId: comment.id });
       }
     }

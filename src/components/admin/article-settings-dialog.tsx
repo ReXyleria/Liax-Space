@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { ContentVisibility } from "@prisma/client";
 import { Send } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -104,9 +105,11 @@ export function ArticleSettingsDialog({
   locale?: Locale;
 }) {
   const text = labels(locale);
+  const router = useRouter();
   const visOptions = contentVisibilityOptions(locale);
   const action = updateArticleSettingsAction.bind(null, article.id);
   const [state, formAction, isPending] = useActionState(action, initialActionState);
+  const formId = `article-settings-form-${article.id}`;
 
   const initialTags = article.tags.flatMap((tag) => (tag?.name ? [tag.name] : []));
   const [selectedTags, setSelectedTags] = useState(initialTags);
@@ -114,6 +117,10 @@ export function ArticleSettingsDialog({
   const [publishedAt, setPublishedAt] = useState(
     article.publishedAt ? new Date(article.publishedAt).toISOString().slice(0, 16) : ""
   );
+  const [allowComments, setAllowComments] = useState(article.allowComments);
+  const [pinned, setPinned] = useState(article.pinned);
+  const [featured, setFeatured] = useState(article.featured);
+  const [submitLocked, setSubmitLocked] = useState(false);
 
   const tagSelectOptions = useMemo(
     () =>
@@ -127,8 +134,18 @@ export function ArticleSettingsDialog({
   useEffect(() => {
     if (state.ok) {
       onOpenChange(false);
+      router.push(state.redirectTo ?? "/admin/articles");
+      router.refresh();
     }
-  }, [state.ok, onOpenChange]);
+  }, [onOpenChange, router, state.ok, state.redirectTo]);
+
+  useEffect(() => {
+    if (!isPending) {
+      setSubmitLocked(false);
+    }
+  }, [isPending]);
+
+  const isSubmitting = isPending || submitLocked;
 
   return (
     <Dialog
@@ -141,14 +158,25 @@ export function ArticleSettingsDialog({
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
             {text.close}
           </Button>
-          <Button type="submit" form="article-settings-form" disabled={isPending}>
+          <Button type="submit" form={formId} disabled={isSubmitting}>
             <Send className="mr-2 h-4 w-4" />
-            {isPending ? text.saving : text.save}
+            {isSubmitting ? text.saving : text.save}
           </Button>
         </div>
       }
     >
-      <form id="article-settings-form" action={formAction} className="space-y-5">
+      <form
+        id={formId}
+        action={formAction}
+        className="space-y-5"
+        onSubmit={(event) => {
+          if (isSubmitting) {
+            event.preventDefault();
+            return;
+          }
+          setSubmitLocked(true);
+        }}
+      >
         {state.message ? (
           <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>
             {state.message}
@@ -206,9 +234,24 @@ export function ArticleSettingsDialog({
           <FieldError messages={state.fieldErrors.publishedAt} />
         </label>
         <div className="grid gap-3 md:grid-cols-3">
-          <ThemedCheckbox name="allowComments" label={text.allowCommentsLabel} defaultChecked={article.allowComments} />
-          <ThemedCheckbox name="pinned" label={text.pinnedLabel} defaultChecked={article.pinned} />
-          <ThemedCheckbox name="featured" label={text.featuredLabel} defaultChecked={article.featured} />
+          <ThemedCheckbox
+            name="allowComments"
+            label={text.allowCommentsLabel}
+            checked={allowComments}
+            onCheckedChange={setAllowComments}
+          />
+          <ThemedCheckbox
+            name="pinned"
+            label={text.pinnedLabel}
+            checked={pinned}
+            onCheckedChange={setPinned}
+          />
+          <ThemedCheckbox
+            name="featured"
+            label={text.featuredLabel}
+            checked={featured}
+            onCheckedChange={setFeatured}
+          />
         </div>
       </form>
     </Dialog>
