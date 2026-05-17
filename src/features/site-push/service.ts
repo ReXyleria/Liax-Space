@@ -7,6 +7,7 @@ import {
   SitePushStatus
 } from "@prisma/client";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { z } from "zod";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { assertPermission, canManageSettings } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
@@ -21,26 +22,57 @@ const SETTING_KEYS = {
   bingKeyLocation: "sitePush.bing.keyLocation",
   bingEndpoint: "sitePush.bing.endpoint",
   googleEnabled: "sitePush.google.enabled",
+  googlePropertyUrl: "sitePush.google.propertyUrl",
   googleServiceAccount: "sitePush.google.serviceAccount"
 } as const;
 
 const DEFAULT_BING_ENDPOINT = "https://api.indexnow.org/indexnow";
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/indexing";
 const GOOGLE_PUBLISH_ENDPOINT = "https://indexing.googleapis.com/v3/urlNotifications:publish";
-const DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token";
+
+type GoogleServiceAccount = {
+  client_email?: string;
+  private_key?: string;
+  project_id?: string;
+  token_uri?: string;
+};
 
 type InternalSitePushSettings = {
   siteUrl: string;
+  siteHost: string;
   baidu: { enabled: boolean; site: string; token: string; endpoint: string };
   bing: { enabled: boolean; key: string; keyLocation: string; endpoint: string };
-  google: { enabled: boolean; serviceAccount: string };
+  google: { enabled: boolean; propertyUrl: string; serviceAccount: string };
 };
 
 export type SitePushSettingsView = {
   siteUrl: string;
-  baidu: { enabled: boolean; site: string; hasToken: boolean; tokenMasked: string; endpoint: string };
-  bing: { enabled: boolean; hasKey: boolean; keyMasked: string; keyLocation: string; endpoint: string };
-  google: { enabled: boolean; hasServiceAccount: boolean; serviceAccountMasked: string };
+  siteHost: string;
+  baidu: {
+    enabled: boolean;
+    configured: boolean;
+    site: string;
+    hasToken: boolean;
+    tokenMasked: string;
+    endpoint: string;
+  };
+  bing: {
+    enabled: boolean;
+    configured: boolean;
+    hasKey: boolean;
+    keyMasked: string;
+    keyLocation: string;
+    endpoint: string;
+  };
+  google: {
+    enabled: boolean;
+    configured: boolean;
+    propertyUrl: string;
+    hasServiceAccount: boolean;
+    serviceAccountMasked: string;
+    clientEmail: string;
+    projectId: string;
+  };
 };
 
 type PushResult = {
@@ -49,6 +81,16 @@ type PushResult = {
   responseBody?: string;
   error?: string;
 };
+
+export class SitePushValidationError extends Error {
+  fieldErrors: Record<string, string[]>;
+
+  constructor(message: string, fieldErrors: Record<string, string[]>) {
+    super(message);
+    this.name = "SitePushValidationError";
+    this.fieldErrors = fieldErrors;
+  }
+}
 
 function parseBoolean(value: string | undefined) {
   return value === "true" || value === "on" || value === "1";
@@ -60,8 +102,44 @@ function maskSecret(value: string) {
   return `${value.slice(0, 4)}********${value.slice(-4)}`;
 }
 
+function parseUrlLike(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return new URL(/^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeSiteUrl(value: string) {
+  const url = parseUrlLike(value);
+  return url?.origin.replace(/\/+$/, "") || "";
+}
+
+function getHostFromUrl(value: string) {
+  return parseUrlLike(value)?.host || "";
+}
+
+function normalizeBaiduSite(value: string) {
+  const url = parseUrlLike(value);
+  if (url) {
+    return url.host;
+  }
+
+  return value.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+}
+
 function normalizeUrl(value: string) {
-  return value.trim().replace(/\/+$/, "");
+  const url = parseUrlLike(value);
+  return url?.toString().replace(/\/+$/, "") || "";
+}
+
+function buildDefaultIndexNowKeyLocation(siteUrl: string) {
+  return siteUrl ? `${siteUrl}/indexnow-key.txt` : "";
 }
 
 function limitBody(value: string) {
@@ -81,11 +159,65 @@ function signJwt(payload: Record<string, unknown>, privateKey: string) {
   return `${signingInput}.${base64Url(signer.sign(privateKey.replace(/\\n/g, "\n")))}`;
 }
 
+function parseGoogleServiceAccount(value: string): GoogleServiceAccount | null {
+  if (!value.trim()) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as GoogleServiceAccount;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getGoogleAccountInfo(value: string) {
+  const account = parseGoogleServiceAccount(value);
+  return {
+    clientEmail: account?.client_email ?? "",
+    projectId: account?.project_id ?? "",
+    valid: Boolean(account?.client_email && account.private_key && account.token_uri)
+  };
+}
+
+function isBaiduConfigured(settings: InternalSitePushSettings) {
+  return Boolean(settings.baidu.site && settings.baidu.token);
+}
+
+function isBingConfigured(settings: InternalSitePushSettings) {
+  return Boolean(settings.siteHost && settings.bing.key && settings.bing.keyLocation && settings.bing.endpoint);
+}
+
+function isGoogleConfigured(settings: InternalSitePushSettings) {
+  return Boolean(settings.google.propertyUrl && getGoogleAccountInfo(settings.google.serviceAccount).valid);
+}
+
+function isProviderAvailable(settings: InternalSitePushSettings, provider: SitePushProvider) {
+  if (provider === SitePushProvider.BAIDU) {
+    return settings.baidu.enabled && isBaiduConfigured(settings);
+  }
+  if (provider === SitePushProvider.BING) {
+    return settings.bing.enabled && isBingConfigured(settings);
+  }
+  return settings.google.enabled && isGoogleConfigured(settings);
+}
+
+function getEnabledProviders(settings: InternalSitePushSettings) {
+  return [SitePushProvider.BAIDU, SitePushProvider.BING, SitePushProvider.GOOGLE].filter((provider) =>
+    isProviderAvailable(settings, provider)
+  );
+}
+
 function toView(settings: InternalSitePushSettings): SitePushSettingsView {
+  const googleInfo = getGoogleAccountInfo(settings.google.serviceAccount);
+
   return {
     siteUrl: settings.siteUrl,
+    siteHost: settings.siteHost,
     baidu: {
       enabled: settings.baidu.enabled,
+      configured: isBaiduConfigured(settings),
       site: settings.baidu.site,
       hasToken: Boolean(settings.baidu.token),
       tokenMasked: maskSecret(settings.baidu.token),
@@ -93,6 +225,7 @@ function toView(settings: InternalSitePushSettings): SitePushSettingsView {
     },
     bing: {
       enabled: settings.bing.enabled,
+      configured: isBingConfigured(settings),
       hasKey: Boolean(settings.bing.key),
       keyMasked: maskSecret(settings.bing.key),
       keyLocation: settings.bing.keyLocation,
@@ -100,8 +233,12 @@ function toView(settings: InternalSitePushSettings): SitePushSettingsView {
     },
     google: {
       enabled: settings.google.enabled,
+      configured: isGoogleConfigured(settings),
+      propertyUrl: settings.google.propertyUrl,
       hasServiceAccount: Boolean(settings.google.serviceAccount),
-      serviceAccountMasked: settings.google.serviceAccount ? "已保存 Service Account JSON" : ""
+      serviceAccountMasked: settings.google.serviceAccount ? "Saved Service Account JSON" : "",
+      clientEmail: googleInfo.clientEmail,
+      projectId: googleInfo.projectId
     }
   };
 }
@@ -112,15 +249,17 @@ async function loadInternalSettings(): Promise<InternalSitePushSettings> {
     select: { key: true, value: true }
   });
   const map = new Map(rows.map((row) => [row.key, row.value]));
-  const siteUrl = normalizeUrl(map.get("site.url") ?? "http://localhost:3000") || "http://localhost:3000";
+  const siteUrl = normalizeSiteUrl(map.get("site.url") ?? "http://localhost:3000") || "http://localhost:3000";
+  const siteHost = getHostFromUrl(siteUrl);
   const bingKey = map.get(SETTING_KEYS.bingKey) ?? "";
-  const keyLocation = map.get(SETTING_KEYS.bingKeyLocation) || (bingKey && siteUrl ? `${siteUrl}/indexnow-key.txt` : "");
+  const keyLocation = map.get(SETTING_KEYS.bingKeyLocation) || buildDefaultIndexNowKeyLocation(siteUrl);
 
   return {
     siteUrl,
+    siteHost,
     baidu: {
       enabled: parseBoolean(map.get(SETTING_KEYS.baiduEnabled)),
-      site: normalizeUrl(map.get(SETTING_KEYS.baiduSite) ?? ""),
+      site: normalizeBaiduSite(map.get(SETTING_KEYS.baiduSite) ?? ""),
       token: map.get(SETTING_KEYS.baiduToken) ?? "",
       endpoint: map.get(SETTING_KEYS.baiduEndpoint) ?? ""
     },
@@ -132,8 +271,25 @@ async function loadInternalSettings(): Promise<InternalSitePushSettings> {
     },
     google: {
       enabled: parseBoolean(map.get(SETTING_KEYS.googleEnabled)),
+      propertyUrl: normalizeUrl(map.get(SETTING_KEYS.googlePropertyUrl) ?? siteUrl),
       serviceAccount: map.get(SETTING_KEYS.googleServiceAccount) ?? ""
     }
+  };
+}
+
+async function defaultSettings(): Promise<InternalSitePushSettings> {
+  const siteUrl = "http://localhost:3000";
+  return {
+    siteUrl,
+    siteHost: getHostFromUrl(siteUrl),
+    baidu: { enabled: false, site: "", token: "", endpoint: "" },
+    bing: {
+      enabled: false,
+      key: "",
+      keyLocation: buildDefaultIndexNowKeyLocation(siteUrl),
+      endpoint: DEFAULT_BING_ENDPOINT
+    },
+    google: { enabled: false, propertyUrl: siteUrl, serviceAccount: "" }
   };
 }
 
@@ -145,21 +301,115 @@ export async function getSitePushSettings(user: CurrentUser) {
   return { settings: toView(await loadInternalSettings()), error: null };
 }
 
-async function defaultSettings(): Promise<InternalSitePushSettings> {
-  return {
-    siteUrl: "http://localhost:3000",
-    baidu: { enabled: false, site: "", token: "", endpoint: "" },
-    bing: { enabled: false, key: "", keyLocation: "", endpoint: DEFAULT_BING_ENDPOINT },
-    google: { enabled: false, serviceAccount: "" }
-  };
-}
-
 function pickSecret(input: string, existing: string) {
   const value = input.trim();
-  if (!value || value.includes("****") || value === "已保存 Service Account JSON") {
+  if (!value || value.includes("****") || value.toLowerCase().includes("saved service account")) {
     return existing;
   }
   return value;
+}
+
+const sitePushSettingsSchema = z
+  .object({
+    baiduEnabled: z.boolean(),
+    baiduSite: z.string(),
+    baiduToken: z.string(),
+    baiduEndpoint: z.string(),
+    bingEnabled: z.boolean(),
+    bingKey: z.string(),
+    bingKeyLocation: z.string(),
+    bingEndpoint: z.string(),
+    googleEnabled: z.boolean(),
+    googlePropertyUrl: z.string(),
+    googleServiceAccount: z.string()
+  })
+  .superRefine((value, ctx) => {
+    if (value.baiduEnabled) {
+      if (!value.baiduSite) {
+        ctx.addIssue({ code: "custom", path: ["baiduSite"], message: "Baidu site is required when enabled." });
+      }
+      if (!value.baiduToken) {
+        ctx.addIssue({ code: "custom", path: ["baiduToken"], message: "Baidu token is required when enabled." });
+      }
+    }
+
+    if (value.baiduEndpoint && !parseUrlLike(value.baiduEndpoint)) {
+      ctx.addIssue({ code: "custom", path: ["baiduEndpoint"], message: "Baidu endpoint must be a valid URL." });
+    }
+
+    if (value.bingEnabled) {
+      if (!/^[A-Za-z0-9-]{8,128}$/.test(value.bingKey)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["bingKey"],
+          message: "IndexNow key must be 8-128 letters, numbers, or dashes."
+        });
+      }
+      if (!parseUrlLike(value.bingKeyLocation)) {
+        ctx.addIssue({ code: "custom", path: ["bingKeyLocation"], message: "IndexNow key location is required." });
+      }
+      if (!parseUrlLike(value.bingEndpoint)) {
+        ctx.addIssue({ code: "custom", path: ["bingEndpoint"], message: "IndexNow endpoint must be a valid URL." });
+      }
+    }
+
+    if (value.googleEnabled) {
+      if (!parseUrlLike(value.googlePropertyUrl)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["googlePropertyUrl"],
+          message: "Google Search Console property URL is required when enabled."
+        });
+      }
+      const account = parseGoogleServiceAccount(value.googleServiceAccount);
+      if (!account) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["googleServiceAccount"],
+          message: "Google Service Account JSON is required when enabled."
+        });
+      } else {
+        if (!account.client_email) {
+          ctx.addIssue({ code: "custom", path: ["googleServiceAccount"], message: "Service Account JSON is missing client_email." });
+        }
+        if (!account.private_key) {
+          ctx.addIssue({ code: "custom", path: ["googleServiceAccount"], message: "Service Account JSON is missing private_key." });
+        }
+        if (!account.token_uri) {
+          ctx.addIssue({ code: "custom", path: ["googleServiceAccount"], message: "Service Account JSON is missing token_uri." });
+        }
+      }
+    } else if (value.googleServiceAccount && !parseGoogleServiceAccount(value.googleServiceAccount)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["googleServiceAccount"],
+        message: "Service Account JSON is invalid."
+      });
+    }
+  });
+
+function buildSettingsInput(formData: FormData, existing: InternalSitePushSettings) {
+  const baiduToken = pickSecret(String(formData.get("baiduToken") ?? ""), existing.baidu.token);
+  const bingKey = pickSecret(String(formData.get("bingKey") ?? ""), existing.bing.key);
+  const googleServiceAccount = pickSecret(
+    String(formData.get("googleServiceAccount") ?? ""),
+    existing.google.serviceAccount
+  );
+  const siteUrl = existing.siteUrl;
+
+  return {
+    baiduEnabled: formData.get("baiduEnabled") === "on",
+    baiduSite: normalizeBaiduSite(String(formData.get("baiduSite") ?? "")),
+    baiduToken,
+    baiduEndpoint: String(formData.get("baiduEndpoint") ?? "").trim(),
+    bingEnabled: formData.get("bingEnabled") === "on",
+    bingKey,
+    bingKeyLocation: String(formData.get("bingKeyLocation") ?? "").trim() || buildDefaultIndexNowKeyLocation(siteUrl),
+    bingEndpoint: String(formData.get("bingEndpoint") ?? DEFAULT_BING_ENDPOINT).trim() || DEFAULT_BING_ENDPOINT,
+    googleEnabled: formData.get("googleEnabled") === "on",
+    googlePropertyUrl: normalizeUrl(String(formData.get("googlePropertyUrl") ?? (existing.google.propertyUrl || siteUrl))),
+    googleServiceAccount
+  };
 }
 
 export async function saveSitePushSettings(user: CurrentUser, formData: FormData) {
@@ -169,30 +419,30 @@ export async function saveSitePushSettings(user: CurrentUser, formData: FormData
   }
 
   const existing = await loadInternalSettings();
-  const baiduToken = pickSecret(String(formData.get("baiduToken") ?? ""), existing.baidu.token);
-  const bingKey = pickSecret(String(formData.get("bingKey") ?? ""), existing.bing.key);
-  const googleServiceAccount = pickSecret(
-    String(formData.get("googleServiceAccount") ?? ""),
-    existing.google.serviceAccount
-  );
+  const input = buildSettingsInput(formData, existing);
+  const parsed = sitePushSettingsSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new SitePushValidationError("Please fix the highlighted site push settings.", parsed.error.flatten().fieldErrors);
+  }
 
+  const values = parsed.data;
   const updates: Array<{ key: string; value: string; type: SettingType }> = [
-    { key: SETTING_KEYS.baiduEnabled, value: String(formData.get("baiduEnabled") === "on"), type: SettingType.BOOLEAN },
-    { key: SETTING_KEYS.baiduSite, value: normalizeUrl(String(formData.get("baiduSite") ?? "")), type: SettingType.TEXT },
-    { key: SETTING_KEYS.baiduEndpoint, value: String(formData.get("baiduEndpoint") ?? "").trim(), type: SettingType.TEXT },
-    { key: SETTING_KEYS.bingEnabled, value: String(formData.get("bingEnabled") === "on"), type: SettingType.BOOLEAN },
-    { key: SETTING_KEYS.bingKeyLocation, value: String(formData.get("bingKeyLocation") ?? "").trim(), type: SettingType.TEXT },
-    { key: SETTING_KEYS.bingEndpoint, value: String(formData.get("bingEndpoint") ?? DEFAULT_BING_ENDPOINT).trim(), type: SettingType.TEXT },
-    { key: SETTING_KEYS.googleEnabled, value: String(formData.get("googleEnabled") === "on"), type: SettingType.BOOLEAN }
+    { key: SETTING_KEYS.baiduEnabled, value: String(values.baiduEnabled), type: SettingType.BOOLEAN },
+    { key: SETTING_KEYS.baiduSite, value: values.baiduSite, type: SettingType.TEXT },
+    { key: SETTING_KEYS.baiduEndpoint, value: values.baiduEndpoint, type: SettingType.TEXT },
+    { key: SETTING_KEYS.bingEnabled, value: String(values.bingEnabled), type: SettingType.BOOLEAN },
+    { key: SETTING_KEYS.bingKeyLocation, value: values.bingKeyLocation, type: SettingType.TEXT },
+    { key: SETTING_KEYS.bingEndpoint, value: values.bingEndpoint, type: SettingType.TEXT },
+    { key: SETTING_KEYS.googleEnabled, value: String(values.googleEnabled), type: SettingType.BOOLEAN },
+    { key: SETTING_KEYS.googlePropertyUrl, value: values.googlePropertyUrl, type: SettingType.TEXT }
   ];
 
-  if (baiduToken) updates.push({ key: SETTING_KEYS.baiduToken, value: baiduToken, type: SettingType.PASSWORD });
-  if (bingKey) updates.push({ key: SETTING_KEYS.bingKey, value: bingKey, type: SettingType.PASSWORD });
-  if (googleServiceAccount) {
-    JSON.parse(googleServiceAccount);
+  if (values.baiduToken) updates.push({ key: SETTING_KEYS.baiduToken, value: values.baiduToken, type: SettingType.PASSWORD });
+  if (values.bingKey) updates.push({ key: SETTING_KEYS.bingKey, value: values.bingKey, type: SettingType.PASSWORD });
+  if (values.googleServiceAccount) {
     updates.push({
       key: SETTING_KEYS.googleServiceAccount,
-      value: googleServiceAccount,
+      value: values.googleServiceAccount,
       type: SettingType.PASSWORD
     });
   }
@@ -246,7 +496,7 @@ function buildBaiduEndpoint(settings: InternalSitePushSettings) {
 
 async function pushBaidu(settings: InternalSitePushSettings, urls: string[]): Promise<PushResult> {
   const endpoint = buildBaiduEndpoint(settings);
-  if (!settings.baidu.enabled || !endpoint) {
+  if (!isProviderAvailable(settings, SitePushProvider.BAIDU) || !endpoint) {
     return { status: SitePushStatus.SKIPPED, error: "Baidu push is not configured." };
   }
   const response = await fetch(endpoint, {
@@ -263,15 +513,18 @@ async function pushBaidu(settings: InternalSitePushSettings, urls: string[]): Pr
 }
 
 async function pushBing(settings: InternalSitePushSettings, urls: string[]): Promise<PushResult> {
-  if (!settings.bing.enabled || !settings.bing.key || !settings.siteUrl) {
+  if (!isProviderAvailable(settings, SitePushProvider.BING)) {
     return { status: SitePushStatus.SKIPPED, error: "IndexNow push is not configured." };
   }
-  const host = new URL(settings.siteUrl).host;
-  const keyLocation = settings.bing.keyLocation || `${settings.siteUrl}/indexnow-key.txt`;
   const response = await fetch(settings.bing.endpoint || DEFAULT_BING_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ host, key: settings.bing.key, keyLocation, urlList: urls })
+    body: JSON.stringify({
+      host: settings.siteHost,
+      key: settings.bing.key,
+      keyLocation: settings.bing.keyLocation,
+      urlList: urls
+    })
   });
   const body = await response.text().catch(() => "");
   return {
@@ -282,27 +535,22 @@ async function pushBing(settings: InternalSitePushSettings, urls: string[]): Pro
 }
 
 async function getGoogleAccessToken(serviceAccountJson: string) {
-  const account = JSON.parse(serviceAccountJson) as {
-    client_email?: string;
-    private_key?: string;
-    token_uri?: string;
-  };
-  if (!account.client_email || !account.private_key) {
-    throw new Error("Google Service Account JSON 缺少 client_email 或 private_key。");
+  const account = parseGoogleServiceAccount(serviceAccountJson);
+  if (!account?.client_email || !account.private_key || !account.token_uri) {
+    throw new Error("Google Service Account JSON is missing client_email, private_key, or token_uri.");
   }
-  const tokenUri = account.token_uri || DEFAULT_TOKEN_URI;
   const now = Math.floor(Date.now() / 1000);
   const assertion = signJwt(
     {
       iss: account.client_email,
       scope: GOOGLE_SCOPE,
-      aud: tokenUri,
+      aud: account.token_uri,
       iat: now,
       exp: now + 3600
     },
     account.private_key
   );
-  const response = await fetch(tokenUri, {
+  const response = await fetch(account.token_uri, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -318,7 +566,7 @@ async function getGoogleAccessToken(serviceAccountJson: string) {
 }
 
 async function pushGoogle(settings: InternalSitePushSettings, urls: string[]): Promise<PushResult> {
-  if (!settings.google.enabled || !settings.google.serviceAccount) {
+  if (!isProviderAvailable(settings, SitePushProvider.GOOGLE)) {
     return { status: SitePushStatus.SKIPPED, error: "Google Indexing API is not configured." };
   }
   const accessToken = await getGoogleAccessToken(settings.google.serviceAccount);
@@ -384,19 +632,42 @@ function normalizeProviders(values: FormDataEntryValue[]) {
   );
 }
 
+function normalizeSubmittedUrl(value: string, settings: InternalSitePushSettings) {
+  const parsed = parseUrlLike(value);
+  if (!parsed) {
+    throw new Error("Please enter a valid absolute URL.");
+  }
+  if (settings.siteHost && parsed.host !== settings.siteHost) {
+    throw new Error(`URL host must match the configured site host: ${settings.siteHost}.`);
+  }
+  return parsed.toString();
+}
+
 export async function pushManualUrl(user: CurrentUser, formData: FormData) {
   assertPermission(canManageSettings(user), "You do not have permission to push site URLs.");
-  const url = String(formData.get("url") ?? "").trim();
+  const settings = await loadInternalSettings();
+  const url = normalizeSubmittedUrl(String(formData.get("url") ?? "").trim(), settings);
   const providers = normalizeProviders(formData.getAll("providers"));
-  if (!url || !providers.length) {
-    throw new Error("请输入 URL 并至少选择一个推送渠道。");
+  if (!providers.length) {
+    throw new Error("Please choose at least one configured provider.");
   }
-  await pushUrls([url], providers, SitePushAction.MANUAL);
+
+  const unavailable = providers.filter((provider) => !isProviderAvailable(settings, provider));
+  if (unavailable.length) {
+    throw new Error(`Selected providers are not enabled or fully configured: ${unavailable.join(", ")}.`);
+  }
+
+  await pushUrls([url], providers, SitePushAction.MANUAL, settings);
 }
 
 export async function pushPublishedArticles(user: CurrentUser) {
   assertPermission(canManageSettings(user), "You do not have permission to push site URLs.");
   const settings = await loadInternalSettings();
+  const providers = getEnabledProviders(settings);
+  if (!providers.length) {
+    throw new Error("No enabled site push providers are fully configured.");
+  }
+
   const articles = await db.article.findMany({
     where: { status: ArticleStatus.PUBLISHED, deletedAt: null },
     orderBy: { publishedAt: "desc" },
@@ -404,7 +675,7 @@ export async function pushPublishedArticles(user: CurrentUser) {
     select: { slug: true }
   });
   const urls = articles.map((article) => `${settings.siteUrl}/articles/${article.slug}`);
-  await pushUrls(urls, [SitePushProvider.BAIDU, SitePushProvider.BING, SitePushProvider.GOOGLE], SitePushAction.BATCH);
+  await pushUrls(urls, providers, SitePushAction.BATCH, settings);
 }
 
 export async function pushArticleUrlAfterPublish(articleId: string) {
@@ -412,6 +683,11 @@ export async function pushArticleUrlAfterPublish(articleId: string) {
     return;
   }
   const settings = await loadInternalSettings();
+  const providers = getEnabledProviders(settings);
+  if (!providers.length) {
+    return;
+  }
+
   const article = await db.article.findUnique({
     where: { id: articleId },
     select: { slug: true, status: true, deletedAt: true }
@@ -419,22 +695,23 @@ export async function pushArticleUrlAfterPublish(articleId: string) {
   if (!article || article.deletedAt || article.status !== ArticleStatus.PUBLISHED) {
     return;
   }
-  await pushUrls(
-    [`${settings.siteUrl}/articles/${article.slug}`],
-    [SitePushProvider.BAIDU, SitePushProvider.BING, SitePushProvider.GOOGLE],
-    SitePushAction.AUTO
-  );
+  await pushUrls([`${settings.siteUrl}/articles/${article.slug}`], providers, SitePushAction.AUTO, settings);
 }
 
-async function pushUrls(urls: string[], providers: SitePushProvider[], action: SitePushAction) {
+async function pushUrls(
+  urls: string[],
+  providers: SitePushProvider[],
+  action: SitePushAction,
+  providedSettings?: InternalSitePushSettings
+) {
   if (!isDatabaseConfigured()) {
     throw new Error("DATABASE_URL is not configured.");
   }
+  const settings = providedSettings ?? (await loadInternalSettings());
   const normalizedUrls = Array.from(new Set(urls.map((url) => url.trim()).filter(Boolean)));
   if (!normalizedUrls.length) {
     return;
   }
-  const settings = await loadInternalSettings();
   await Promise.all(providers.map((provider) => pushWithProvider(settings, provider, normalizedUrls, action)));
   revalidatePath("/admin/site-push");
 }

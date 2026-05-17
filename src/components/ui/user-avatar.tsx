@@ -3,11 +3,13 @@ import { cn } from "@/lib/utils";
 export function UserAvatar({
   src,
   name,
-  className
+  className,
+  fit = "cover"
 }: {
   src?: string | null;
   name: string;
   className?: string;
+  fit?: "cover" | "contain";
 }) {
   return (
     <span
@@ -19,8 +21,9 @@ export function UserAvatar({
         src
           ? {
               backgroundImage: `url(${src})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center"
+              backgroundSize: fit,
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat"
             }
           : undefined
       }

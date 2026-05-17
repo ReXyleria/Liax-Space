@@ -6,6 +6,7 @@ import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { SiteBackground, resolveSiteBackground } from "@/components/layout/site-background";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { getCodeInjectionMap, getEnabledCodeInjection } from "@/features/code-injection/service";
+import { getFooterBrandName, getFooterCopyright } from "@/features/settings/footer";
 import { getSettingsMap } from "@/features/settings/service";
 import { getCurrentUser } from "@/lib/auth";
 import { t } from "@/lib/i18n";
@@ -74,6 +75,8 @@ export async function PublicShell({
   const icp = settings["record.icp"];
   const police = settings["record.police"];
   const siteTitle = settings["site.title"] || "Liax-Space";
+  const footerBrandName = getFooterBrandName(settings);
+  const footerCopyright = getFooterCopyright(settings);
   const siteMark = siteTitle.trim().slice(0, 2).toUpperCase() || "PB";
   const sharedBackground = resolveSiteBackground(settings);
   const navItems = [
@@ -189,7 +192,7 @@ export async function PublicShell({
               homePage ? "border-white/12 text-white/84" : "border-white/70"
             )}
           >
-            <span>&copy; {settings["footer.copyright"] || `${new Date().getFullYear()} ${siteTitle}. All rights reserved.`}</span>
+            <span>{footerCopyright || footerBrandName}</span>
             <span className="flex flex-wrap gap-x-3 gap-y-1">
               {icp || police ? (
                 <>

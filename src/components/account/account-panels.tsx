@@ -148,7 +148,7 @@ export function ProfilePanel({
           <Input name="nickname" defaultValue={nickname} required maxLength={32} />
           <FieldError messages={state.fieldErrors?.nickname} />
         </label>
-        <ImageUploadField name="avatar" label="头像" defaultValue={avatar ?? ""} compact />
+        <ImageUploadField name="avatar" label="头像" defaultValue={avatar ?? ""} compact previewFit="contain" />
         <FieldError messages={state.fieldErrors?.avatar} />
         <div className="rounded-md border bg-background/70 p-3 text-sm">
           <p className="font-medium">{email}</p>

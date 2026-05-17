@@ -31,6 +31,7 @@ export default async function AdminSitePushPage() {
         </div>
       ) : null}
       <SitePushPanel
+        locale={locale}
         settings={settings}
         records={records.map((record) => ({
           ...record,

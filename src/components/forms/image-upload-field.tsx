@@ -16,6 +16,7 @@ export function ImageUploadField({
   label = "图片",
   helper,
   compact = false,
+  previewFit = "cover",
   onValueChange
 }: {
   name: string;
@@ -23,6 +24,7 @@ export function ImageUploadField({
   label?: string;
   helper?: string;
   compact?: boolean;
+  previewFit?: "cover" | "contain";
   onValueChange?: (value: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -90,7 +92,11 @@ export function ImageUploadField({
         )}
       >
         {value ? (
-          <img src={value} alt={label} className="h-full w-full object-cover" />
+          <img
+            src={value}
+            alt={label}
+            className={cn("h-full w-full", previewFit === "contain" ? "object-contain" : "object-cover")}
+          />
         ) : (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             暂无图片

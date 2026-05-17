@@ -1,3 +1,4 @@
+import { getFooterCopyright } from "@/features/settings/footer";
 import { getSettingsMap } from "@/features/settings/service";
 import { getSiteConfig } from "@/lib/site";
 
@@ -8,7 +9,7 @@ export async function getPreviewSiteSettings() {
     title: site.title,
     subtitle: site.subtitle,
     logo: settings["site.logo"] || "",
-    copyright: `© ${new Date().getFullYear()} ${site.title}. All rights reserved.`,
+    copyright: getFooterCopyright(settings),
     icp: settings["record.icp"] || "",
     icpUrl: settings["record.icpUrl"] || "https://beian.miit.gov.cn/",
     police: settings["record.police"] || "",

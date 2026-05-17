@@ -2,6 +2,7 @@ import { MotionItem, MotionPage } from "@/components/animations/reveal";
 import { FloatingContactCard } from "@/components/home/floating-contact-card";
 import { PublicShell } from "@/components/layout/public-shell";
 import { parseContactItems } from "@/features/settings/contact-items";
+import { shouldShowHomeContactCard } from "@/features/settings/footer";
 import { getSettingsMap } from "@/features/settings/service";
 import { getOwnerProfile } from "@/features/users/service";
 import { getCurrentLocale } from "@/lib/i18n-server";
@@ -17,7 +18,10 @@ export default async function HomePage() {
 
   const ownerNickname = ownerProfile?.nickname || settings["site.title"] || (locale === "en" ? "Administer" : "站主");
   const ownerAvatar = ownerProfile?.avatar || "";
-  const contacts = parseContactItems(settings);
+  const contacts = parseContactItems(settings)
+    .filter((contact) => contact.enabled)
+    .sort((left, right) => left.sort - right.sort);
+  const showContactCard = shouldShowHomeContactCard(settings) && contacts.length > 0;
 
   return (
     <PublicShell transparentHeader homePage>
@@ -57,7 +61,7 @@ export default async function HomePage() {
                 {settingsError ? <p data-home-obstacle className="mt-4 text-sm text-red-200">{settingsError}</p> : null}
               </MotionItem>
 
-              <FloatingContactCard locale={locale} contacts={contacts} />
+              {showContactCard ? <FloatingContactCard locale={locale} contacts={contacts} /> : null}
             </div>
           </section>
         </main>

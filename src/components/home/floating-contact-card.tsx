@@ -40,6 +40,13 @@ export function FloatingContactCard({
   locale: Locale;
 }) {
   const copy = text(locale);
+  const visibleContacts = contacts
+    .filter((contact) => contact.enabled)
+    .sort((left, right) => left.sort - right.sort);
+
+  if (!visibleContacts.length) {
+    return null;
+  }
 
   return (
     <div className="mt-8 w-full max-w-sm justify-self-end lg:mt-0">
@@ -48,30 +55,23 @@ export function FloatingContactCard({
           <h2 className="text-lg font-semibold">{copy.title}</h2>
           <ExternalLink className="h-4 w-4 text-blue-100" />
         </div>
-        {contacts.length ? (
-          <div className="space-y-2">
-            {contacts
-              .filter((contact) => contact.enabled)
-              .sort((left, right) => left.sort - right.sort)
-              .map((contact) => (
-                <a
-                  key={contact.id}
-                  href={getDisplayHref(contact)}
-                  target={contact.kind === "email" ? undefined : "_blank"}
-                  rel={contact.kind === "email" ? undefined : "noopener noreferrer"}
-                  className="flex items-start gap-3 rounded-md border border-white/12 bg-white/10 p-3 transition hover:bg-white/18"
-                >
-                  <ContactIcon kind={contact.kind} />
-                  <div className="min-w-0">
-                    <p className="text-xs text-white/58">{contact.label}</p>
-                    <p className="break-all text-sm">{contact.value}</p>
-                  </div>
-                </a>
-              ))}
-          </div>
-        ) : (
-          <p className="text-sm text-white/64">{copy.empty}</p>
-        )}
+        <div className="space-y-2">
+          {visibleContacts.map((contact) => (
+            <a
+              key={contact.id}
+              href={getDisplayHref(contact)}
+              target={contact.kind === "email" ? undefined : "_blank"}
+              rel={contact.kind === "email" ? undefined : "noopener noreferrer"}
+              className="flex items-start gap-3 rounded-md border border-white/12 bg-white/10 p-3 transition hover:bg-white/18"
+            >
+              <ContactIcon kind={contact.kind} />
+              <div className="min-w-0">
+                <p className="text-xs text-white/58">{contact.label}</p>
+                <p className="break-all text-sm">{contact.value}</p>
+              </div>
+            </a>
+          ))}
+        </div>
       </Card>
     </div>
   );
