@@ -1,6 +1,9 @@
 import { generateSitemapXml } from "@/features/site-push/sitemap";
 import { requireUser } from "@/lib/auth";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const user = await requireUser();
   if (!user) {

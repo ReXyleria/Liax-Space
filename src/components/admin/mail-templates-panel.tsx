@@ -12,7 +12,7 @@ import {
   type MailTemplateActionState
 } from "@/features/mail/actions";
 import { mailVariables, sampleVariables } from "@/features/mail/templates";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 type TemplateItem = {
   scene: MailTemplateScene;

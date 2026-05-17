@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createTagAction, deleteTagAction, updateTagAction, type TagActionState } from "@/features/tags/actions";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 type TagRow = {
   id: string;

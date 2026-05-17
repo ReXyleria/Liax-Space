@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ZodError } from "zod";
 import { requireUser } from "@/lib/auth";
-import { getAdminLocale, type Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { assertPermission, canManageArticles } from "@/lib/permissions";
 import {
   createArticle,

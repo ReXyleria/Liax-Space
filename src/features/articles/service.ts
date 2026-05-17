@@ -2,8 +2,7 @@ import {
   ArticleStatus,
   ContentVisibility,
   MediaReferenceSource,
-  Prisma,
-  UserRole
+  Prisma
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";

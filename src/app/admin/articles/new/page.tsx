@@ -3,7 +3,7 @@ import type { PreviewSiteSettings } from "@/components/forms/article-preview-ove
 import { getAllTags } from "@/features/articles/service";
 import { getPreviewSiteSettings } from "@/features/settings/preview-site";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageArticles } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
@@ -68,7 +68,7 @@ async function optionalWorkspaceData<T>(
 
 export default async function NewArticlePage() {
   try {
-    const [locale, user] = await Promise.all([
+    const [locale] = await Promise.all([
       getAdminLocale(),
       requireAdminPermission(canManageArticles, "/admin/articles/new")
     ]);

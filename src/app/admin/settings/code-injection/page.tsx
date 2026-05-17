@@ -2,7 +2,8 @@ import { CodeInjectionForm } from "@/components/admin/code-injection-form";
 import { Card } from "@/components/ui/card";
 import { getCodeInjectionMap } from "@/features/code-injection/service";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageCodeInjection } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";

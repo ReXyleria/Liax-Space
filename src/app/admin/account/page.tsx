@@ -1,7 +1,7 @@
 import { AccountWorkspace } from "@/components/account/account-workspace";
 import { getAccountData } from "@/features/account/service";
 import { requireAdminAccess } from "@/lib/admin-guard";
-import { getAdminLocale } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 

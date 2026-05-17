@@ -3,7 +3,7 @@ import { ArticleActionsMenu } from "@/components/admin/article-actions-menu";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageArticles } from "@/lib/permissions";
 import { listAdminArticles, getAllTags } from "@/features/articles/service";
 import { formatDate } from "@/lib/utils";

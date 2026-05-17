@@ -6,7 +6,7 @@ import { ImageUp, Loader2, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { UploadProgressDialog } from "@/components/forms/upload-progress-dialog";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 import { emptyUploadProgress, uploadImageFile, type UploadProgressState } from "@/lib/upload-client";
 
 function text(locale: Locale) {

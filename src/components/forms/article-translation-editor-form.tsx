@@ -10,7 +10,7 @@ import {
   updateArticleTranslationAction,
   type ArticleTranslationActionState
 } from "@/features/articles/translation-actions";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 type TranslationValue = {
   id: string;

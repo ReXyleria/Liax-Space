@@ -6,6 +6,9 @@ import { ALLOWED_IMAGE_TYPES, UPLOAD_MAX_SIZE } from "@/lib/constants";
 import { canManageArticles } from "@/lib/permissions";
 import { saveUploadedImage } from "@/lib/upload";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 function isPrivateHost(hostname: string) {
   const host = hostname.toLowerCase();
   return (

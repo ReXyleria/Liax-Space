@@ -9,7 +9,7 @@ import { Select } from "@/components/ui/select";
 import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
 import { updateContactItemsAction, type SettingsActionState } from "@/features/settings/actions";
 import type { ContactItem } from "@/features/settings/contact-items";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 const initialState: SettingsActionState = { ok: false, message: "" };
 

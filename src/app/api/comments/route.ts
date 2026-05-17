@@ -5,6 +5,9 @@ import { apiError } from "@/lib/api-response";
 import { requireUser } from "@/lib/auth";
 import { getSafeDeviceName } from "@/lib/device";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   try {
     const user = await requireUser();

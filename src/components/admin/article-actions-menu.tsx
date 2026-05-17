@@ -12,7 +12,7 @@ import {
   publishArticleAction,
   unpublishArticleAction
 } from "@/features/articles/actions";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 export type ArticleRowData = {
   id: string;

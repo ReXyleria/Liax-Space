@@ -3,7 +3,8 @@ import { MailTemplatesPanel } from "@/components/admin/mail-templates-panel";
 import { Card } from "@/components/ui/card";
 import { listMailTemplates } from "@/features/mail/service";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageMailTemplates } from "@/lib/permissions";
 import { formatDate } from "@/lib/utils";
 

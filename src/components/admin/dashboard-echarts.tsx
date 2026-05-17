@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { t, type Locale } from "@/lib/i18n";
+import { t, type Locale } from "@/lib/i18n-messages";
 import type { DashboardStats } from "@/features/analytics/types";
 
 type DashboardEchartsProps = Pick<

@@ -2,7 +2,7 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { resolveSiteBackground } from "@/components/layout/site-background";
 import { getSettingsMap } from "@/features/settings/service";
 import { requireAdminAccess } from "@/lib/admin-guard";
-import { getAdminLocale } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { getSiteTitle } from "@/lib/site";
 
 export const dynamic = "force-dynamic";

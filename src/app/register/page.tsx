@@ -1,7 +1,7 @@
 import { RegisterForm } from "@/components/forms/auth-forms";
 import { SiteBackground, resolveSiteBackground } from "@/components/layout/site-background";
 import { getSettingsMap } from "@/features/settings/service";
-import { getCurrentLocale } from "@/lib/i18n";
+import { getCurrentLocale } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 

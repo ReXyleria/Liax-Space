@@ -3,6 +3,9 @@ import { loginUser } from "@/features/auth/service";
 import { shouldUseSecureCookies } from "@/lib/auth";
 import { getSafeDeviceName } from "@/lib/device";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const result = await loginUser(body, {

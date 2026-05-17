@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { updateSettingsAction, type SettingsActionState } from "@/features/settings/actions";
 import type { SettingDefinition, SettingsMap } from "@/features/settings/types";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 function labels(locale: Locale) {
   return locale === "en"

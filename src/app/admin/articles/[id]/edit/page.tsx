@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { ArticleLanguageWorkspace } from "@/components/forms/article-language-workspace";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageArticles } from "@/lib/permissions";
 import { getAdminArticle, getAllTags } from "@/features/articles/service";
 import { listArticleTranslations } from "@/features/articles/translation-service";

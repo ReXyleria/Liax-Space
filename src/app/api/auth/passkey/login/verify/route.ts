@@ -5,6 +5,9 @@ import { createTrustedDevice, shouldUseSecureCookies } from "@/lib/auth";
 import { clearPendingLogin, getPendingLogin } from "@/features/auth/service";
 import { apiError } from "@/lib/api-response";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();

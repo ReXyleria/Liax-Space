@@ -2,7 +2,8 @@ import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { TranslationSettingsForm } from "@/components/admin/translation-settings-form";
 import { getTranslationSettings } from "@/features/settings/translation-settings";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageSettings } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";

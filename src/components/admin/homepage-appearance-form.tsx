@@ -14,7 +14,7 @@ import {
 } from "@/components/layout/site-background";
 import { updateSettingsAction, type SettingsActionState } from "@/features/settings/actions";
 import type { SettingsMap } from "@/features/settings/types";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 const initialState: SettingsActionState = { ok: false, message: "" };
 

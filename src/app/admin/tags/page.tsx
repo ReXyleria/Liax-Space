@@ -2,7 +2,7 @@ import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { TagManager } from "@/components/admin/tag-manager";
 import { Card } from "@/components/ui/card";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageArticles } from "@/lib/permissions";
 import { listAdminTags } from "@/features/tags/service";
 

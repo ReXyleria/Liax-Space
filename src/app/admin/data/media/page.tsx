@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { listMediaAssets } from "@/features/media/service";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageSettings } from "@/lib/permissions";
 import { formatDate } from "@/lib/utils";
 

@@ -8,7 +8,8 @@ import { UserAvatar } from "@/components/ui/user-avatar";
 import { getCodeInjectionMap, getEnabledCodeInjection } from "@/features/code-injection/service";
 import { getSettingsMap } from "@/features/settings/service";
 import { getCurrentUser } from "@/lib/auth";
-import { getCurrentLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getCurrentLocale } from "@/lib/i18n-server";
 import { cn } from "@/lib/utils";
 
 function getProfileHref(user: Awaited<ReturnType<typeof getCurrentUser>>) {

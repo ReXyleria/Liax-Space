@@ -14,7 +14,7 @@ import {
   type TranslationActionState
 } from "@/features/settings/translation-actions";
 import type { TranslationSettings } from "@/features/settings/translation-settings";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 const initialState: TranslationActionState = { ok: false, message: "" };
 

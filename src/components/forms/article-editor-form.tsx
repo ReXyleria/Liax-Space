@@ -28,7 +28,7 @@ import {
   updateArticleAction,
   type ArticleActionState
 } from "@/features/articles/actions";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 const ArticlePreviewOverlay = dynamic(
   () => import("@/components/forms/article-preview-overlay").then((module) => module.ArticlePreviewOverlay),

@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { canAccessAdmin } from "@/lib/permissions";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   const user = await requireUser();
   if (!canAccessAdmin(user)) {

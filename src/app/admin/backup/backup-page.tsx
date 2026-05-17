@@ -5,7 +5,8 @@ import { Card } from "@/components/ui/card";
 import { createBackupFormAction } from "@/features/backup/actions";
 import { getBackupScheduleConfig, listBackups } from "@/features/backup/service";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageBackups } from "@/lib/permissions";
 import { formatDate } from "@/lib/utils";
 

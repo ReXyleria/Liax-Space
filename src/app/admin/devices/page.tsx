@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { revokeTrustedDeviceFormAction, revokeUserSessionFormAction } from "@/features/users/actions";
 import { listAllLoginSessions, listAllTrustedDevices } from "@/features/users/service";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageUsers } from "@/lib/permissions";
 import { formatDate } from "@/lib/utils";
 

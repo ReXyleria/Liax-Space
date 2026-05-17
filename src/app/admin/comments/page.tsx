@@ -1,7 +1,8 @@
 import { AdminCommentList } from "@/components/admin/admin-comment-list";
 import { Card } from "@/components/ui/card";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageComments } from "@/lib/permissions";
 import { listAdminComments } from "@/features/comments/service";
 

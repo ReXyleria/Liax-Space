@@ -7,7 +7,7 @@ import { ArticleTranslationEditorForm } from "@/components/forms/article-transla
 import type { PreviewSiteSettings } from "@/components/forms/article-preview-overlay";
 import { Button } from "@/components/ui/button";
 import { translateArticleAction, type ArticleTranslationActionState } from "@/features/articles/translation-actions";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 type ArticleFormValue = Parameters<typeof ArticleEditorForm>[0]["article"];
 type TranslationValue = {

@@ -4,7 +4,7 @@ import { CodeInjectionRenderer } from "@/components/layout/code-injection-render
 import { ServerHeadInjection } from "@/components/layout/server-head-injection";
 import { getCodeInjectionMap, getEnabledCodeInjection } from "@/features/code-injection/service";
 import { getSettingsMap } from "@/features/settings/service";
-import { getCurrentLocale } from "@/lib/i18n";
+import { getCurrentLocale } from "@/lib/i18n-server";
 import { getMetadataBase, getSiteConfig } from "@/lib/site";
 import { getThemeStyle } from "@/lib/theme";
 import "../styles/globals.css";

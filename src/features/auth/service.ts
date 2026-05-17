@@ -7,7 +7,7 @@ import { generateNumericCode, generateOpaqueToken, hashPassword, hashToken, veri
 import { verifyTotpOrRecovery } from "@/features/account/totp-service";
 import { emailSchema, loginSchema, loginSecondFactorSchema, registerSchema } from "@/features/auth/validators";
 import type { AuthResponse } from "@/features/auth/types";
-import { highPrivilegePermissions, highPrivilegeRoles, isHighPrivilegeIdentity } from "@/lib/permission-definitions";
+import { isHighPrivilegeIdentity } from "@/lib/permission-definitions";
 
 const REGISTER_CODE_TTL_MINUTES = 10;
 const PENDING_LOGIN_TTL_MINUTES = 10;

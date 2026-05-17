@@ -4,7 +4,7 @@ import { MotionItem, MotionList, MotionPage } from "@/components/animations/reve
 import { PublicShell } from "@/components/layout/public-shell";
 import { Card } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth";
-import { getCurrentLocale } from "@/lib/i18n";
+import { getCurrentLocale } from "@/lib/i18n-server";
 import { listPublishedArticleArchives } from "@/features/articles/service";
 import { formatDate } from "@/lib/utils";
 

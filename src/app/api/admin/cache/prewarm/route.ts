@@ -3,6 +3,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { canManageSettings } from "@/lib/permissions";
 import { prewarmPublicCache } from "@/features/cache/prewarm";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
 

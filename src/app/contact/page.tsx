@@ -4,7 +4,7 @@ import { PublicShell } from "@/components/layout/public-shell";
 import { Card } from "@/components/ui/card";
 import { parseContactItems, type ContactItem } from "@/features/settings/contact-items";
 import { getSettingsMap } from "@/features/settings/service";
-import { getCurrentLocale } from "@/lib/i18n";
+import { getCurrentLocale } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 

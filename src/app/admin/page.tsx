@@ -5,7 +5,8 @@ import { DashboardEcharts } from "@/components/admin/dashboard-echarts";
 import { Card, CardContent } from "@/components/ui/card";
 import { getDashboardStats } from "@/features/analytics/service";
 import { requireAdminAccess } from "@/lib/admin-guard";
-import { getAdminLocale, t, type Locale } from "@/lib/i18n";
+import { t, type Locale } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageArticles, canViewAnalytics } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";

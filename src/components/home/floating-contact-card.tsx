@@ -2,7 +2,7 @@
 
 import { ExternalLink, Github, Globe, Mail, MessageCircle } from "lucide-react";
 import type { ContactItem } from "@/features/settings/contact-items";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 import { Card } from "@/components/ui/card";
 
 function text(locale: Locale) {

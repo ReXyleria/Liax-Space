@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { formatDate } from "@/lib/utils";
 import {
   type CommentActionState,
@@ -160,13 +161,11 @@ function CommentRow({ comment }: { comment: AdminComment }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {comment.user.avatar ? (
-              <img
-                src={comment.user.avatar}
-                alt=""
-                className="h-5 w-5 rounded-full object-cover"
-              />
-            ) : null}
+            <UserAvatar
+              src={comment.user.avatar}
+              name={comment.user.nickname}
+              className="h-5 w-5 text-[0.65rem]"
+            />
             <span className="text-sm font-medium">{comment.user.nickname}</span>
             <span className="text-xs text-muted-foreground">
               {formatDate(comment.createdAt)}

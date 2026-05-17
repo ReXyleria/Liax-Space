@@ -1,5 +1,6 @@
 import { SettingsSectionPage } from "@/components/admin/settings-section-page";
-import { getAdminLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 

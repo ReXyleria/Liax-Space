@@ -3,13 +3,15 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ArticleStatus } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
-import { getCurrentLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getCurrentLocale } from "@/lib/i18n-server";
 import { getSiteConfig, resolveAbsoluteUrl } from "@/lib/site";
 import { MotionItem, MotionList, MotionPage } from "@/components/animations/reveal";
 import { PublicShell } from "@/components/layout/public-shell";
 import { ArticleToc, type TocItem } from "@/components/public/article-toc";
 import { SafeHtml } from "@/components/public/safe-html";
 import { Card } from "@/components/ui/card";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { CommentForm } from "@/components/forms/comment-form";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublishedArticleBySlug } from "@/features/articles/service";
@@ -216,13 +218,11 @@ export default async function ArticleDetailPage({
                     <MotionItem key={comment.id}>
                       <Card className="p-4">
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          {comment.user.avatar ? (
-                            <img
-                              src={comment.user.avatar}
-                              alt=""
-                              className="h-6 w-6 rounded-full object-cover"
-                            />
-                          ) : null}
+                          <UserAvatar
+                            src={comment.user.avatar}
+                            name={comment.user.nickname}
+                            className="h-6 w-6 text-xs"
+                          />
                           <p className="text-sm font-medium">{comment.user.nickname}</p>
                           <p className="text-xs text-muted-foreground">{formatDate(comment.createdAt)}</p>
                         </div>

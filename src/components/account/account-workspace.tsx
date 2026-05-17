@@ -14,7 +14,7 @@ import {
   type SessionItem,
   type TrustedDeviceItem
 } from "@/components/account/account-panels";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 type AccountTab = "profile" | "password" | "totp" | "passkeys" | "devices";
 

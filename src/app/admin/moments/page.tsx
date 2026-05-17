@@ -1,7 +1,7 @@
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { AdminMomentManager } from "@/components/admin/admin-moment-manager";
 import { requireAdminPermission } from "@/lib/admin-guard";
-import { getAdminLocale } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageMoments } from "@/lib/permissions";
 import { formatDate } from "@/lib/utils";
 import { listAdminMoments } from "@/features/moments/service";

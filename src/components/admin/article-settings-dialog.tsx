@@ -12,7 +12,7 @@ import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { ImageUploadField } from "@/components/forms/image-upload-field";
 import { updateArticleSettingsAction, type ArticleActionState } from "@/features/articles/actions";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 type ArticleSettingsData = {
   id: string;

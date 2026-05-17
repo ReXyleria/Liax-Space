@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
 import { createMomentAction, deleteMomentAction, updateMomentAction, type MomentActionState } from "@/features/moments/actions";
 import { cn } from "@/lib/utils";
-import type { Locale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n-messages";
 
 type AdminMomentRow = {
   id: string;

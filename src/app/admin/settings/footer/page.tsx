@@ -5,7 +5,8 @@ import { Card } from "@/components/ui/card";
 import { parseContactItems } from "@/features/settings/contact-items";
 import { getLocalizedSettingDefinitions, getSettingsMap } from "@/features/settings/service";
 import { requireAdminAccess } from "@/lib/admin-guard";
-import { getAdminLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { canManageSettings } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";

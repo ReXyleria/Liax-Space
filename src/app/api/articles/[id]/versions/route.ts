@@ -4,6 +4,9 @@ import { requireUser } from "@/lib/auth";
 import { canManageArticles } from "@/lib/permissions";
 import { listArticleVersions } from "@/features/articles/service";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> }
