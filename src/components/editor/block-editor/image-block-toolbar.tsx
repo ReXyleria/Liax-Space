@@ -21,7 +21,7 @@ export function ImageBlockToolbar({
   }
 
   return (
-    <div className="sticky bottom-4 z-30 mt-4 flex items-center gap-2 rounded-xl border bg-card/95 p-2 shadow-xl shadow-primary/10 backdrop-blur">
+    <div className="sticky bottom-4 z-[110] mt-4 flex items-center gap-2 rounded-xl border bg-card/95 p-2 shadow-xl shadow-primary/10 backdrop-blur">
       <Button type="button" variant="secondary" className="h-8 px-2" onClick={onReplace}>
         <ImagePlus className="mr-1 h-4 w-4" />
         {texts.replaceImage}

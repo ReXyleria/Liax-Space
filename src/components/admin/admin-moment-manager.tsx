@@ -15,6 +15,11 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
 import { createMomentAction, deleteMomentAction, updateMomentAction, type MomentActionState } from "@/features/moments/actions";
+import {
+  contentVisibilityBadgeClass,
+  contentVisibilityLabel,
+  contentVisibilityOptions
+} from "@/lib/content-visibility";
 import { cn } from "@/lib/utils";
 import type { Locale } from "@/lib/i18n-messages";
 
@@ -84,6 +89,8 @@ function text(locale: Locale) {
 }
 
 function visibilityOptions(locale: Locale) {
+  return contentVisibilityOptions(locale);
+  /*
   const labels =
     locale === "en"
       ? {
@@ -107,7 +114,17 @@ function visibilityOptions(locale: Locale) {
   }));
 }
 
+  */
+}
+
 function visibilityBadge(locale: Locale, visibility: ContentVisibility) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs", contentVisibilityBadgeClass(visibility))}>
+      <Eye className="h-3 w-3" />
+      {contentVisibilityLabel(locale, visibility)}
+    </span>
+  );
+  /*
   const map = visibilityOptions(locale);
   const found = map.find((opt) => opt.value === visibility);
   const label = found?.label ?? visibility;
@@ -124,6 +141,9 @@ function visibilityBadge(locale: Locale, visibility: ContentVisibility) {
       {label}
     </span>
   );
+}
+
+  */
 }
 
 function FieldError({ message }: { message?: string }) {

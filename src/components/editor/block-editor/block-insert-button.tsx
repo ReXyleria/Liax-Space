@@ -25,7 +25,7 @@ export function BlockInsertButton({
     <Button
       type="button"
       variant="secondary"
-      className="fixed z-[70] h-8 w-8 rounded-full p-0 opacity-80 shadow-md hover:opacity-100"
+      className="fixed z-[110] h-8 w-8 rounded-full p-0 opacity-80 shadow-md hover:opacity-100"
       style={{ left: Math.max(8, x), top: Math.max(72, y) }}
       onMouseDown={(event) => {
         event.preventDefault();

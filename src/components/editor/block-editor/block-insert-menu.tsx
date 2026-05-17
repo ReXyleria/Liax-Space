@@ -27,7 +27,7 @@ export function BlockInsertMenu({
 
   return (
     <div
-      className="fixed z-[80] w-72 rounded-xl border bg-card p-1 shadow-2xl shadow-primary/10"
+      className="fixed z-[120] w-72 rounded-xl border bg-card p-1 shadow-2xl shadow-primary/10"
       style={{ left: Math.min(x, viewportWidth - 300), top: Math.max(12, top) }}
     >
       <p className="px-3 py-2 text-xs font-medium text-muted-foreground">{texts.insertBlock}</p>

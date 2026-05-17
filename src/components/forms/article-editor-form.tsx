@@ -27,6 +27,7 @@ import {
   updateArticleAction,
   type ArticleActionState
 } from "@/features/articles/actions";
+import { contentVisibilityOptions } from "@/lib/content-visibility";
 import type { Locale } from "@/lib/i18n-messages";
 
 type ArticleFormValue = {
@@ -172,6 +173,8 @@ const initialArticleActionState: ArticleActionState = {
 };
 
 function visibilityOptions(locale: Locale) {
+  return contentVisibilityOptions(locale);
+  /*
   if (locale === "en") {
     return [
       { value: ContentVisibility.PUBLIC, label: "Public" },
@@ -189,6 +192,9 @@ function visibilityOptions(locale: Locale) {
     { value: ContentVisibility.SSVIP_ONLY, label: "SSVIP 可见" },
     { value: ContentVisibility.Administer_ONLY, label: "私密" }
   ];
+}
+
+  */
 }
 
 function FieldError({ messages }: { messages?: string[] }) {
@@ -240,8 +246,6 @@ export function ArticleEditorForm({
   const articleVisibilityOptions = visibilityOptions(locale);
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
-  const seoTitleRef = useRef<HTMLInputElement>(null);
-  const seoDescriptionRef = useRef<HTMLTextAreaElement>(null);
   const returnToListRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | null>(null);
   const action = article ? updateArticleAction.bind(null, article.id) : createArticleAction;
@@ -257,6 +261,13 @@ export function ArticleEditorForm({
   const [publishedAt, setPublishedAt] = useState<string>(
     article?.publishedAt ? new Date(article.publishedAt).toISOString().slice(0, 16) : ""
   );
+  const [summary, setSummary] = useState(article?.summary ?? "");
+  const [cover, setCover] = useState(article?.cover ?? "");
+  const [seoTitle, setSeoTitle] = useState(article?.seoTitle ?? "");
+  const [seoDescription, setSeoDescription] = useState(article?.seoDescription ?? "");
+  const [allowComments, setAllowComments] = useState(article?.allowComments ?? true);
+  const [pinned, setPinned] = useState(article?.pinned ?? false);
+  const [featured, setFeatured] = useState(article?.featured ?? false);
   const [pendingDraft, setPendingDraft] = useState<ArticleDraft | null>(null);
   const [editorInitial, setEditorInitial] = useState({
     html: article?.contentHtml ?? "",
@@ -291,22 +302,36 @@ export function ArticleEditorForm({
     return {
       title,
       slug,
-      summary: String(formData.get("summary") ?? ""),
-      cover: String(formData.get("cover") ?? ""),
+      summary,
+      cover,
       contentHtml: String(formData.get("contentHtml") ?? ""),
       contentJson: String(formData.get("contentJson") ?? JSON.stringify({ type: "doc", content: [] })),
-      status: String(formData.get("status") ?? ArticleStatus.DRAFT),
-      visibility: String(formData.get("visibility") ?? ContentVisibility.PUBLIC),
+      status,
+      visibility,
       tagNames: selectedTags.join(", "),
-      seoTitle: String(formData.get("seoTitle") ?? ""),
-      seoDescription: String(formData.get("seoDescription") ?? ""),
-      publishedAt: String(formData.get("publishedAt") ?? ""),
-      allowComments: formData.get("allowComments") === "on",
-      pinned: formData.get("pinned") === "on",
-      featured: formData.get("featured") === "on",
+      seoTitle,
+      seoDescription,
+      publishedAt,
+      allowComments,
+      pinned,
+      featured,
       savedAt: Date.now()
     };
-  }, [selectedTags, slug, title]);
+  }, [
+    allowComments,
+    cover,
+    featured,
+    pinned,
+    publishedAt,
+    selectedTags,
+    seoDescription,
+    seoTitle,
+    slug,
+    status,
+    summary,
+    title,
+    visibility
+  ]);
 
   const scheduleDraftSave = useCallback(() => {
     if (saveTimer.current) {
@@ -321,30 +346,16 @@ export function ArticleEditorForm({
   }, [collectDraft, draftKey]);
 
   const restoreDraft = useCallback((draft: ArticleDraft) => {
-    const form = formRef.current;
     setTitle(draft.title);
     setSlug(draft.slug);
-    if (form) {
-      const setValue = (name: string, value: string) => {
-        const field = form.elements.namedItem(name);
-        if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
-          field.value = value;
-        }
-      };
-      const setChecked = (name: string, checked: boolean) => {
-        const field = form.elements.namedItem(name);
-        if (field instanceof HTMLInputElement) {
-          field.checked = checked;
-        }
-      };
-      setValue("summary", draft.summary);
-      setValue("cover", draft.cover);
-      setValue("seoTitle", draft.seoTitle);
-      setValue("seoDescription", draft.seoDescription);
-      setChecked("allowComments", draft.allowComments);
-      setChecked("pinned", draft.pinned);
-      setChecked("featured", draft.featured);
-    }
+    setSummary(draft.summary);
+    setCover(draft.cover);
+    setSeoTitle(draft.seoTitle);
+    setSeoDescription(draft.seoDescription);
+    setAllowComments(draft.allowComments);
+    setPinned(draft.pinned);
+    setFeatured(draft.featured);
+    setPublishedAt(draft.publishedAt);
     setEditorInitial({ html: draft.contentHtml, json: parseJsonDraft(draft.contentJson) });
     setStatus(draft.status);
     setVisibility(draft.visibility);
@@ -415,11 +426,11 @@ export function ArticleEditorForm({
             return;
           }
 
-          if (result.seoTitle && seoTitleRef.current) {
-            seoTitleRef.current.value = result.seoTitle;
+          if (result.seoTitle) {
+            setSeoTitle(result.seoTitle);
           }
-          if (result.seoDescription && seoDescriptionRef.current) {
-            seoDescriptionRef.current.value = result.seoDescription;
+          if (result.seoDescription) {
+            setSeoDescription(result.seoDescription);
           }
           setSeoMessage(result.message);
           scheduleDraftSave();
@@ -504,7 +515,19 @@ export function ArticleEditorForm({
         onChange={scheduleDraftSave}
       >
         <input type="hidden" name="status" value={status} readOnly />
+        <input type="hidden" name="slug" value={slug} readOnly />
+        <input type="hidden" name="summary" value={summary} readOnly />
+        <input type="hidden" name="cover" value={cover} readOnly />
+        <input type="hidden" name="visibility" value={visibility} readOnly />
+        {selectedTags.map((tagName) => (
+          <input key={tagName} type="hidden" name="tagNames" value={tagName} readOnly />
+        ))}
+        <input type="hidden" name="seoTitle" value={seoTitle} readOnly />
+        <input type="hidden" name="seoDescription" value={seoDescription} readOnly />
         <input type="hidden" name="publishedAt" value={publishedAt} readOnly />
+        {allowComments ? <input type="hidden" name="allowComments" value="on" readOnly /> : null}
+        {pinned ? <input type="hidden" name="pinned" value="on" readOnly /> : null}
+        {featured ? <input type="hidden" name="featured" value="on" readOnly /> : null}
         <input ref={returnToListRef} type="hidden" name="returnToList" defaultValue="0" />
         <div className="space-y-6">
           {warnings.length ? (
@@ -633,7 +656,7 @@ export function ArticleEditorForm({
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">{text.slugLabel}</span>
               <Input
-                name="slug"
+                name="slug-preview"
                 value={slug}
                 onChange={(event) => {
                   setSlug(event.target.value);
@@ -645,16 +668,31 @@ export function ArticleEditorForm({
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">{text.summaryLabel}</span>
-              <Textarea name="summary" placeholder={text.summaryPlaceholder} defaultValue={article?.summary ?? ""} />
+              <Textarea
+                name="summary-preview"
+                placeholder={text.summaryPlaceholder}
+                value={summary}
+                onChange={(event) => {
+                  setSummary(event.target.value);
+                  scheduleDraftSave();
+                }}
+              />
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">{text.coverLabel}</span>
-              <ImageUploadField name="cover" defaultValue={article?.cover ?? ""} />
+              <ImageUploadField
+                name="cover-preview"
+                value={cover}
+                onValueChange={(nextCover) => {
+                  setCover(nextCover);
+                  scheduleDraftSave();
+                }}
+              />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{text.visibilityLabel}</span>
+              <span className="text-sm font-medium">{locale === "en" ? text.visibilityLabel : "可见范围"}</span>
               <Select
-                name="visibility"
+                name="visibility-preview"
                 value={visibility}
                 onValueChange={(nextVisibility) => {
                   setVisibility(nextVisibility);
@@ -666,7 +704,7 @@ export function ArticleEditorForm({
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">{text.tagsLabel}</span>
               <MultiSelect
-                name="tagNames"
+                name="tagNames-preview"
                 value={selectedTags}
                 onValueChange={(nextTags) => {
                   setSelectedTags(nextTags);
@@ -691,17 +729,23 @@ export function ArticleEditorForm({
               </div>
               <div className="space-y-3">
                 <Input
-                  ref={seoTitleRef}
-                  name="seoTitle"
+                  name="seoTitle-preview"
                   placeholder={text.seoTitleLabel}
-                  defaultValue={article?.seoTitle ?? ""}
+                  value={seoTitle}
+                  onChange={(event) => {
+                    setSeoTitle(event.target.value);
+                    scheduleDraftSave();
+                  }}
                 />
                 <FieldError messages={state.fieldErrors.seoTitle} />
                 <Textarea
-                  ref={seoDescriptionRef}
-                  name="seoDescription"
+                  name="seoDescription-preview"
                   placeholder={text.seoDescriptionLabel}
-                  defaultValue={article?.seoDescription ?? ""}
+                  value={seoDescription}
+                  onChange={(event) => {
+                    setSeoDescription(event.target.value);
+                    scheduleDraftSave();
+                  }}
                 />
                 <FieldError messages={state.fieldErrors.seoDescription} />
                 {seoError ? <p className="text-xs text-destructive">{seoError}</p> : null}
@@ -723,19 +767,31 @@ export function ArticleEditorForm({
             </label>
             <div className="grid gap-3 md:grid-cols-3">
               <ThemedCheckbox
-                name="allowComments"
+                name="allowComments-preview"
                 label={text.allowCommentsLabel}
-                defaultChecked={article?.allowComments ?? true}
+                checked={allowComments}
+                onCheckedChange={(checked) => {
+                  setAllowComments(checked);
+                  scheduleDraftSave();
+                }}
               />
               <ThemedCheckbox
-                name="pinned"
+                name="pinned-preview"
                 label={text.pinnedLabel}
-                defaultChecked={article?.pinned ?? false}
+                checked={pinned}
+                onCheckedChange={(checked) => {
+                  setPinned(checked);
+                  scheduleDraftSave();
+                }}
               />
               <ThemedCheckbox
-                name="featured"
+                name="featured-preview"
                 label={text.featuredLabel}
-                defaultChecked={article?.featured ?? false}
+                checked={featured}
+                onCheckedChange={(checked) => {
+                  setFeatured(checked);
+                  scheduleDraftSave();
+                }}
               />
             </div>
           </div>

@@ -2,9 +2,8 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Save } from "lucide-react";
+import { FloatingSettingsSubmit } from "@/components/admin/floating-settings-submit";
 import { ImageUploadField } from "@/components/forms/image-upload-field";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -153,7 +152,7 @@ export function HomepageAppearanceForm({
   }, [router, state.ok]);
 
   return (
-    <form action={formAction} className="space-y-6" aria-busy={isPending}>
+    <form action={formAction} className="space-y-6 pb-24" aria-busy={isPending}>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
         <Card className="overflow-hidden">
           <div className="grid min-h-[360px] lg:grid-cols-[minmax(280px,420px)_1fr]">
@@ -178,7 +177,7 @@ export function HomepageAppearanceForm({
                   name="appearance.backgroundImage"
                   label={isEnglish ? "Global background image" : "全站背景图"}
                   defaultValue={settings["appearance.backgroundImage"] ?? ""}
-                  helper={isEnglish ? "Highest priority. Leave empty to use homepage or random background." : "最高优先级。留空后会继续读取首页背景或随机背景。"}
+                  helper={isEnglish ? "Highest priority. Leave empty to use homepage or random background." : "最高优先级。留空后继续读取首页背景或随机背景。"}
                   compact
                 />
                 <ImageUploadField
@@ -216,7 +215,7 @@ export function HomepageAppearanceForm({
           <div className="space-y-5">
             <div>
               <p className="text-sm font-medium text-primary">{isEnglish ? "Readability" : "可读性"}</p>
-              <h2 className="mt-1 text-xl font-semibold">{isEnglish ? "Overlay and blur" : "遮罩与磨砂"}</h2>
+              <h2 className="mt-1 text-xl font-semibold">{isEnglish ? "Overlay and blur" : "遮罩与模糊"}</h2>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <RangeField
@@ -229,7 +228,7 @@ export function HomepageAppearanceForm({
               />
               <RangeField
                 name="appearance.backgroundBlur"
-                label={isEnglish ? "Background blur" : "背景磨砂强度"}
+                label={isEnglish ? "Background blur" : "背景模糊强度"}
                 value={settings["appearance.backgroundBlur"] ?? "14"}
                 min={0}
                 max={32}
@@ -253,15 +252,7 @@ export function HomepageAppearanceForm({
         </Card>
       </div>
 
-      {state.message ? (
-        <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{state.message}</p>
-      ) : null}
-      <Button type="submit" disabled={isPending}>
-        {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-        {isPending
-          ? isEnglish ? "Saving..." : "保存中..."
-          : isEnglish ? "Save appearance" : "保存外观设置"}
-      </Button>
+      <FloatingSettingsSubmit pending={isPending} message={state.message} ok={state.ok} locale={locale} />
     </form>
   );
 }

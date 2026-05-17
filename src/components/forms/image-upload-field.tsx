@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { ImageUp, Loader2, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UploadProgressDialog } from "@/components/forms/upload-progress-dialog";
@@ -12,6 +12,7 @@ import { emptyUploadProgress, uploadImageFile, type UploadProgressState } from "
 
 export function ImageUploadField({
   name,
+  value: controlledValue,
   defaultValue = "",
   label = "图片",
   helper,
@@ -20,6 +21,7 @@ export function ImageUploadField({
   onValueChange
 }: {
   name: string;
+  value?: string | null;
   defaultValue?: string | null;
   label?: string;
   helper?: string;
@@ -28,11 +30,17 @@ export function ImageUploadField({
   onValueChange?: (value: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [value, setValue] = useState(defaultValue ?? "");
+  const [value, setValue] = useState(controlledValue ?? defaultValue ?? "");
   const [message, setMessage] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadState, setUploadState] = useState<UploadProgressState>(() => emptyUploadProgress());
   const isUploading = uploadState.status === "uploading";
+
+  useEffect(() => {
+    if (controlledValue !== undefined) {
+      setValue(controlledValue ?? "");
+    }
+  }, [controlledValue]);
 
   function setNextValue(nextValue: string) {
     setValue(nextValue);

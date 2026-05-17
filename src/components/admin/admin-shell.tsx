@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { adminSidebarGroups, type AdminTabItem } from "@/config/admin-nav";
+import { AdminGlobalSearch } from "@/components/admin/admin-global-search";
 import { LogoutButton } from "@/components/admin/logout-button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { SiteBackground } from "@/components/layout/site-background";
@@ -26,7 +27,7 @@ import {
 } from "@/lib/permissions";
 import { roleLabels } from "@/lib/role-labels";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Menu, X } from "lucide-react";
 
 function canSeeTab(tab: AdminTabItem, user: CurrentUser) {
   switch (tab.visibility) {
@@ -74,6 +75,7 @@ export function AdminShell({
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Determine active sidebar group based on current path
   const activeGroup = adminSidebarGroups.find((g) =>
@@ -93,10 +95,96 @@ export function AdminShell({
   return (
     <div className="relative isolate min-h-screen">
       <SiteBackground src={backgroundImage} variant="frosted" />
+      {mobileNavOpen ? (
+        <div className="fixed inset-0 z-[900] md:hidden">
+          <button
+            type="button"
+            aria-label="Close admin navigation"
+            className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <aside className="relative z-10 flex h-full w-[min(20rem,86vw)] flex-col overflow-hidden border-r border-white/80 bg-white/96 px-4 py-4 shadow-2xl shadow-slate-950/20 backdrop-blur-xl">
+            <div className="mb-4 flex items-center gap-3">
+              <Link
+                href="/"
+                onClick={() => setMobileNavOpen(false)}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg bg-background/70 p-2 transition hover:shadow-md"
+              >
+                <span
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-accent bg-cover bg-center text-sm font-semibold text-primary-foreground"
+                  style={siteLogo ? { backgroundImage: `url(${siteLogo})` } : undefined}
+                >
+                  {siteLogo ? null : (siteTitle.trim().slice(0, 2) || "SB").toUpperCase()}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold">{siteTitle}</span>
+                  <span className="block text-xs text-muted-foreground">{t(locale, "adminConsole")}</span>
+                </span>
+              </Link>
+              <button
+                type="button"
+                aria-label="Close admin navigation"
+                onClick={() => setMobileNavOpen(false)}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full border bg-background/80 text-muted-foreground transition hover:border-primary/30 hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+              {visibleGroups.map((group) => {
+                const isActive = activeGroup?.key === group.key;
+                const Icon = iconMap[group.iconKey];
+                const groupHref = group.tabs.find((tab) => canSeeTab(tab, user))?.href ?? "/admin";
+
+                return (
+                  <Link
+                    key={group.key}
+                    href={groupHref}
+                    onClick={() => setMobileNavOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg border px-2 py-2.5 text-sm transition-all duration-200 hover:border-primary/30 hover:bg-background/80 hover:text-foreground hover:shadow-sm active:scale-[0.99]",
+                      isActive
+                        ? "border-primary/35 bg-primary/10 text-foreground shadow-sm"
+                        : "border-transparent text-muted-foreground"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "grid h-8 w-8 shrink-0 place-items-center rounded-md transition-all",
+                        isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="truncate font-medium">{t(locale, group.labelKey)}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+
+            <Link
+              href="/admin/account?section=profile"
+              onClick={() => setMobileNavOpen(false)}
+              className="mt-3 flex items-center gap-3 rounded-lg border border-white/70 bg-background/70 p-2 transition hover:border-primary/40 hover:shadow-md"
+            >
+              <UserAvatar
+                src={user.avatar}
+                name={user.nickname}
+                className="h-9 w-9 shrink-0 bg-gradient-to-br from-primary to-accent text-primary-foreground"
+              />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold">{user.nickname}</span>
+                <span className="block text-xs text-muted-foreground">{roleLabels[user.role]}</span>
+              </span>
+            </Link>
+          </aside>
+        </div>
+      ) : null}
       {/* Left Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-screen flex-col overflow-hidden border-r border-white/70 bg-card/90 px-3 py-4 shadow-soft backdrop-blur-xl transition-all duration-200",
+          "fixed inset-y-0 left-0 z-30 hidden h-screen flex-col overflow-hidden border-r border-white/70 bg-card/90 px-3 py-4 shadow-soft backdrop-blur-xl transition-all duration-200 md:flex",
           collapsed ? "w-16" : "w-56"
         )}
       >
@@ -131,11 +219,12 @@ export function AdminShell({
           {visibleGroups.map((group) => {
             const isActive = activeGroup?.key === group.key;
             const Icon = iconMap[group.iconKey];
+            const groupHref = group.tabs.find((tab) => canSeeTab(tab, user))?.href ?? "/admin";
 
             return (
               <Link
                 key={group.key}
-                href={group.tabs[0]?.href ?? "/admin"}
+                href={groupHref}
                 className={cn(
                   "flex items-center gap-3 rounded-lg border px-2 py-2.5 text-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-background/80 hover:text-foreground hover:shadow-sm active:translate-y-0 active:scale-[0.99]",
                   collapsed ? "justify-center" : "",
@@ -197,14 +286,23 @@ export function AdminShell({
       <div className={cn("relative z-0 transition-all duration-200", collapsed ? "md:pl-16" : "md:pl-56")}>
         {/* Top Header */}
         <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-white/70 bg-background/85 px-6 backdrop-blur-xl">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              aria-label="Open admin navigation"
+              onClick={() => setMobileNavOpen(true)}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full border bg-background/80 text-muted-foreground transition hover:border-primary/30 hover:text-foreground md:hidden"
+            >
+              <Menu className="h-4 w-4" />
+            </button>
             <UserAvatar src={user.avatar} name={user.nickname} className="h-10 w-10" />
-            <div>
+            <div className="hidden min-w-0 sm:block">
               <p className="text-sm text-muted-foreground">{t(locale, "adminSignedInAs")}</p>
-              <p className="font-medium">{user.nickname}</p>
+              <p className="truncate font-medium">{user.nickname}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <AdminGlobalSearch locale={locale} />
+          <div className="flex shrink-0 items-center gap-3">
             <LanguageSwitcher locale={locale} />
             <LogoutButton />
           </div>

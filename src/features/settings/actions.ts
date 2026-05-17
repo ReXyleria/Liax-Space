@@ -61,6 +61,46 @@ export async function updateContactItemsAction(
   }
 }
 
+export async function updateFooterSettingsAction(
+  _previousState: SettingsActionState,
+  formData: FormData
+): Promise<SettingsActionState> {
+  try {
+    const user = await requireUser();
+    const rawItems = String(formData.get("items") ?? "[]");
+    const rawParsed = JSON.parse(rawItems) as unknown;
+    const normalizedItemsInput = Array.isArray(rawParsed)
+      ? rawParsed
+          .map((item, index) => ({ ...(typeof item === "object" && item ? item : {}), enabled: true, sort: index }))
+          .filter((item) => {
+            const label = typeof item.label === "string" ? item.label.trim() : "";
+            const value = typeof item.value === "string" ? item.value.trim() : "";
+            const href = typeof item.href === "string" ? item.href.trim() : "";
+            return label || value || href;
+          })
+      : [];
+    const parsedItems = contactItemsSchema.parse(normalizedItemsInput);
+
+    await updateSettings(user, {
+      "footer.brandName": String(formData.get("footer.brandName") ?? ""),
+      "footer.copyright": String(formData.get("footer.copyright") ?? ""),
+      "record.icp": String(formData.get("record.icp") ?? ""),
+      "record.icpUrl": String(formData.get("record.icpUrl") ?? ""),
+      "record.police": String(formData.get("record.police") ?? ""),
+      "record.policeUrl": String(formData.get("record.policeUrl") ?? ""),
+      "contact.showOnHome": formData.get("contact.showOnHome") === "on" ? "true" : "false",
+      "contact.items": serializeContactItems(parsedItems)
+    });
+    revalidateSettingsPaths();
+    return { ok: true, message: "页脚设置已保存。" };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "页脚设置保存失败。"
+    };
+  }
+}
+
 export async function updateIdentitySettingsAction(formData: FormData): Promise<SettingsActionState> {
   try {
     const user = await requireUser();

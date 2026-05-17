@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import type { Locale } from "@/lib/i18n-messages";
-import { cn } from "@/lib/utils";
 
 type NavItem = {
   href: string;
@@ -21,8 +20,7 @@ export function MobilePublicNav({
   displayAvatar,
   siteTitle,
   siteLogo,
-  siteMark,
-  transparentHeader
+  siteMark
 }: {
   navItems: NavItem[];
   locale: Locale;
@@ -32,7 +30,6 @@ export function MobilePublicNav({
   siteTitle: string;
   siteLogo?: string;
   siteMark: string;
-  transparentHeader?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -40,39 +37,22 @@ export function MobilePublicNav({
     <>
       <button
         type="button"
-        className="flex min-w-0 items-center gap-3 text-left text-base font-semibold md:hidden"
+        className="fixed bottom-5 left-5 z-[70] grid h-12 w-12 place-items-center rounded-full border border-white/80 bg-white/95 text-foreground shadow-2xl shadow-primary/20 backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-primary/35 hover:text-primary active:translate-y-0 active:scale-95 md:hidden"
         onClick={() => setOpen(true)}
         aria-label={locale === "en" ? "Open navigation" : "打开导航"}
       >
-        <span
-          className={cn(
-            "grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg text-sm shadow-sm",
-            transparentHeader ? "bg-white/16 text-white" : "bg-gradient-to-br from-blue-200 to-purple-200 text-primary"
-          )}
-          style={
-            siteLogo
-              ? {
-                  backgroundImage: `url(${siteLogo})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center"
-                }
-              : undefined
-          }
-        >
-          {siteLogo ? null : siteMark}
-        </span>
-        <span className="truncate">{siteTitle}</span>
+        <Menu className="h-5 w-5" />
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div className="fixed inset-0 z-[90] md:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/25 backdrop-blur-[2px]"
             aria-label={locale === "en" ? "Close navigation" : "关闭导航"}
             onClick={() => setOpen(false)}
           />
-          <aside className="absolute left-0 top-0 flex h-full w-80 max-w-[86vw] flex-col border-r border-white/70 bg-background/92 p-5 shadow-2xl backdrop-blur-xl">
+          <aside className="absolute left-0 top-0 flex h-full w-80 max-w-[86vw] flex-col border-r border-white/80 bg-white/95 p-5 shadow-2xl shadow-slate-950/15 backdrop-blur-xl">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <span
@@ -98,7 +78,7 @@ export function MobilePublicNav({
               </div>
               <button
                 type="button"
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-md border bg-background/80 transition hover:bg-muted"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-md border bg-white transition hover:bg-muted"
                 onClick={() => setOpen(false)}
                 aria-label={locale === "en" ? "Close navigation" : "关闭导航"}
               >
@@ -111,7 +91,7 @@ export function MobilePublicNav({
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="rounded-lg border bg-card/80 px-4 py-3 text-sm font-medium transition hover:border-primary/40 hover:bg-primary/5"
+                  className="rounded-lg border bg-white px-4 py-3 text-sm font-medium shadow-sm shadow-slate-950/5 transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 active:translate-y-0 active:scale-[0.99]"
                   onClick={() => setOpen(false)}
                 >
                   {item.label}
@@ -129,7 +109,7 @@ export function MobilePublicNav({
             <Link
               href={profileHref}
               onClick={() => setOpen(false)}
-              className="mt-auto flex items-center gap-3 rounded-lg border bg-card/80 p-3 text-sm font-medium transition hover:border-primary/40 hover:bg-primary/5"
+              className="mt-auto flex items-center gap-3 rounded-lg border bg-white p-3 text-sm font-medium shadow-sm shadow-slate-950/5 transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 active:translate-y-0 active:scale-[0.99]"
             >
               <UserAvatar src={displayAvatar} name={displayName} className="h-9 w-9 text-xs" />
               <span className="min-w-0 truncate">{displayName}</span>

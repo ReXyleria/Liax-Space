@@ -110,10 +110,9 @@ export async function PublicShell({
             siteTitle={siteTitle}
             siteLogo={settings["site.logo"]?.trim()}
             siteMark={siteMark}
-            transparentHeader={transparentHeader}
           />
 
-          <Link href="/" className="hidden items-center gap-3 text-base font-semibold md:flex">
+          <Link href="/" className="flex min-w-0 items-center gap-3 text-base font-semibold">
             <span
               className={cn(
                 "grid h-9 w-9 place-items-center overflow-hidden rounded-lg text-sm shadow-sm",
@@ -133,7 +132,7 @@ export async function PublicShell({
             >
               {settings["site.logo"] ? null : siteMark}
             </span>
-            <span>{siteTitle}</span>
+            <span className="truncate">{siteTitle}</span>
           </Link>
 
           <nav

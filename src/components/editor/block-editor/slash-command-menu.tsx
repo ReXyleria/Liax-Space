@@ -41,7 +41,7 @@ export function SlashCommandMenu({
   return (
     <div
       data-slash-menu
-      className="absolute z-[80] w-72 overflow-hidden rounded-xl border bg-card shadow-2xl shadow-primary/10"
+      className="absolute z-[120] w-72 overflow-hidden rounded-xl border bg-card shadow-2xl shadow-primary/10"
       style={{ left: menu.x, top: menu.y }}
       role="listbox"
       aria-label={texts.searchBlocks}

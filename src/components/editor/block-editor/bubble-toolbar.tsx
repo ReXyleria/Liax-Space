@@ -41,7 +41,7 @@ export function BubbleToolbar({ editor, texts }: { editor: Editor; texts: Editor
       editor={editor}
       shouldShow={({ editor: activeEditor, state }) => !state.selection.empty && activeEditor.isEditable}
       tippyOptions={{ duration: 120, placement: "top", maxWidth: "none" }}
-      className="z-50 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 rounded-xl border bg-card/95 p-1 shadow-xl shadow-primary/10 backdrop-blur"
+      className="z-[120] flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 rounded-xl border bg-card/95 p-1 shadow-xl shadow-primary/10 backdrop-blur"
     >
       {controls.map((control) => (
         <Button

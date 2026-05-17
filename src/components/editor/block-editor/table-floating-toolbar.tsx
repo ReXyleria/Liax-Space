@@ -106,7 +106,7 @@ export function TableFloatingToolbar({
 
   return (
     <div
-      className="absolute z-[85] flex max-w-[min(92vw,760px)] flex-wrap items-center gap-2 rounded-xl border bg-card/96 p-2 shadow-2xl shadow-black/10 backdrop-blur"
+      className="absolute z-[120] flex max-w-[min(92vw,760px)] flex-wrap items-center gap-2 rounded-xl border bg-card/96 p-2 shadow-2xl shadow-black/10 backdrop-blur"
       style={{ left: rect.left, top: rect.top }}
       contentEditable={false}
     >

@@ -1,10 +1,9 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
 import { SettingType } from "@prisma/client";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { FloatingSettingsSubmit } from "@/components/admin/floating-settings-submit";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ImageUploadField } from "@/components/forms/image-upload-field";
 import { Input } from "@/components/ui/input";
@@ -189,7 +188,6 @@ export function SettingsForm({
   locale?: Locale;
 }) {
   const router = useRouter();
-  const text = labels(locale);
   const [state, formAction, isPending] = useActionState<SettingsActionState, FormData>(
     updateSettingsAction,
     initialState
@@ -202,7 +200,7 @@ export function SettingsForm({
   }, [router, state.ok]);
 
   return (
-    <form action={formAction} className="space-y-6" aria-busy={isPending}>
+    <form action={formAction} className="space-y-6 pb-24" aria-busy={isPending}>
       {Object.entries(groups).map(([group, definitions]) => (
         <Card key={group} className="overflow-hidden">
           <CardHeader className="border-b bg-muted/35">
@@ -224,13 +222,7 @@ export function SettingsForm({
           </CardContent>
         </Card>
       ))}
-      {state.message ? (
-        <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{state.message}</p>
-      ) : null}
-      <Button type="submit" disabled={isPending}>
-        {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-        {isPending ? text.saving : text.save}
-      </Button>
+      <FloatingSettingsSubmit pending={isPending} message={state.message} ok={state.ok} locale={locale} />
     </form>
   );
 }

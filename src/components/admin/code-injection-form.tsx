@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button } from "@/components/ui/button";
+import { FloatingSettingsSubmit } from "@/components/admin/floating-settings-submit";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { updateCodeInjectionAction, type CodeInjectionActionState } from "@/features/code-injection/actions";
@@ -16,10 +16,10 @@ export function CodeInjectionForm({ settings }: { settings: CodeInjectionMap }) 
   );
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form action={formAction} className="space-y-6 pb-24">
       <Card className="border-destructive/30 bg-destructive/5 p-5 text-sm leading-6 text-destructive">
-        代码注入是仅限 Administer 的高级功能。注入的 HTML、CSS 和 JS 可能带来 XSS 风险或破坏统计。
-        头部片段会在 hydration 后由客户端插入，底部/自定义 HTML 会被隔离在法律页脚上方。
+        代码注入是仅限 Administer 的高级功能。注入的 HTML、CSS 和 JS 可能带来 XSS 风险或破坏统计。头部片段会在
+        hydration 后由客户端插入，底部/自定义 HTML 会被隔离在法律页脚上方。
       </Card>
       {codeInjectionDefinitions.map((definition) => (
         <Card key={definition.key}>
@@ -61,14 +61,7 @@ export function CodeInjectionForm({ settings }: { settings: CodeInjectionMap }) 
           </CardContent>
         </Card>
       ))}
-      {state.message ? (
-        <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{state.message}</p>
-      ) : null}
-      <div className="fixed bottom-6 right-6 z-50">
-        <Button type="submit" disabled={isPending} className="shadow-lg h-12 px-6 text-base">
-          {isPending ? "保存中..." : "保存代码注入"}
-        </Button>
-      </div>
+      <FloatingSettingsSubmit pending={isPending} message={state.message} ok={state.ok} />
     </form>
   );
 }

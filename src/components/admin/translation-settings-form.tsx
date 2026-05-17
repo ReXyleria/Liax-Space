@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { FloatingSettingsSubmit } from "@/components/admin/floating-settings-submit";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -174,7 +175,7 @@ export function TranslationSettingsForm({
   }
 
   return (
-    <form ref={formRef} action={formAction} className="space-y-6">
+    <form ref={formRef} action={formAction} className="space-y-6 pb-24">
       {error ? <Card className="p-5 text-destructive">{error}</Card> : null}
       <Card className="space-y-5 p-6">
         <div>
@@ -262,12 +263,7 @@ export function TranslationSettingsForm({
             <Input name="chunkConcurrency" type="number" min="1" max="4" defaultValue={String(settings.chunkConcurrency)} />
           </label>
         </div>
-        {saveState.message ? (
-          <p className={saveState.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{saveState.message}</p>
-        ) : null}
-        <Button type="submit" disabled={isSaving}>
-          {isSaving ? text.saving : text.saveButton}
-        </Button>
+        <FloatingSettingsSubmit pending={isSaving} message={saveState.message} ok={saveState.ok} locale={locale} />
       </Card>
 
       <Card className="space-y-4 p-6">

@@ -39,7 +39,7 @@ export function LinkPopover({ editor, texts }: { editor: Editor; texts: EditorTe
         <Link2 className="h-4 w-4" />
       </Button>
       {open ? (
-        <div className="absolute left-0 top-10 z-50 w-72 rounded-lg border bg-card p-2 shadow-xl shadow-primary/10">
+        <div className="absolute left-0 top-10 z-[130] w-72 rounded-lg border bg-card p-2 shadow-xl shadow-primary/10">
           <input
             value={href}
             onChange={(event) => setHref(event.target.value)}

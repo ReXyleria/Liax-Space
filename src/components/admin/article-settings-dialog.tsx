@@ -12,6 +12,7 @@ import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { ImageUploadField } from "@/components/forms/image-upload-field";
 import { updateArticleSettingsAction, type ArticleActionState } from "@/features/articles/actions";
+import { contentVisibilityOptions } from "@/lib/content-visibility";
 import type { Locale } from "@/lib/i18n-messages";
 
 type ArticleSettingsData = {
@@ -64,7 +65,7 @@ function labels(locale: Locale) {
         summaryLabel: "摘要",
         summaryPlaceholder: "文章摘要...",
         coverLabel: "封面",
-        visibilityLabel: "可见性",
+        visibilityLabel: "可见范围",
         tagsLabel: "标签",
         tagsPlaceholder: "选择或新建标签",
         seoTitleLabel: "SEO 标题",
@@ -76,25 +77,6 @@ function labels(locale: Locale) {
         publishedAtHint: "导入旧文章时可手动设置原始发布时间。",
         saving: "保存中..."
       };
-}
-
-function visibilityOptions(locale: Locale) {
-  if (locale === "en") {
-    return [
-      { value: ContentVisibility.PUBLIC, label: "Public" },
-      { value: ContentVisibility.LOGIN_REQUIRED, label: "Login required" },
-      { value: ContentVisibility.SVIP_ONLY, label: "SVIP only" },
-      { value: ContentVisibility.SSVIP_ONLY, label: "SSVIP only" },
-      { value: ContentVisibility.Administer_ONLY, label: "Private" }
-    ];
-  }
-  return [
-    { value: ContentVisibility.PUBLIC, label: "公开" },
-    { value: ContentVisibility.LOGIN_REQUIRED, label: "登录可见" },
-    { value: ContentVisibility.SVIP_ONLY, label: "SVIP 可见" },
-    { value: ContentVisibility.SSVIP_ONLY, label: "SSVIP 可见" },
-    { value: ContentVisibility.Administer_ONLY, label: "私密" }
-  ];
 }
 
 function FieldError({ messages }: { messages?: string[] }) {
@@ -122,7 +104,7 @@ export function ArticleSettingsDialog({
   locale?: Locale;
 }) {
   const text = labels(locale);
-  const visOptions = visibilityOptions(locale);
+  const visOptions = contentVisibilityOptions(locale);
   const action = updateArticleSettingsAction.bind(null, article.id);
   const [state, formAction, isPending] = useActionState(action, initialActionState);
 
