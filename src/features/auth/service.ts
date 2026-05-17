@@ -7,19 +7,10 @@ import { generateNumericCode, generateOpaqueToken, hashPassword, hashToken, veri
 import { verifyTotpOrRecovery } from "@/features/account/totp-service";
 import { emailSchema, loginSchema, loginSecondFactorSchema, registerSchema } from "@/features/auth/validators";
 import type { AuthResponse } from "@/features/auth/types";
+import { highPrivilegePermissions, highPrivilegeRoles, isHighPrivilegeIdentity } from "@/lib/permission-definitions";
 
 const REGISTER_CODE_TTL_MINUTES = 10;
 const PENDING_LOGIN_TTL_MINUTES = 10;
-
-const highPrivilegePermissions = new Set([
-  "users.manage",
-  "settings.manage",
-  "identities.manage",
-  "backupRestore.manage",
-  "mailTemplates.manage",
-  "codeInjection.manage"
-]);
-const highPrivilegeRoles: UserRole[] = [UserRole.Administer];
 
 function parsePublicRole(value: string | undefined | null): UserRole {
   if (value === "SVIP" || value === "SSVIP") {
@@ -67,20 +58,6 @@ async function getTextSetting(key: string, fallback = "") {
 
 function normalizeUsername(username: string) {
   return username.trim().toLowerCase();
-}
-
-function isHighPrivilegeIdentity(identity: { builtInRole: UserRole | null; permissions: unknown }) {
-  if (identity.builtInRole && highPrivilegeRoles.includes(identity.builtInRole)) {
-    return true;
-  }
-
-  if (!Array.isArray(identity.permissions)) {
-    return false;
-  }
-
-  return identity.permissions.some(
-    (permission) => typeof permission === "string" && highPrivilegePermissions.has(permission)
-  );
 }
 
 function buildSecondFactorMethods(user: { totpEnabled: boolean; passkeys: Array<{ id: string }> }) {

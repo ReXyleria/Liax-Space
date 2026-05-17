@@ -104,7 +104,13 @@ const zh = {
   unknownDevice: "未知设备",
   noComments: "暂无评论。",
   loginToComment: "登录后可以发表评论。",
-  goToLogin: "去登录"
+  goToLogin: "去登录",
+  user: "普通用户",
+  svip: "SVIP",
+  ssvip: "SSVIP",
+  admin: "站长",
+  active: "启用",
+  disabled: "禁用"
 };
 
 const en: Record<keyof typeof zh, string> = {
@@ -206,7 +212,13 @@ const en: Record<keyof typeof zh, string> = {
   unknownDevice: "Unknown device",
   noComments: "No comments yet.",
   loginToComment: "Sign in to comment.",
-  goToLogin: "Go to sign in"
+  goToLogin: "Go to sign in",
+  user: "User",
+  svip: "SVIP",
+  ssvip: "SSVIP",
+  admin: "Admin",
+  active: "Active",
+  disabled: "Disabled"
 };
 
 export const messages: Record<Locale, Record<string, string>> = {

@@ -95,7 +95,7 @@ export function AdminCommentList({ comments }: { comments: AdminComment[] }) {
       {groups.map((group) => {
         const isExpanded = expanded.has(group.articleId);
         return (
-          <Card key={group.articleId} className="overflow-visible">
+          <Card key={group.articleId} className={`overflow-visible ${isExpanded ? "z-10" : ""}`}>
             <button
               type="button"
               className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50"
@@ -130,7 +130,7 @@ export function AdminCommentList({ comments }: { comments: AdminComment[] }) {
                 isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
               }`}
             >
-              <div className="overflow-hidden">
+              <div className={isExpanded ? "overflow-visible" : "overflow-hidden"}>
                 <div className="divide-y border-t">
                   {group.comments.map((comment) => (
                     <CommentRow key={comment.id} comment={comment} />

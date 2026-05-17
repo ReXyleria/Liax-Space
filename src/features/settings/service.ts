@@ -6,6 +6,7 @@ import type { CurrentUser } from "@/lib/auth";
 import type { Locale } from "@/lib/i18n";
 import type { SettingDefinition, SettingsMap } from "@/features/settings/types";
 import { ensureBuiltInIdentities } from "@/features/identity/service";
+import { isHighPrivilegeIdentity } from "@/lib/permission-definitions";
 
 export const settingDefinitions: SettingDefinition[] = [
   { key: "site.title", label: "Site title", group: "Basic settings", type: SettingType.TEXT, defaultValue: "Liax-Space" },
@@ -97,30 +98,6 @@ export function getLocalizedSettingDefinitions(locale: Locale = "zh-CN") {
     const override = localized[definition.key];
     return override ? { ...definition, ...override } : definition;
   });
-}
-
-const highPrivilegePermissions = new Set([
-  "users.manage",
-  "settings.manage",
-  "identities.manage",
-  "backupRestore.manage",
-  "mailTemplates.manage",
-  "codeInjection.manage"
-]);
-const highPrivilegeRoles: UserRole[] = [UserRole.Administer];
-
-function isHighPrivilegeIdentity(identity: { builtInRole: UserRole | null; permissions: unknown }) {
-  if (identity.builtInRole && highPrivilegeRoles.includes(identity.builtInRole)) {
-    return true;
-  }
-
-  if (!Array.isArray(identity.permissions)) {
-    return false;
-  }
-
-  return identity.permissions.some(
-    (permission) => typeof permission === "string" && highPrivilegePermissions.has(permission)
-  );
 }
 
 export function getDefaultSettings(): SettingsMap {

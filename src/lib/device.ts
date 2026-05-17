@@ -1,9 +1,6 @@
 export function getSafeDeviceName(userAgent: string | null | undefined) {
   const source = userAgent ?? "";
 
-  // Windows NT 10.0 is used by both Windows 10 and Windows 11 —
-  // the build number (not present in most UA strings) differentiates them.
-  // Just report "Windows" to avoid misleading version numbers.
   const os = source.includes("Windows")
     ? "Windows"
     : source.includes("Mac OS")
@@ -12,7 +9,7 @@ export function getSafeDeviceName(userAgent: string | null | undefined) {
         ? `Android ${(source.match(/Android (\d+(?:\.\d+)?)/) ?? [])[1] ?? ""}`.replace(/\s+$/, "")
         : source.includes("iPhone") || source.includes("iPad")
           ? `iOS ${(source.match(/OS (\d+[._]\d+)/) ?? [])[1]?.replace(/_/g, ".") ?? ""}`.replace(/\s+$/, "")
-          : "未知系统";
+          : "Unknown OS";
 
   const browser = source.includes("Edg/")
     ? `Edge ${(source.match(/Edg\/(\d+)/) ?? [])[1] ?? ""}`.replace(/\s+$/, "")
@@ -22,7 +19,7 @@ export function getSafeDeviceName(userAgent: string | null | undefined) {
         ? `Firefox ${(source.match(/Firefox\/(\d+)/) ?? [])[1] ?? ""}`.replace(/\s+$/, "")
         : source.includes("Safari/") && source.includes("Version/")
           ? `Safari ${(source.match(/Version\/(\d+\.\d+)/) ?? [])[1] ?? ""}`.replace(/\s+$/, "")
-          : "浏览器";
+          : "Unknown Browser";
 
   return `${browser} · ${os}`;
 }

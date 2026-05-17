@@ -87,6 +87,31 @@ export const defaultRolePermissions: Record<UserRole, string[]> = {
   Administer: allPermissionKeys
 };
 
+export const highPrivilegePermissions = new Set([
+  "users.manage",
+  "settings.manage",
+  "identities.manage",
+  "backupRestore.manage",
+  "mailTemplates.manage",
+  "codeInjection.manage"
+]);
+
+export const highPrivilegeRoles: UserRole[] = [UserRole.Administer];
+
 export function getDefaultPermissionsForRole(role: UserRole) {
   return defaultRolePermissions[role] ?? [];
+}
+
+export function isHighPrivilegeIdentity(identity: { builtInRole: UserRole | null; permissions: unknown }) {
+  if (identity.builtInRole && highPrivilegeRoles.includes(identity.builtInRole)) {
+    return true;
+  }
+
+  if (!Array.isArray(identity.permissions)) {
+    return false;
+  }
+
+  return identity.permissions.some(
+    (permission) => typeof permission === "string" && highPrivilegePermissions.has(permission)
+  );
 }

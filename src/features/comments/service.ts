@@ -5,24 +5,13 @@ import type { CurrentUser } from "@/lib/auth";
 import { sendTemplatedMail } from "@/lib/mail";
 import { commentCreateSchema, commentStatusSchema, muteUserSchema, MUTE_DURATIONS } from "@/features/comments/validators";
 
-async function commentsRequireApproval() {
-  if (!isDatabaseConfigured()) {
-    return false;
-  }
-
-  return withDatabase(async () => {
-    const setting = await db.setting.findUnique({ where: { key: "comments.requireApproval" } });
-    return setting?.value === "true";
-  }, false);
-}
-
 export async function listArticleComments(articleId: string) {
   if (!isDatabaseConfigured()) {
     return [];
   }
 
   return withDatabase(() => db.comment.findMany({
-      where: { articleId, status: CommentStatus.APPROVED, deletedAt: null },
+      where: { articleId, deletedAt: null },
       include: { user: { select: { nickname: true, avatar: true } } },
       orderBy: [{ pinned: "desc" }, { createdAt: "asc" }]
     }), []);
@@ -71,7 +60,7 @@ export async function createComment(user: CurrentUser, input: unknown) {
       parentId: parsed.parentId || null,
       content: parsed.content,
       deviceName: parsed.deviceName,
-      status: (await commentsRequireApproval()) ? CommentStatus.PENDING : CommentStatus.APPROVED
+      status: CommentStatus.APPROVED
     }
   });
 

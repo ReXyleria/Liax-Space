@@ -68,11 +68,11 @@ export async function rescanMediaReferences(user: CurrentUser) {
       where: {
         key: {
           in: [
-            "site_logo", "site_favicon", "site_background", "site_og_image",
-            "home_background", "home_random_backgrounds",
-            "footer_logo", "footer_background",
-            "email_logo", "email_background",
-            "user_default_avatar"
+            "site.logo", "site.favicon", "appearance.backgroundImage", "site.ogImage",
+            "home.cover", "home.randomBackgroundUrl",
+            "footer.logo", "footer.background",
+            "email.logo", "email.background",
+            "user.defaultAvatar"
           ]
         }
       },
@@ -92,7 +92,7 @@ export async function rescanMediaReferences(user: CurrentUser) {
 
   // Also fetch code-injection settings which store HTML/JS/CSS with possible image URLs
   const codeInjectionSettings = await db.setting.findMany({
-    where: { key: { in: ["custom_head_html", "custom_body_html", "custom_css"] } },
+    where: { key: { in: ["code.globalHead", "code.globalHead.enabled", "code.articleHead", "code.articleHead.enabled", "code.globalFooter", "code.globalFooter.enabled"] } },
     select: { id: true, key: true, value: true }
   });
 
