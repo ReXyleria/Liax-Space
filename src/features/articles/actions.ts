@@ -33,7 +33,11 @@ export type ArticleSeoActionState = {
   seoDescription?: string;
 };
 
-function parseBoolean(value: FormDataEntryValue | null) {
+function parseBoolean(value: FormDataEntryValue | null, defaultValue = false) {
+  if (value === null) {
+    return defaultValue;
+  }
+
   return value === "on" || value === "true";
 }
 
@@ -45,7 +49,7 @@ function parseEditorJson(value: FormDataEntryValue | null) {
   }
 }
 
-function parseArticleForm(formData: FormData) {
+function parseArticleForm(formData: FormData, options: { defaultAllowComments?: boolean } = {}) {
   const tagNames = formData
     .getAll("tagNames")
     .flatMap((tag) => String(tag).split(","))
@@ -60,7 +64,7 @@ function parseArticleForm(formData: FormData) {
     contentHtml: formData.get("contentHtml") ?? "",
     status: formData.get("status") ?? "DRAFT",
     visibility: formData.get("visibility") ?? "PUBLIC",
-    allowComments: parseBoolean(formData.get("allowComments")),
+    allowComments: parseBoolean(formData.get("allowComments"), options.defaultAllowComments ?? false),
     pinned: parseBoolean(formData.get("pinned")),
     featured: parseBoolean(formData.get("featured")),
     seoTitle: formData.get("seoTitle") ?? "",
@@ -130,7 +134,7 @@ export async function createArticleAction(
   formData: FormData
 ): Promise<ArticleActionState> {
   const locale = await getAdminLocale();
-  const input = parseArticleForm(formData);
+  const input = parseArticleForm(formData, { defaultAllowComments: true });
   const parsed = articleMutationSchema.safeParse(input);
 
   if (!parsed.success) {

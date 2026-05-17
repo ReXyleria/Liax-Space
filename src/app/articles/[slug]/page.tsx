@@ -172,7 +172,7 @@ export default async function ArticleDetailPage({
   return (
     <PublicShell>
       <MotionPage>
-        <main className="mx-auto grid max-w-6xl gap-8 px-6 py-12 lg:grid-cols-[minmax(0,1fr)_240px]">
+        <main className="mx-auto max-w-4xl px-6 py-12">
           <div className="min-w-0">
             <article>
               <MotionItem className="mb-8">

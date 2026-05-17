@@ -186,6 +186,11 @@ export function PasswordPanel() {
           <Input name="newPassword" type="password" autoComplete="new-password" required />
           <FieldError messages={state.fieldErrors?.newPassword} />
         </label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">确认新密码</span>
+          <Input name="confirmPassword" type="password" autoComplete="new-password" required />
+          <FieldError messages={state.fieldErrors?.confirmPassword} />
+        </label>
         <ActionMessage state={state} />
         <Button type="submit" disabled={isPending}>
           {isPending ? "更新中..." : "更新密码"}

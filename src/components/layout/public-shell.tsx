@@ -3,6 +3,7 @@ import { UserRole } from "@prisma/client";
 import { VisitTracker } from "@/components/analytics/visit-tracker";
 import { CodeInjectionRenderer } from "@/components/layout/code-injection-renderer";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
+import { MobilePublicNav } from "@/components/layout/mobile-public-nav";
 import { SiteBackground, resolveSiteBackground } from "@/components/layout/site-background";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { getCodeInjectionMap, getEnabledCodeInjection } from "@/features/code-injection/service";
@@ -100,7 +101,19 @@ export async function PublicShell({
         )}
       >
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-3 text-base font-semibold">
+          <MobilePublicNav
+            navItems={navItems}
+            locale={locale}
+            profileHref={profileHref}
+            displayName={displayName}
+            displayAvatar={displayAvatar}
+            siteTitle={siteTitle}
+            siteLogo={settings["site.logo"]?.trim()}
+            siteMark={siteMark}
+            transparentHeader={transparentHeader}
+          />
+
+          <Link href="/" className="hidden items-center gap-3 text-base font-semibold md:flex">
             <span
               className={cn(
                 "grid h-9 w-9 place-items-center overflow-hidden rounded-lg text-sm shadow-sm",
@@ -129,16 +142,18 @@ export async function PublicShell({
               transparentHeader ? "text-white/82" : "text-muted-foreground"
             )}
           >
-            <LanguageSwitcher locale={locale} transparent={transparentHeader} />
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                className={cn("hover:text-foreground", transparentHeader && "hover:text-white")}
-                href={item.href}
-              >
-                {item.label}
-              </Link>
-            ))}
+            <div className="hidden items-center gap-4 md:flex">
+              <LanguageSwitcher locale={locale} transparent={transparentHeader} />
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  className={cn("hover:text-foreground", transparentHeader && "hover:text-white")}
+                  href={item.href}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
             <Link
               className={cn(
                 "inline-flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 shadow-sm",

@@ -1,10 +1,9 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArticleStatus, ContentVisibility } from "@prisma/client";
-import { AlertTriangle, Eye, History, Save, Send, Settings, Sparkles } from "lucide-react";
+import { AlertTriangle, History, Save, Send, Settings, Sparkles } from "lucide-react";
 import { BlockEditor } from "@/components/editor/block-editor/block-editor";
 import { EditorToc } from "@/components/editor/editor-toc";
 import { ArticleEditorErrorBoundary } from "@/components/forms/article-editor-error-boundary";
@@ -29,11 +28,6 @@ import {
   type ArticleActionState
 } from "@/features/articles/actions";
 import type { Locale } from "@/lib/i18n-messages";
-
-const ArticlePreviewOverlay = dynamic(
-  () => import("@/components/forms/article-preview-overlay").then((module) => module.ArticlePreviewOverlay),
-  { ssr: false }
-);
 
 type ArticleFormValue = {
   id: string;
@@ -71,8 +65,6 @@ type ArticleVersionValue = {
   createdAt: string;
   createdByName: string;
 };
-
-type PreviewMode = "phone" | "tablet" | "desktop";
 
 function labels(locale: Locale) {
   return locale === "en"
@@ -244,6 +236,7 @@ export function ArticleEditorForm({
   locale?: Locale;
 }) {
   const text = labels(locale);
+  void site;
   const articleVisibilityOptions = visibilityOptions(locale);
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -264,9 +257,6 @@ export function ArticleEditorForm({
   const [publishedAt, setPublishedAt] = useState<string>(
     article?.publishedAt ? new Date(article.publishedAt).toISOString().slice(0, 16) : ""
   );
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("desktop");
-  const [previewDraft, setPreviewDraft] = useState<ArticleDraft | null>(null);
   const [pendingDraft, setPendingDraft] = useState<ArticleDraft | null>(null);
   const [editorInitial, setEditorInitial] = useState({
     html: article?.contentHtml ?? "",
@@ -386,32 +376,6 @@ export function ArticleEditorForm({
     }
 
     submitWithStatus(ArticleStatus.PUBLISHED, true);
-  }
-
-  const openPreview = useCallback((draft?: ArticleDraft) => {
-    setPreviewDraft(draft ?? collectDraft());
-    setPreviewOpen(true);
-  }, [collectDraft]);
-
-  function previewVersion(version: ArticleVersionValue) {
-    openPreview({
-      title: version.title,
-      slug: version.slug,
-      summary: version.summary ?? "",
-      cover: version.cover ?? "",
-      contentHtml: version.contentHtml,
-      contentJson: JSON.stringify(version.contentJson ?? { type: "doc", content: [] }),
-      status: version.status,
-      visibility: version.visibility,
-      tagNames: version.tagNames.join(", "),
-      seoTitle: "",
-      seoDescription: "",
-      publishedAt: version.createdAt,
-      allowComments: true,
-      pinned: false,
-      featured: false,
-      savedAt: new Date(version.createdAt).getTime()
-    });
   }
 
   async function loadVersions() {
@@ -595,10 +559,6 @@ export function ArticleEditorForm({
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" onClick={() => openPreview()}>
-                    <Eye className="mr-2 h-4 w-4" />
-                    {text.preview}
-                  </Button>
                   <Button type="button" variant="secondary" onClick={() => submitWithStatus(status as ArticleStatus)} disabled={isPending}>
                     <Save className="mr-2 h-4 w-4" />
                     {text.save}
@@ -820,7 +780,6 @@ export function ArticleEditorForm({
                   <div className="mt-3 flex gap-2">
                     <Button type="button" variant="secondary" className="h-8 px-3 text-xs" onClick={() => {
                       setVersionPreview(version);
-                      previewVersion(version);
                     }}>
                       {text.previewVersion}
                     </Button>
@@ -860,14 +819,6 @@ export function ArticleEditorForm({
           </div>
         </Dialog>
       </form>
-      <ArticlePreviewOverlay
-        open={previewOpen}
-        draft={previewDraft}
-        mode={previewMode}
-        site={site}
-        onModeChange={setPreviewMode}
-        onClose={() => setPreviewOpen(false)}
-      />
     </>
   );
 }

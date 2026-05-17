@@ -64,7 +64,8 @@ export async function updatePasswordAction(
     const user = await requireUser();
     await updatePassword(user, {
       currentPassword: formData.get("currentPassword"),
-      newPassword: formData.get("newPassword")
+      newPassword: formData.get("newPassword"),
+      confirmPassword: formData.get("confirmPassword")
     });
     return { ok: true, message: "Password updated." };
   } catch (error) {
