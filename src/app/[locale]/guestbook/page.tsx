@@ -5,18 +5,30 @@ import { Card } from "@/components/ui/card";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { listApprovedGuestbookMessages } from "@/features/guestbook/service";
 import { getCurrentUser } from "@/lib/auth";
+import { notFound } from "next/navigation";
+import { urlLocaleToLocale } from "@/lib/locale-url";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default async function GuestbookPage() {
+export default async function GuestbookPage({
+  params
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: urlLocale } = await params;
+  const locale = urlLocaleToLocale(urlLocale);
+  if (!locale) {
+    notFound();
+  }
+
   const [{ messages, error }, user] = await Promise.all([
     listApprovedGuestbookMessages(),
     getCurrentUser()
   ]);
 
   return (
-    <PublicShell>
+    <PublicShell locale={locale}>
       <MotionPage>
         <main className="mx-auto grid max-w-6xl gap-8 px-6 py-12 lg:grid-cols-[380px_1fr]">
           <section>

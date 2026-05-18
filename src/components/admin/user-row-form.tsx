@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Volume2, VolumeX } from "lucide-react";
 import { UserRole, UserStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -13,6 +13,7 @@ import {
   updateUserAction,
   type UserActionState
 } from "@/features/users/actions";
+import { unmuteUserAction } from "@/features/comments/actions";
 import { getPublicIdentityTierByKey } from "@/features/identity/tiers";
 import { roleLabels, statusLabels } from "@/lib/role-labels";
 
@@ -31,6 +32,8 @@ type UserRow = {
   identityId: string | null;
   identityName: string | null;
   status: UserStatus;
+  mutedUntilLabel: string;
+  isMuted: boolean;
   createdAtLabel: string;
   lastLoginAtLabel: string;
   sessions: Array<{
@@ -82,6 +85,10 @@ export function UserRowForm({
     deleteUserAction,
     initialState
   );
+  const [unmuteState, unmuteAction, isUnmuting] = useActionState<UserActionState, FormData>(
+    unmuteUserAction,
+    initialState
+  );
   const formId = `user-settings-${user.id}`;
   const displayIdentity =
     user.role === UserRole.Administer
@@ -113,6 +120,12 @@ export function UserRowForm({
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
             {displayIdentity}
           </span>
+          {user.isMuted ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">
+              <VolumeX className="h-3 w-3" />
+              已禁言
+            </span>
+          ) : null}
         </div>
         <p className="text-sm text-muted-foreground">{user.email}</p>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -190,6 +203,27 @@ export function UserRowForm({
             <ActionMessage state={saveState} />
           </fieldset>
         </form>
+
+        <div className="mt-6 rounded-md border bg-muted/35 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-medium">评论禁言</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {user.isMuted ? `已禁言至 ${user.mutedUntilLabel}` : "当前未禁言。"}
+              </p>
+            </div>
+            {user.isMuted ? (
+              <form action={unmuteAction}>
+                <input type="hidden" name="userId" value={user.id} />
+                <Button type="submit" variant="secondary" disabled={isUnmuting}>
+                  {isUnmuting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Volume2 className="mr-2 h-4 w-4" />}
+                  {isUnmuting ? "取消中..." : "取消禁言"}
+                </Button>
+              </form>
+            ) : null}
+          </div>
+          <ActionMessage state={unmuteState} />
+        </div>
 
         <div className="mt-6 rounded-md border bg-muted/35 p-4">
           <div className="flex items-center justify-between gap-3">

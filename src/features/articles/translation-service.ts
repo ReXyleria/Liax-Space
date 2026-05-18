@@ -31,11 +31,15 @@ export type ArticleTranslationDisplaySource = {
   title: string;
   summary: string | null;
   contentHtml: string;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
   translations: Array<{
     locale: string;
     title: string;
     summary: string | null;
     contentHtml: string;
+    seoTitle?: string | null;
+    seoDescription?: string | null;
     status: TranslationStatus;
     contentHash: string | null;
     error?: string | null;
@@ -67,6 +71,8 @@ export function resolveArticleDisplayTranslation(
       title: article.title,
       summary: article.summary,
       contentHtml: article.contentHtml,
+      seoTitle: article.seoTitle ?? null,
+      seoDescription: article.seoDescription ?? null,
       locale: normalizedLocale,
       status: null as "translated" | "fallback" | null,
       error: null as string | null
@@ -83,6 +89,8 @@ export function resolveArticleDisplayTranslation(
       title: translation.title,
       summary: translation.summary,
       contentHtml: translation.contentHtml,
+      seoTitle: translation.seoTitle ?? null,
+      seoDescription: translation.seoDescription ?? null,
       locale: normalizedLocale,
       status: "translated" as const,
       error: null as string | null
@@ -93,6 +101,8 @@ export function resolveArticleDisplayTranslation(
     title: article.title,
     summary: article.summary,
     contentHtml: article.contentHtml,
+    seoTitle: article.seoTitle ?? null,
+    seoDescription: article.seoDescription ?? null,
     locale: normalizedLocale,
     status: "fallback" as const,
     error:
@@ -238,6 +248,7 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
     where: { id: articleId },
     select: {
       id: true,
+      slug: true,
       title: true,
       summary: true,
       contentHtml: true,
@@ -259,7 +270,7 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
     existing?.status === TranslationStatus.TRANSLATED &&
     existing.contentHash === contentHash
   ) {
-    return existing;
+    return { articleSlug: article.slug };
   }
 
   await markTranslationInProgress(article, locale, contentHash);
@@ -293,6 +304,7 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
         progressMessage: "Translation complete"
       }
     });
+    return { articleSlug: article.slug };
   } catch (error) {
     await db.articleTranslation.update({
       where: { articleId_locale: { articleId, locale } },
@@ -441,6 +453,8 @@ export async function upsertManualArticleTranslation(
     locale: string;
     title: string;
     summary?: string | null;
+    seoTitle?: string | null;
+    seoDescription?: string | null;
     contentHtml: string;
     contentJson: unknown;
   }
@@ -455,6 +469,7 @@ export async function upsertManualArticleTranslation(
     where: { id: input.articleId },
     select: {
       id: true,
+      slug: true,
       title: true,
       summary: true,
       contentHtml: true,
@@ -470,11 +485,13 @@ export async function upsertManualArticleTranslation(
   const contentHash = hashArticleSource(article);
   const sanitizedHtml = sanitizeArticleHtml(input.contentHtml);
 
-  return db.articleTranslation.upsert({
+  const translation = await db.articleTranslation.upsert({
     where: { articleId_locale: { articleId: article.id, locale } },
     update: {
       title: input.title.trim(),
       summary: input.summary?.trim() || null,
+      seoTitle: input.seoTitle?.trim() || null,
+      seoDescription: input.seoDescription?.trim() || null,
       contentHtml: sanitizedHtml,
       contentJson: input.contentJson as Prisma.InputJsonValue,
       status: TranslationStatus.TRANSLATED,
@@ -492,6 +509,8 @@ export async function upsertManualArticleTranslation(
       locale,
       title: input.title.trim(),
       summary: input.summary?.trim() || null,
+      seoTitle: input.seoTitle?.trim() || null,
+      seoDescription: input.seoDescription?.trim() || null,
       contentHtml: sanitizedHtml,
       contentJson: input.contentJson as Prisma.InputJsonValue,
       status: TranslationStatus.TRANSLATED,
@@ -505,6 +524,7 @@ export async function upsertManualArticleTranslation(
       progressMessage: "Manual translation saved"
     }
   });
+  return { translation, articleSlug: article.slug };
 }
 
 export async function deleteArticleTranslationsForSource(articleId: string) {

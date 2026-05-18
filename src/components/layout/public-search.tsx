@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 import type { Locale } from "@/lib/i18n-messages";
+import { localizedPath } from "@/lib/locale-url";
 import { cn } from "@/lib/utils";
 
 function placeholder(locale: Locale) {
@@ -24,7 +25,7 @@ export function PublicSearch({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalized = query.trim();
-    router.push(normalized ? `/articles?q=${encodeURIComponent(normalized)}` : "/articles");
+    router.push(normalized ? localizedPath(locale, `/articles?q=${encodeURIComponent(normalized)}`) : localizedPath(locale, "/articles"));
     setExpanded(false);
   }
 
@@ -45,7 +46,7 @@ export function PublicSearch({
       </button>
 
       <form
-        action="/articles"
+        action={localizedPath(locale, "/articles")}
         className={cn(
           "hidden items-center rounded-full border px-3 transition md:flex",
           transparent
@@ -69,7 +70,7 @@ export function PublicSearch({
 
       {expanded ? (
         <form
-          action="/articles"
+          action={localizedPath(locale, "/articles")}
           className={cn(
             "absolute right-0 top-11 z-40 flex w-[min(18rem,calc(100vw-2rem))] items-center rounded-full border px-3 shadow-xl md:hidden",
             transparent

@@ -100,6 +100,8 @@ export default async function AdminUsersPage({
                   identityId: item.identityId,
                   identityName: item.identity?.name ?? null,
                   status: item.status,
+                  mutedUntilLabel: item.mutedUntil ? formatDate(item.mutedUntil) : "",
+                  isMuted: Boolean(item.mutedUntil && item.mutedUntil > new Date()),
                   createdAtLabel: formatDate(item.createdAt),
                   lastLoginAtLabel: formatDate(item.lastLoginAt),
                   sessions: item.sessions.map((session) => ({

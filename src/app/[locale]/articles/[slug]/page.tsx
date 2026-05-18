@@ -4,8 +4,8 @@ import { notFound } from "next/navigation";
 import { ArticleStatus } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { t } from "@/lib/i18n";
-import { getCurrentLocale } from "@/lib/i18n-server";
 import { getSiteConfig, resolveAbsoluteUrl } from "@/lib/site";
+import { articleHref, localizedPath, urlLocaleToLocale } from "@/lib/locale-url";
 import { MotionItem, MotionList, MotionPage } from "@/components/animations/reveal";
 import { PublicShell } from "@/components/layout/public-shell";
 import { ArticleToc, type TocItem } from "@/components/public/article-toc";
@@ -24,10 +24,18 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({
   params
 }: {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ locale: string; slug: string }>;
 }): Promise<Metadata> {
-  const { slug } = await params;
-  const [site, locale] = await Promise.all([getSiteConfig(), getCurrentLocale()]);
+  const { locale: urlLocale, slug } = await params;
+  const locale = urlLocaleToLocale(urlLocale);
+  const site = await getSiteConfig();
+
+  if (!locale) {
+    return {
+      title: site.title,
+      description: site.subtitle
+    };
+  }
 
   if (!isDatabaseConfigured()) {
     return {
@@ -46,6 +54,8 @@ export async function generateMetadata({
       title: true,
       summary: true,
       contentHtml: true,
+      seoTitle: true,
+      seoDescription: true,
       translations: true,
       cover: true
     }
@@ -59,15 +69,19 @@ export async function generateMetadata({
   }
 
   const display = resolveArticleDisplayTranslation(article, locale);
-  const title = display.title;
-  const summary = display.summary;
-  const url = resolveAbsoluteUrl(site.url, `/articles/${slug}`);
+  const title = display.seoTitle || display.title;
+  const summary = display.seoDescription || display.summary;
+  const url = resolveAbsoluteUrl(site.url, articleHref(locale, slug));
 
   return {
     title: `${title} - ${site.title}`,
     description: summary || site.subtitle,
     alternates: {
-      canonical: url
+      canonical: url,
+      languages: {
+        "zh-CN": resolveAbsoluteUrl(site.url, localizedPath("zh-CN", `/articles/${slug}`)),
+        "en-US": resolveAbsoluteUrl(site.url, localizedPath("en", `/articles/${slug}`))
+      }
     },
     openGraph: {
       title,
@@ -130,15 +144,20 @@ function prepareArticleHtml(html: string): { html: string; toc: TocItem[] } {
 export default async function ArticleDetailPage({
   params
 }: {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ locale: string; slug: string }>;
 }) {
-  const { slug } = await params;
-  const [user, locale] = await Promise.all([getCurrentUser(), getCurrentLocale()]);
+  const { locale: urlLocale, slug } = await params;
+  const locale = urlLocaleToLocale(urlLocale);
+  if (!locale) {
+    notFound();
+  }
+
+  const user = await getCurrentUser();
   const { article, canView, error } = await getPublishedArticleBySlug(slug, user, locale);
 
   if (error) {
     return (
-      <PublicShell>
+      <PublicShell locale={locale}>
         <main className="mx-auto max-w-3xl px-6 py-16">
           <Card className="p-8 text-destructive">{error}</Card>
         </main>
@@ -152,7 +171,7 @@ export default async function ArticleDetailPage({
 
   if (!canView) {
     return (
-      <PublicShell>
+      <PublicShell locale={locale}>
         <main className="mx-auto max-w-3xl px-6 py-16">
           <Card className="p-8">
             <h1 className="text-2xl font-semibold">{t(locale, "accessDenied")}</h1>
@@ -170,9 +189,9 @@ export default async function ArticleDetailPage({
   const prepared = prepareArticleHtml(article.contentHtml);
 
   return (
-    <PublicShell>
+    <PublicShell locale={locale}>
       <MotionPage>
-        <main className="mx-auto max-w-4xl px-6 py-12">
+        <main className="mx-auto grid max-w-[96rem] gap-8 px-4 py-12 sm:px-6 lg:px-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="min-w-0">
             <article>
               <MotionItem className="mb-8">

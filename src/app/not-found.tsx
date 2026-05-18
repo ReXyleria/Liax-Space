@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
+import { getCurrentLocale } from "@/lib/i18n-server";
+import { localizedPath } from "@/lib/locale-url";
 
-export default function NotFound() {
+export default async function NotFound() {
+  const locale = await getCurrentLocale();
+
   return (
     <main className="relative isolate flex min-h-screen items-center overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.16),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.12),_transparent_26%),linear-gradient(180deg,_#f8fafc,_#eef2ff)] px-6 py-16 text-slate-900">
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(15,23,42,0.04),transparent_38%,rgba(15,23,42,0.02))]" />
@@ -19,13 +23,13 @@ export default function NotFound() {
             <div className="flex shrink-0 flex-col gap-3 sm:flex-row md:flex-col">
               <Link
                 className="inline-flex h-11 items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-medium text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800"
-                href="/"
+                href={localizedPath(locale)}
               >
                 返回首页
               </Link>
               <Link
                 className="inline-flex h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-50"
-                href="/articles"
+                href={localizedPath(locale, "/articles")}
               >
                 查看文章
               </Link>

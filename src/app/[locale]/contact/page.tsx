@@ -1,10 +1,11 @@
 import { ExternalLink, Github, Globe, Mail, MessageCircle } from "lucide-react";
+import { notFound } from "next/navigation";
 import { MotionItem, MotionList, MotionPage } from "@/components/animations/reveal";
 import { PublicShell } from "@/components/layout/public-shell";
 import { Card } from "@/components/ui/card";
 import { parseContactItems, type ContactItem } from "@/features/settings/contact-items";
 import { getSettingsMap } from "@/features/settings/service";
-import { getCurrentLocale } from "@/lib/i18n-server";
+import { urlLocaleToLocale } from "@/lib/locale-url";
 
 export const dynamic = "force-dynamic";
 
@@ -43,15 +44,25 @@ function getHref(contact: ContactItem) {
   return contact.href;
 }
 
-export default async function ContactPage() {
-  const [locale, { settings, error }] = await Promise.all([getCurrentLocale(), getSettingsMap()]);
+export default async function ContactPage({
+  params
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: urlLocale } = await params;
+  const locale = urlLocaleToLocale(urlLocale);
+  if (!locale) {
+    notFound();
+  }
+
+  const { settings, error } = await getSettingsMap();
   const copy = pageText(locale);
   const contacts = parseContactItems(settings)
     .filter((item) => item.enabled)
     .sort((left, right) => left.sort - right.sort);
 
   return (
-    <PublicShell>
+    <PublicShell locale={locale}>
       <MotionPage>
         <main className="mx-auto max-w-5xl px-6 py-12">
           <h1 className="text-4xl font-semibold">{copy.title}</h1>

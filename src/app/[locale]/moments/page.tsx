@@ -6,16 +6,27 @@ import { PublicShell } from "@/components/layout/public-shell";
 import { Card } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth";
 import { listPublicMoments } from "@/features/moments/service";
+import { notFound } from "next/navigation";
+import { urlLocaleToLocale } from "@/lib/locale-url";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default async function MomentsPage() {
+export default async function MomentsPage({
+  params
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: urlLocale } = await params;
+  const locale = urlLocaleToLocale(urlLocale);
+  if (!locale) {
+    notFound();
+  }
   const user = await getCurrentUser();
   const { moments, error } = await listPublicMoments(user);
 
   return (
-    <PublicShell>
+    <PublicShell locale={locale}>
       <MotionPage>
         <main className="mx-auto max-w-3xl px-6 py-12">
           <h1 className="text-4xl font-semibold">瞬间</h1>

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { codeInjectionDefinitions, updateCodeInjection } from "@/features/code-injection/service";
+import { localizedPath, urlLocales } from "@/lib/locale-url";
 
 export type CodeInjectionActionState = {
   ok: boolean;
@@ -22,8 +23,10 @@ export async function updateCodeInjectionAction(
       ])
     );
     await updateCodeInjection(user, values);
-    revalidatePath("/");
-    revalidatePath("/articles");
+    for (const locale of urlLocales) {
+      revalidatePath(localizedPath(locale));
+      revalidatePath(localizedPath(locale, "/articles"));
+    }
     revalidatePath("/admin/code-injection");
     revalidatePath("/admin/settings");
     return { ok: true, message: "代码注入设置已保存。" };

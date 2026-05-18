@@ -1,22 +1,33 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Archive, CalendarDays } from "lucide-react";
 import { MotionItem, MotionList, MotionPage } from "@/components/animations/reveal";
 import { PublicShell } from "@/components/layout/public-shell";
 import { Card } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth";
-import { getCurrentLocale } from "@/lib/i18n-server";
 import { listPublishedArticleArchives } from "@/features/articles/service";
+import { articleHref, urlLocaleToLocale } from "@/lib/locale-url";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export default async function ArchivesPage() {
-  const [user, locale] = await Promise.all([getCurrentUser(), getCurrentLocale()]);
+export default async function ArchivesPage({
+  params
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: urlLocale } = await params;
+  const locale = urlLocaleToLocale(urlLocale);
+  if (!locale) {
+    notFound();
+  }
+
+  const user = await getCurrentUser();
   const { archives, error } = await listPublishedArticleArchives(user, locale);
   const articleCount = archives.reduce((total, group) => total + group.articles.length, 0);
 
   return (
-    <PublicShell>
+    <PublicShell locale={locale}>
       <MotionPage>
         <main className="mx-auto max-w-6xl px-6 py-12">
           <section className="mb-10 overflow-hidden rounded-lg border border-white/70 bg-card/78 shadow-soft backdrop-blur-xl">
@@ -59,7 +70,7 @@ export default async function ArchivesPage() {
                         <Link
                           key={article.id}
                           className="flex flex-col gap-2 px-5 py-4 transition hover:bg-muted/35 md:flex-row md:items-center md:justify-between"
-                          href={`/articles/${article.slug}`}
+                          href={articleHref(locale, article.slug)}
                         >
                           <span className="font-medium">{article.title}</span>
                           <span className="text-sm text-muted-foreground">

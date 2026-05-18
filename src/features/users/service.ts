@@ -75,6 +75,7 @@ export async function listUsers(
             }
           },
           status: true,
+          mutedUntil: true,
           createdAt: true,
           lastLoginAt: true,
           sessions: {

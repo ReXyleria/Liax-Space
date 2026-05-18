@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
 import { requireUser } from "@/lib/auth";
 import { createTag, deleteTag, updateTag } from "@/features/tags/service";
+import { localizedPath, urlLocales } from "@/lib/locale-url";
 
 export type TagActionState = {
   ok: boolean;
@@ -22,8 +23,10 @@ function failure(message: string, fieldErrors: Record<string, string[]> = initia
 }
 
 function revalidateTagPaths() {
-  revalidatePath("/tags");
-  revalidatePath("/articles");
+  for (const locale of urlLocales) {
+    revalidatePath(localizedPath(locale, "/tags"));
+    revalidatePath(localizedPath(locale, "/articles"));
+  }
   revalidatePath("/admin/tags");
   revalidatePath("/admin/articles");
 }

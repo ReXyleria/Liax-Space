@@ -2,6 +2,7 @@ import { ArticleStatus } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { getSiteConfig, resolveAbsoluteUrl } from "@/lib/site";
 import { LOCALE_COOKIE_NAME } from "@/lib/constants";
+import { localizedPath } from "@/lib/locale-url";
 
 const basePublicPaths = [
   "/",
@@ -111,7 +112,7 @@ export async function prewarmPublicCache(limit = 50, options: PrewarmOptions = {
   const baseUrl = resolvePrewarmBaseUrl(site.url, options.baseUrl);
   const paths = await getPublicPrewarmPaths(limit);
   const locales = ["zh-CN", "en"] as const;
-  const requests = locales.flatMap((locale) => paths.map((path) => ({ path, locale })));
+  const requests = locales.flatMap((locale) => paths.map((path) => ({ path: localizedPath(locale, path), locale })));
   const failed: CachePrewarmResult["failed"] = [];
   const concurrency = Math.min(8, Math.max(1, options.concurrency ?? Number(process.env.CACHE_PREWARM_CONCURRENCY ?? 4)));
 

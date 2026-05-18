@@ -1,6 +1,7 @@
 import { ArticleStatus } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { getSettingsMap } from "@/features/settings/service";
+import { localizedPath, urlLocales } from "@/lib/locale-url";
 
 export async function generateSitemapXml(): Promise<string> {
   const { settings } = await getSettingsMap();
@@ -26,33 +27,47 @@ export async function generateSitemapXml(): Promise<string> {
     { path: "/contact", priority: "0.3" }
   ];
 
-  const staticUrls = pages.map((page) => ({
-    loc: `${siteUrl}${page.path}`,
-    lastmod: new Date().toISOString().split("T")[0],
-    priority: page.priority,
-    changefreq: page.path === "/" ? "daily" : "weekly"
-  }));
+  const staticUrls = pages.flatMap((page) =>
+    urlLocales.map((locale) => ({
+      loc: `${siteUrl}${localizedPath(locale, page.path)}`,
+      lastmod: new Date().toISOString().split("T")[0],
+      priority: page.priority,
+      changefreq: page.path === "/" ? "daily" : "weekly",
+      alternates: Object.fromEntries(
+        urlLocales.map((alternateLocale) => [alternateLocale, `${siteUrl}${localizedPath(alternateLocale, page.path)}`])
+      )
+    }))
+  );
 
-  const articleUrls = articles.map((article) => ({
-    loc: `${siteUrl}/articles/${article.slug}`,
-    lastmod: article.updatedAt.toISOString().split("T")[0],
-    priority: "0.7",
-    changefreq: "weekly"
-  }));
+  const articleUrls = articles.flatMap((article) =>
+    urlLocales.map((locale) => ({
+      loc: `${siteUrl}${localizedPath(locale, `/articles/${article.slug}`)}`,
+      lastmod: article.updatedAt.toISOString().split("T")[0],
+      priority: "0.7",
+      changefreq: "weekly",
+      alternates: Object.fromEntries(
+        urlLocales.map((alternateLocale) => [
+          alternateLocale,
+          `${siteUrl}${localizedPath(alternateLocale, `/articles/${article.slug}`)}`
+        ])
+      )
+    }))
+  );
 
   return buildXml(siteUrl, [...staticUrls, ...articleUrls]);
 }
 
-function buildXml(siteUrl: string, entries: Array<{ loc: string; lastmod: string; priority: string; changefreq: string }>): string {
+function buildXml(siteUrl: string, entries: Array<{ loc: string; lastmod: string; priority: string; changefreq: string; alternates?: Record<string, string> }>): string {
   const urls = entries.map((entry) => `  <url>
     <loc>${escapeXml(entry.loc)}</loc>
+${Object.entries(entry.alternates ?? {}).map(([locale, href]) => `    <xhtml:link rel="alternate" hreflang="${escapeXml(locale)}" href="${escapeXml(href)}" />`).join("\n")}
     <lastmod>${entry.lastmod}</lastmod>
     <priority>${entry.priority}</priority>
     <changefreq>${entry.changefreq}</changefreq>
   </url>`).join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
 ${urls}
 </urlset>`;
 }

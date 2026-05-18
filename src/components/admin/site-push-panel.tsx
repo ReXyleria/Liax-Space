@@ -66,7 +66,7 @@ function labels(locale: Locale) {
         googleClientEmail: "Client email",
         googleProjectId: "Project ID",
         manualTitle: "Manual push",
-        manualPlaceholder: "https://example.com/articles/example",
+        manualPlaceholder: "https://example.com/zh-CN/articles/example",
         submitUrl: "Submit URL",
         pushing: "Submitting...",
         batchTitle: "Batch push",
@@ -119,7 +119,7 @@ function labels(locale: Locale) {
         googleClientEmail: "Client email",
         googleProjectId: "Project ID",
         manualTitle: "手动推送",
-        manualPlaceholder: "https://example.com/articles/example",
+        manualPlaceholder: "https://example.com/zh-CN/articles/example",
         submitUrl: "提交 URL",
         pushing: "提交中...",
         batchTitle: "批量推送",
@@ -370,7 +370,7 @@ export function SitePushPanel({
           <CardContent>
             <form action={manualAction} className="space-y-4">
               <input type="hidden" name="locale" value={locale} />
-              <Input name="url" placeholder={settings.siteUrl ? `${settings.siteUrl}/articles/example` : text.manualPlaceholder} />
+              <Input name="url" placeholder={settings.siteUrl ? `${settings.siteUrl}/zh-CN/articles/example` : text.manualPlaceholder} />
               <div className="grid gap-3 sm:grid-cols-3">
                 {providers.map((provider) => (
                   <ThemedCheckbox

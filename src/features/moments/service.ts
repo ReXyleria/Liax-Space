@@ -3,6 +3,7 @@ import type { CurrentUser } from "@/lib/auth";
 import { sendTemplatedMail } from "@/lib/mail";
 import { assertPermission, canManageMoments, canViewContent } from "@/lib/permissions";
 import { momentCommentSchema, momentMutationSchema } from "@/features/moments/validators";
+import { localizedPath } from "@/lib/locale-url";
 
 function ensureMomentRuntime() {
   if (!isDatabaseConfigured()) {
@@ -203,7 +204,7 @@ export async function createMomentComment(user: CurrentUser, input: unknown) {
         content: parsed.content,
         momentCreatedAt: moment.createdAt.toLocaleString("zh-CN"),
         momentName: moment.content.slice(0, 40) || "瞬间",
-        momentUrl: "/moments"
+        momentUrl: localizedPath("zh-CN", "/moments")
       }
     });
 

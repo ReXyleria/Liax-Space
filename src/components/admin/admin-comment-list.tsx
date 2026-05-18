@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { CommentStatus } from "@prisma/client";
-import { ChevronDown, Pin, PinOff, Trash2, VolumeX } from "lucide-react";
+import { ChevronDown, Pin, PinOff, Trash2, Volume2, VolumeX } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,11 +10,14 @@ import { Select } from "@/components/ui/select";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { formatDate } from "@/lib/utils";
+import type { Locale } from "@/lib/i18n-messages";
+import { articleHref } from "@/lib/locale-url";
 import {
   type CommentActionState,
   setCommentStatusAction,
   toggleCommentPinnedAction,
-  muteUserAction
+  muteUserAction,
+  unmuteUserAction
 } from "@/features/comments/actions";
 
 type AdminComment = {
@@ -59,7 +62,7 @@ type ArticleGroup = {
 
 const muteInitialState: CommentActionState = { ok: false, message: "" };
 
-export function AdminCommentList({ comments }: { comments: AdminComment[] }) {
+export function AdminCommentList({ comments, locale }: { comments: AdminComment[]; locale: Locale }) {
   const groups = useMemo(() => {
     const map = new Map<string, ArticleGroup>();
     for (const comment of comments) {
@@ -116,7 +119,7 @@ export function AdminCommentList({ comments }: { comments: AdminComment[] }) {
                 <p className="font-medium">
                   {group.slug ? (
                     <Link
-                      href={`/articles/${group.slug}`}
+                      href={articleHref(locale, group.slug)}
                       className="hover:text-primary"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -160,6 +163,10 @@ function CommentRow({ comment }: { comment: AdminComment }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [muteState, muteFormAction, mutePending] = useActionState<CommentActionState, FormData>(
     muteUserAction,
+    muteInitialState
+  );
+  const [unmuteState, unmuteFormAction, unmutePending] = useActionState<CommentActionState, FormData>(
+    unmuteUserAction,
     muteInitialState
   );
 
@@ -225,9 +232,23 @@ function CommentRow({ comment }: { comment: AdminComment }) {
             {mutePending ? "禁言中..." : isMuted ? "更新禁言" : "禁言此用户"}
           </Button>
         </form>
+        {isMuted ? (
+          <form action={unmuteFormAction}>
+            <input type="hidden" name="userId" value={comment.user.id} />
+            <Button type="submit" variant="ghost" className="h-9 px-3 text-xs" disabled={unmutePending}>
+              <Volume2 className="mr-1 h-3.5 w-3.5" />
+              {unmutePending ? "取消中..." : "取消禁言"}
+            </Button>
+          </form>
+        ) : null}
         {muteState.message ? (
           <span className={muteState.ok ? "text-xs text-emerald-600" : "text-xs text-destructive"}>
             {muteState.message}
+          </span>
+        ) : null}
+        {unmuteState.message ? (
+          <span className={unmuteState.ok ? "text-xs text-emerald-600" : "text-xs text-destructive"}>
+            {unmuteState.message}
           </span>
         ) : null}
         <form action={toggleCommentPinnedAction}>

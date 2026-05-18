@@ -62,9 +62,10 @@ export function SiteBackground({
     <>
       <div
         aria-hidden
-        className={cn("pointer-events-none fixed left-0 top-0 -z-20 h-dvh w-screen bg-center bg-cover bg-no-repeat", className)}
+        className={cn("pointer-events-none fixed inset-0 -z-20 h-dvh w-screen bg-center bg-cover bg-no-repeat", className)}
         style={{
           backgroundImage: `url(${image})`,
+          backgroundAttachment: "fixed",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
           backgroundSize: "cover",

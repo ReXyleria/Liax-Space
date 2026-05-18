@@ -8,6 +8,7 @@ import { requireUser } from "@/lib/auth";
 import type { Locale } from "@/lib/i18n";
 import { getAdminLocale } from "@/lib/i18n-server";
 import { assertPermission, canManageArticles } from "@/lib/permissions";
+import { localizedPath, urlLocales } from "@/lib/locale-url";
 import {
   createArticle,
   deleteArticle,
@@ -39,6 +40,19 @@ function parseBoolean(value: FormDataEntryValue | null, defaultValue = false) {
   }
 
   return value === "on" || value === "true";
+}
+
+function revalidatePublicArticleIndex() {
+  for (const locale of urlLocales) {
+    revalidatePath(localizedPath(locale));
+    revalidatePath(localizedPath(locale, "/articles"));
+  }
+}
+
+function revalidatePublicArticle(slug: string) {
+  for (const locale of urlLocales) {
+    revalidatePath(localizedPath(locale, `/articles/${slug}`));
+  }
 }
 
 function parseEditorJson(value: FormDataEntryValue | null) {
@@ -149,8 +163,7 @@ export async function createArticleAction(
     const user = await requireUser();
     const article = await createArticle(user, parsed.data);
     const shouldReturnToList = formData.get("returnToList") === "1" || parsed.data.status === ArticleStatus.PUBLISHED;
-    revalidatePath("/");
-    revalidatePath("/articles");
+    revalidatePublicArticleIndex();
     revalidatePath("/admin/articles");
     return {
       ok: true,
@@ -184,9 +197,8 @@ export async function updateArticleAction(
     const user = await requireUser();
     const article = await updateArticle(user, id, parsed.data);
     const shouldReturnToList = formData.get("returnToList") === "1" || parsed.data.status === ArticleStatus.PUBLISHED;
-    revalidatePath("/");
-    revalidatePath("/articles");
-    revalidatePath(`/articles/${article.slug}`);
+    revalidatePublicArticleIndex();
+    revalidatePublicArticle(article.slug);
     revalidatePath("/admin/articles");
     return {
       ok: true,
@@ -202,8 +214,8 @@ export async function updateArticleAction(
 export async function restoreArticleVersionAction(articleId: string, versionId: string) {
   const user = await requireUser();
   const article = await restoreArticleVersion(user, articleId, versionId);
-  revalidatePath("/articles");
-  revalidatePath(`/articles/${article.slug}`);
+  revalidatePublicArticleIndex();
+  revalidatePublicArticle(article.slug);
   revalidatePath("/admin/articles");
   revalidatePath(`/admin/articles/${article.id}/edit`);
   redirect(`/admin/articles/${article.id}/edit`);
@@ -217,12 +229,13 @@ export async function generateArticleSeoAction(formData: FormData): Promise<Arti
     const title = String(formData.get("title") ?? "").trim();
     const summary = String(formData.get("summary") ?? "").trim();
     const contentHtml = String(formData.get("contentHtml") ?? "");
+    const targetLocale = String(formData.get("targetLocale") ?? "zh-CN");
 
     if (!title && !summary && !contentHtml.trim()) {
       return { ok: false, message: "请先填写标题、摘要或正文后再生成 SEO。" };
     }
 
-    const result = await generateArticleSeo({ title, summary, contentHtml });
+    const result = await generateArticleSeo({ title, summary, contentHtml, targetLocale });
     return {
       ok: true,
       message: "SEO 已生成，可继续手动调整。",
@@ -240,25 +253,28 @@ export async function generateArticleSeoAction(formData: FormData): Promise<Arti
 export async function publishArticleAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get("id") ?? "");
-  await setArticleStatus(user, id, ArticleStatus.PUBLISHED);
+  const article = await setArticleStatus(user, id, ArticleStatus.PUBLISHED);
   revalidatePath("/admin/articles");
-  revalidatePath("/articles");
+  revalidatePublicArticleIndex();
+  revalidatePublicArticle(article.slug);
 }
 
 export async function unpublishArticleAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get("id") ?? "");
-  await setArticleStatus(user, id, ArticleStatus.DRAFT);
+  const article = await setArticleStatus(user, id, ArticleStatus.DRAFT);
   revalidatePath("/admin/articles");
-  revalidatePath("/articles");
+  revalidatePublicArticleIndex();
+  revalidatePublicArticle(article.slug);
 }
 
 export async function deleteArticleAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get("id") ?? "");
-  await deleteArticle(user, id);
+  const article = await deleteArticle(user, id);
   revalidatePath("/admin/articles");
-  revalidatePath("/articles");
+  revalidatePublicArticleIndex();
+  revalidatePublicArticle(article.slug);
 }
 
 export async function updateArticleSettingsAction(
@@ -297,9 +313,10 @@ export async function updateArticleSettingsAction(
 
   try {
     const user = await requireUser();
-    await updateArticleMeta(user, id, parsed.data);
+    const article = await updateArticleMeta(user, id, parsed.data);
     revalidatePath("/admin/articles");
-    revalidatePath("/articles");
+    revalidatePublicArticleIndex();
+    revalidatePublicArticle(article.slug);
     return {
       ok: true,
       message: actionText(locale).articleSaved,

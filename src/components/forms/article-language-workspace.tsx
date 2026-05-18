@@ -15,6 +15,8 @@ type TranslationValue = {
   locale: string;
   title: string;
   summary: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
   contentHtml: string;
   contentJson?: unknown;
   status: TranslationStatus;

@@ -10,6 +10,7 @@ import { z } from "zod";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { assertPermission, canManageSettings } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
+import { localizedPath, urlLocales } from "@/lib/locale-url";
 
 const SETTING_KEYS = {
   baiduEnabled: "sitePush.baidu.enabled",
@@ -671,7 +672,9 @@ export async function pushPublishedArticles(user: CurrentUser) {
     take: 100,
     select: { slug: true }
   });
-  const urls = articles.map((article) => `${settings.siteUrl}/articles/${article.slug}`);
+  const urls = articles.flatMap((article) =>
+    urlLocales.map((locale) => `${settings.siteUrl}${localizedPath(locale, `/articles/${article.slug}`)}`)
+  );
   await pushUrls(urls, providers, SitePushAction.BATCH, settings);
 }
 
@@ -692,7 +695,12 @@ export async function pushArticleUrlAfterPublish(articleId: string) {
   if (!article || article.deletedAt || article.status !== ArticleStatus.PUBLISHED) {
     return;
   }
-  await pushUrls([`${settings.siteUrl}/articles/${article.slug}`], providers, SitePushAction.AUTO, settings);
+  await pushUrls(
+    urlLocales.map((locale) => `${settings.siteUrl}${localizedPath(locale, `/articles/${article.slug}`)}`),
+    providers,
+    SitePushAction.AUTO,
+    settings
+  );
 }
 
 async function pushUrls(

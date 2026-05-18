@@ -65,7 +65,7 @@ export function Select({
   }, [disabled]);
 
   return (
-    <div ref={rootRef} className={cn("relative", className)}>
+    <div ref={rootRef} className={cn("relative", open && "z-[120]", className)}>
       <input type="hidden" name={name} value={value} />
       <button
         type="button"
@@ -86,7 +86,7 @@ export function Select({
       {open ? (
         <div
           role="listbox"
-          className="absolute z-50 mt-2 max-h-64 w-full overflow-auto rounded-lg border bg-card p-1 shadow-xl shadow-primary/10"
+          className="absolute z-[130] mt-2 max-h-64 w-full overflow-auto rounded-lg border bg-card p-1 shadow-xl shadow-primary/10"
         >
           {options.map((option) => (
             <button

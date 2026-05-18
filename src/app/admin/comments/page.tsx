@@ -18,7 +18,7 @@ export default async function AdminCommentsPage() {
       <h1 className="text-3xl font-semibold">{t(locale, "adminCommentManagement")}</h1>
       {error ? <Card className="p-5 text-destructive">{error}</Card> : null}
       {comments.length ? (
-        <AdminCommentList comments={comments} />
+        <AdminCommentList comments={comments} locale={locale} />
       ) : (
         <Card className="p-8 text-center text-muted-foreground">{t(locale, "adminCommentEmpty")}</Card>
       )}

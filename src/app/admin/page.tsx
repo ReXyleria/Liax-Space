@@ -7,6 +7,7 @@ import { getDashboardStats } from "@/features/analytics/service";
 import { requireAdminAccess } from "@/lib/admin-guard";
 import { t, type Locale } from "@/lib/i18n";
 import { getAdminLocale } from "@/lib/i18n-server";
+import { articleHref } from "@/lib/locale-url";
 import { canManageArticles, canViewAnalytics } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
@@ -173,7 +174,7 @@ export default async function AdminDashboardPage({
                     {stats.popularArticles.map((article, index) => (
                       <Link
                         key={article.slug}
-                        href={`/articles/${article.slug}`}
+                        href={articleHref(locale, article.slug)}
                         className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50"
                       >
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">

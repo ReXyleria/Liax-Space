@@ -1,10 +1,19 @@
+"use client";
+
 import { localeLabels, type Locale } from "@/lib/i18n-messages";
 import { setLocaleAction } from "@/features/i18n/actions";
 import { cn } from "@/lib/utils";
+import { usePathname, useSearchParams } from "next/navigation";
 
 export function LanguageSwitcher({ locale, transparent }: { locale: Locale; transparent?: boolean }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
+
   return (
     <form action={setLocaleAction} className="flex rounded-full border border-white/20 p-0.5 text-xs">
+      <input type="hidden" name="currentPath" value={pathname} />
+      <input type="hidden" name="currentSearch" value={search ? `?${search}` : ""} />
       {(["zh-CN", "en"] as Locale[]).map((item) => (
         <button
           key={item}

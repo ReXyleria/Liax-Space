@@ -422,6 +422,7 @@ export function ArticleEditorForm({
     formData.set("title", draft.title);
     formData.set("summary", draft.summary);
     formData.set("contentHtml", draft.contentHtml);
+    formData.set("targetLocale", "zh-CN");
 
     startSeoTransition(() => {
       void generateArticleSeoAction(formData)

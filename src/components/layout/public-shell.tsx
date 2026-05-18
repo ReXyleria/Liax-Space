@@ -13,6 +13,8 @@ import { getSettingsMap } from "@/features/settings/service";
 import { getCurrentUser } from "@/lib/auth";
 import { t } from "@/lib/i18n";
 import { getCurrentLocale } from "@/lib/i18n-server";
+import type { Locale } from "@/lib/i18n-messages";
+import { localizedPath } from "@/lib/locale-url";
 import { cn } from "@/lib/utils";
 
 function getProfileHref(user: Awaited<ReturnType<typeof getCurrentUser>>) {
@@ -58,21 +60,23 @@ function FilingLink({
 export async function PublicShell({
   children,
   transparentHeader = false,
-  homePage = false
+  homePage = false,
+  locale
 }: {
   children: React.ReactNode;
   transparentHeader?: boolean;
   homePage?: boolean;
+  locale?: Locale;
 }) {
-  const [{ settings }, { settings: codeInjection }, user, locale] = await Promise.all([
+  const [{ settings }, { settings: codeInjection }, user, resolvedLocale] = await Promise.all([
     getSettingsMap(),
     getCodeInjectionMap(),
     getCurrentUser(),
-    getCurrentLocale()
+    locale ? Promise.resolve(locale) : getCurrentLocale()
   ]);
 
   const profileHref = getProfileHref(user);
-  const displayName = user?.nickname ?? t(locale, "login");
+  const displayName = user?.nickname ?? t(resolvedLocale, "login");
   const displayAvatar = user?.avatar;
   const icp = settings["record.icp"];
   const police = settings["record.police"];
@@ -82,12 +86,12 @@ export async function PublicShell({
   const siteMark = siteTitle.trim().slice(0, 2).toUpperCase() || "PB";
   const sharedBackground = resolveSiteBackground(settings);
   const navItems = [
-    { href: "/", label: t(locale, "home") },
-    { href: "/articles", label: t(locale, "articles") },
-    { href: "/tags", label: t(locale, "tags") },
-    { href: "/moments", label: t(locale, "moments") },
-    { href: "/guestbook", label: t(locale, "guestbook") },
-    { href: "/archives", label: t(locale, "archives") }
+    { href: localizedPath(resolvedLocale), label: t(resolvedLocale, "home") },
+    { href: localizedPath(resolvedLocale, "/articles"), label: t(resolvedLocale, "articles") },
+    { href: localizedPath(resolvedLocale, "/tags"), label: t(resolvedLocale, "tags") },
+    { href: localizedPath(resolvedLocale, "/moments"), label: t(resolvedLocale, "moments") },
+    { href: localizedPath(resolvedLocale, "/guestbook"), label: t(resolvedLocale, "guestbook") },
+    { href: localizedPath(resolvedLocale, "/archives"), label: t(resolvedLocale, "archives") }
   ];
   const footerInjectionEnabled = getEnabledCodeInjection(codeInjection, "code.globalFooter");
 
@@ -105,7 +109,7 @@ export async function PublicShell({
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <MobilePublicNav
             navItems={navItems}
-            locale={locale}
+            locale={resolvedLocale}
             profileHref={profileHref}
             displayName={displayName}
             displayAvatar={displayAvatar}
@@ -114,7 +118,7 @@ export async function PublicShell({
             siteMark={siteMark}
           />
 
-          <Link href="/" className="flex min-w-0 items-center gap-3 text-base font-semibold">
+          <Link href={localizedPath(resolvedLocale)} className="flex min-w-0 items-center gap-3 text-base font-semibold">
             <span
               className={cn(
                 "grid h-9 w-9 place-items-center overflow-hidden rounded-lg text-sm shadow-sm",
@@ -144,7 +148,7 @@ export async function PublicShell({
             )}
           >
             <div className="hidden items-center gap-4 md:flex">
-              <LanguageSwitcher locale={locale} transparent={transparentHeader} />
+              <LanguageSwitcher locale={resolvedLocale} transparent={transparentHeader} />
               {navItems.map((item) => (
                 <Link
                   key={item.href}
@@ -155,7 +159,7 @@ export async function PublicShell({
                 </Link>
               ))}
             </div>
-            <PublicSearch locale={locale} transparent={transparentHeader} />
+            <PublicSearch locale={resolvedLocale} transparent={transparentHeader} />
             <Link
               className={cn(
                 "inline-flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 shadow-sm",
@@ -225,7 +229,7 @@ export async function PublicShell({
                   />
                 </>
               ) : (
-                locale === "en" ? "Filing information not configured yet." : "备案信息待配置。"
+                resolvedLocale === "en" ? "Filing information not configured yet." : "备案信息待配置。"
               )}
             </span>
           </div>

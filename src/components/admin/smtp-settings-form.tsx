@@ -99,7 +99,7 @@ export function SmtpSettingsForm({
 
   return (
     <form action={saveAction} className="space-y-6 pb-24" aria-busy={isSaving || isTesting}>
-      <Card>
+      <Card className="relative z-20">
         <CardHeader className="border-b bg-muted/35">
           <CardTitle>SMTP</CardTitle>
         </CardHeader>
@@ -159,7 +159,7 @@ export function SmtpSettingsForm({
         </CardContent>
       </Card>
 
-      <Card className="p-5">
+      <Card className="relative z-0 p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <p className="font-medium">{text.test}</p>

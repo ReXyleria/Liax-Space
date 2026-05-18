@@ -1,28 +1,37 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Search, Sparkles } from "lucide-react";
 import { MotionItem, MotionList, MotionPage } from "@/components/animations/reveal";
 import { PublicShell } from "@/components/layout/public-shell";
 import { Card } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth";
 import { t } from "@/lib/i18n";
-import { getCurrentLocale } from "@/lib/i18n-server";
 import { listPublishedArticles } from "@/features/articles/service";
+import { articleHref, urlLocaleToLocale } from "@/lib/locale-url";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function ArticlesPage({
+  params: routeParams,
   searchParams
 }: {
+  params: Promise<{ locale: string }>;
   searchParams?: Promise<{ q?: string; tag?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const [user, locale] = await Promise.all([getCurrentUser(), getCurrentLocale()]);
+  const { locale: urlLocale } = await routeParams;
+  const locale = urlLocaleToLocale(urlLocale);
+  if (!locale) {
+    notFound();
+  }
+
+  const user = await getCurrentUser();
   const { articles, error } = await listPublishedArticles({ q: params.q, tag: params.tag, sort: "newest" }, user, locale);
   const activeTag = params.tag?.trim();
 
   return (
-    <PublicShell>
+    <PublicShell locale={locale}>
       <MotionPage>
         <main className="mx-auto max-w-6xl px-6 py-12">
           <section className="mb-10 overflow-hidden rounded-lg border border-white/70 bg-card/78 shadow-soft backdrop-blur-xl">
@@ -59,7 +68,7 @@ export default async function ArticlesPage({
             <MotionList className="grid gap-5 md:grid-cols-2">
               {articles.map((article) => (
                 <MotionItem key={article.id}>
-                  <Link href={`/articles/${article.slug}`}>
+                  <Link href={articleHref(locale, article.slug)}>
                     <Card className="h-full overflow-hidden p-0 transition hover:-translate-y-0.5 hover:border-primary/40">
                       <div
                         className="h-48 bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-100"

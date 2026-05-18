@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { contactItemsSchema, serializeContactItems } from "@/features/settings/contact-items";
 import { updateIdentitySettings, updateSettings } from "@/features/settings/service";
 import { settingsUpdateSchema } from "@/features/settings/validators";
+import { localizedPath, urlLocales } from "@/lib/locale-url";
 
 export type SettingsActionState = {
   ok: boolean;
@@ -14,11 +15,14 @@ export type SettingsActionState = {
 function revalidateSettingsPaths() {
   revalidateTag("settings");
   revalidatePath("/", "layout");
+  for (const locale of urlLocales) {
+    revalidatePath(localizedPath(locale), "layout");
+    revalidatePath(localizedPath(locale, "/contact"));
+  }
   revalidatePath("/admin", "layout");
   revalidatePath("/admin/settings/basic");
   revalidatePath("/admin/settings/homepage");
   revalidatePath("/admin/settings/footer");
-  revalidatePath("/contact");
 }
 
 export async function updateSettingsAction(

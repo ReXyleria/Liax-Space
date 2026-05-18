@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { ZodError, z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { localizedPath, urlLocales } from "@/lib/locale-url";
 import {
   translateArticle,
   upsertManualArticleTranslation
@@ -19,6 +20,8 @@ const translationEditSchema = z.object({
   locale: z.string().min(1),
   title: z.string().trim().min(1, "Translation title is required."),
   summary: z.string().optional().nullable(),
+  seoTitle: z.string().max(120, "SEO title cannot exceed 120 characters.").optional().default(""),
+  seoDescription: z.string().max(300, "SEO description cannot exceed 300 characters.").optional().default(""),
   contentHtml: z.string().min(1, "Translation content is required."),
   contentJson: z.unknown()
 });
@@ -35,6 +38,18 @@ function zodFieldErrors(error: ZodError) {
   return error.flatten().fieldErrors as Record<string, string[]>;
 }
 
+function revalidateLocalizedArticleIndex() {
+  for (const locale of urlLocales) {
+    revalidatePath(localizedPath(locale, "/articles"));
+  }
+}
+
+function revalidateLocalizedArticleDetail(slug: string) {
+  for (const locale of urlLocales) {
+    revalidatePath(localizedPath(locale, `/articles/${slug}`));
+  }
+}
+
 export async function translateArticleAction(
   _previousState: ArticleTranslationActionState,
   formData: FormData
@@ -43,9 +58,10 @@ export async function translateArticleAction(
     const user = await requireUser();
     const articleId = String(formData.get("articleId") ?? "");
     const locale = String(formData.get("locale") ?? "en");
-    await translateArticle(user, articleId, locale);
+    const result = await translateArticle(user, articleId, locale);
     revalidatePath(`/admin/articles/${articleId}/edit`);
-    revalidatePath("/articles");
+    revalidateLocalizedArticleIndex();
+    revalidateLocalizedArticleDetail(result.articleSlug);
     return { ok: true, message: "译文已重新生成。" };
   } catch (error) {
     return {
@@ -64,6 +80,8 @@ export async function updateArticleTranslationAction(
     locale: formData.get("locale") ?? "en",
     title: formData.get("title"),
     summary: formData.get("summary") ?? "",
+    seoTitle: formData.get("seoTitle") ?? "",
+    seoDescription: formData.get("seoDescription") ?? "",
     contentHtml: formData.get("translationContentHtml") ?? formData.get("contentHtml") ?? "",
     contentJson: parseEditorJson(formData.get("translationContentJson") ?? formData.get("contentJson"))
   });
@@ -78,12 +96,13 @@ export async function updateArticleTranslationAction(
 
   try {
     const user = await requireUser();
-    await upsertManualArticleTranslation(user, {
+    const result = await upsertManualArticleTranslation(user, {
       ...parsed.data,
       contentJson: parsed.data.contentJson ?? { type: "doc", content: [] }
     });
     revalidatePath(`/admin/articles/${parsed.data.articleId}/edit`);
-    revalidatePath("/articles");
+    revalidateLocalizedArticleIndex();
+    revalidateLocalizedArticleDetail(result.articleSlug);
     return { ok: true, message: "译文已保存。" };
   } catch (error) {
     return {

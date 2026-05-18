@@ -67,7 +67,7 @@ export function CodeInjectionRenderer({
 
     try {
       removeManagedNodes();
-      if (pathname.startsWith("/articles/")) {
+      if (/^\/(?:zh-CN|en-US)\/articles\//.test(pathname)) {
         appendHtmlToHead(articleHead);
       }
     } catch (error) {

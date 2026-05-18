@@ -61,6 +61,8 @@ export default async function EditArticlePage({
         locale: translation.locale,
         title: translation.title,
         summary: translation.summary,
+        seoTitle: translation.seoTitle,
+        seoDescription: translation.seoDescription,
         contentHtml: translation.contentHtml,
         contentJson: translation.contentJson,
         status: translation.status,

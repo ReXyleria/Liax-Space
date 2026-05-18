@@ -1,19 +1,30 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Hash, Tags } from "lucide-react";
 import { MotionItem, MotionList, MotionPage } from "@/components/animations/reveal";
 import { PublicShell } from "@/components/layout/public-shell";
 import { Card } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth";
 import { listPublicTags } from "@/features/articles/service";
+import { localizedPath, urlLocaleToLocale } from "@/lib/locale-url";
 
 export const dynamic = "force-dynamic";
 
-export default async function TagsPage() {
+export default async function TagsPage({
+  params
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: urlLocale } = await params;
+  const locale = urlLocaleToLocale(urlLocale);
+  if (!locale) {
+    notFound();
+  }
   const user = await getCurrentUser();
   const { tags, error } = await listPublicTags(user);
 
   return (
-    <PublicShell>
+    <PublicShell locale={locale}>
       <MotionPage>
         <main className="mx-auto max-w-6xl px-6 py-12">
           <section className="mb-10 overflow-hidden rounded-lg border border-white/70 bg-card/78 shadow-soft backdrop-blur-xl">
@@ -39,7 +50,7 @@ export default async function TagsPage() {
             <MotionList className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {tags.map((tag) => (
                 <MotionItem key={tag.id}>
-                  <Link href={`/articles?tag=${encodeURIComponent(tag.slug)}`}>
+                  <Link href={localizedPath(locale, `/articles?tag=${encodeURIComponent(tag.slug)}`)}>
                     <Card className="flex h-full items-center justify-between gap-4 p-5">
                       <div className="flex min-w-0 items-center gap-3">
                         <span

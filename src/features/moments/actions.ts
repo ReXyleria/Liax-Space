@@ -6,6 +6,7 @@ import { ZodError } from "zod";
 import { requireUser } from "@/lib/auth";
 import { getSafeDeviceName } from "@/lib/device";
 import { createMoment, createMomentComment, deleteMoment, toggleMomentLike, updateMoment } from "@/features/moments/service";
+import { localizedPath, urlLocales } from "@/lib/locale-url";
 
 export type MomentActionState = {
   ok: boolean;
@@ -52,7 +53,9 @@ function parseMomentPayload(formData: FormData) {
 }
 
 function revalidateMomentPaths() {
-  revalidatePath("/moments");
+  for (const locale of urlLocales) {
+    revalidatePath(localizedPath(locale, "/moments"));
+  }
   revalidatePath("/admin/moments");
 }
 
@@ -112,7 +115,7 @@ export async function deleteMomentAction(
 export async function toggleMomentLikeAction(momentId: string) {
   const user = await requireUser();
   await toggleMomentLike(user, momentId);
-  revalidatePath("/moments");
+  revalidateMomentPaths();
 }
 
 export async function createMomentCommentAction(formData: FormData) {
@@ -123,5 +126,5 @@ export async function createMomentCommentAction(formData: FormData) {
     content: formData.get("content"),
     deviceName: getSafeDeviceName(headerStore.get("user-agent"))
   });
-  revalidatePath("/moments");
+  revalidateMomentPaths();
 }

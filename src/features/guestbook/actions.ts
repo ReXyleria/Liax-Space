@@ -5,6 +5,7 @@ import { ZodError } from "zod";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { createGuestbookMessage, moderateGuestbookMessage } from "@/features/guestbook/service";
 import { guestbookCreateSchema } from "@/features/guestbook/validators";
+import { localizedPath, urlLocales } from "@/lib/locale-url";
 
 export type GuestbookActionState = {
   ok: boolean;
@@ -32,6 +33,13 @@ function stateFromError(error: unknown, fallback: string): GuestbookActionState 
   };
 }
 
+function revalidateGuestbookPaths() {
+  for (const locale of urlLocales) {
+    revalidatePath(localizedPath(locale, "/guestbook"));
+  }
+  revalidatePath("/admin/guestbook");
+}
+
 export async function createGuestbookMessageAction(
   _previousState: GuestbookActionState,
   formData: FormData
@@ -55,8 +63,7 @@ export async function createGuestbookMessageAction(
   try {
     const user = await getCurrentUser();
     await createGuestbookMessage(parsed.data, user);
-    revalidatePath("/guestbook");
-    revalidatePath("/admin/guestbook");
+    revalidateGuestbookPaths();
     return {
       ok: true,
       message: parsed.data.notifyOnly ? "重要留言已发送到邮箱。" : "留言已提交。",
@@ -78,8 +85,7 @@ export async function moderateGuestbookMessageAction(
       reply: formData.get("reply") ?? "",
       status: formData.get("status")
     });
-    revalidatePath("/admin/guestbook");
-    revalidatePath("/guestbook");
+    revalidateGuestbookPaths();
     return { ok: true, message: "留言已保存。", fieldErrors: {} };
   } catch (error) {
     return stateFromError(error, "留言保存失败，请稍后重试。");

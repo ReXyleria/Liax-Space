@@ -4,6 +4,7 @@ type SeoInput = {
   title: string;
   summary: string;
   contentHtml: string;
+  targetLocale?: string;
 };
 
 type SeoResult = {
@@ -58,14 +59,15 @@ export async function generateArticleSeo(input: SeoInput): Promise<SeoResult> {
       {
         role: "system",
         content:
-          "You generate SEO metadata for blog articles. Return strict JSON only: {\"seoTitle\":\"...\",\"seoDescription\":\"...\"}. Do not use markdown. seoTitle must be <=120 characters. seoDescription must be <=300 characters."
+          `You generate SEO metadata for blog articles. Return strict JSON only: {"seoTitle":"...","seoDescription":"..."}. Do not use markdown. seoTitle must be <=120 characters. seoDescription must be <=300 characters. Write the metadata in ${input.targetLocale?.toLowerCase().startsWith("en") ? "English" : "Simplified Chinese"}.`
       },
       {
         role: "user",
         content: JSON.stringify({
           title: input.title,
           summary: input.summary,
-          contentText: stripHtml(input.contentHtml).slice(0, 6000)
+          contentText: stripHtml(input.contentHtml).slice(0, 6000),
+          targetLocale: input.targetLocale ?? "zh-CN"
         })
       }
     ],

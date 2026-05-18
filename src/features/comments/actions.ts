@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { toggleCommentPin, updateCommentStatus, muteUser } from "@/features/comments/service";
+import { toggleCommentPin, updateCommentStatus, muteUser, unmuteUser } from "@/features/comments/service";
 
 export type CommentActionState = {
   ok: boolean;
@@ -53,6 +53,7 @@ export async function muteUserAction(
 
     const mutedUntil = await muteUser(user, { userId: targetUserId, duration });
     revalidatePath("/admin/comments");
+    revalidatePath("/admin/users");
 
     const durationLabels: Record<string, string> = {
       "1h": "1 小时",
@@ -71,6 +72,30 @@ export async function muteUserAction(
     return {
       ok: false,
       message: error instanceof Error ? error.message : "禁言操作失败。"
+    };
+  }
+}
+
+export async function unmuteUserAction(
+  _previousState: CommentActionState,
+  formData: FormData
+): Promise<CommentActionState> {
+  try {
+    const user = await requireUser();
+    const targetUserId = String(formData.get("userId") ?? "");
+
+    await unmuteUser(user, { userId: targetUserId });
+    revalidatePath("/admin/comments");
+    revalidatePath("/admin/users");
+
+    return {
+      ok: true,
+      message: "已取消该用户的禁言。"
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "取消禁言失败。"
     };
   }
 }

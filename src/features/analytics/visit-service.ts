@@ -70,7 +70,7 @@ function getReferrerParts(value: unknown) {
 }
 
 async function resolveArticleId(path: string) {
-  const match = path.match(/^\/articles\/([^/?#]+)/);
+  const match = path.match(/^\/(?:zh-CN|en-US)\/articles\/([^/?#]+)/);
   const slug = match?.[1] ? decodeURIComponent(match[1]) : "";
   if (!slug) {
     return null;

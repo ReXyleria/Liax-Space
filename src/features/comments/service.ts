@@ -1,9 +1,16 @@
 import { CommentStatus } from "@prisma/client";
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
-import { assertPermission, canManageComments } from "@/lib/permissions";
+import { assertPermission, canManageComments, canManageUsers } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
 import { sendTemplatedMail } from "@/lib/mail";
-import { commentCreateSchema, commentStatusSchema, muteUserSchema, MUTE_DURATIONS } from "@/features/comments/validators";
+import {
+  commentCreateSchema,
+  commentStatusSchema,
+  muteUserSchema,
+  MUTE_DURATIONS,
+  unmuteUserSchema
+} from "@/features/comments/validators";
+import { articleHref } from "@/lib/locale-url";
 
 export async function listArticleComments(articleId: string) {
   if (!isDatabaseConfigured()) {
@@ -98,7 +105,7 @@ export async function createComment(user: CurrentUser, input: unknown) {
         commenter: user.nickname,
         content: parsed.content,
         articleTitle: article.title,
-        articleUrl: `/articles/${article.slug}`
+        articleUrl: articleHref("zh-CN", article.slug)
       }
     });
     if (!mailResult.ok) {
@@ -159,11 +166,22 @@ export async function updateCommentStatus(user: CurrentUser, input: unknown) {
 }
 
 export async function muteUser(user: CurrentUser, input: unknown) {
-  assertPermission(canManageComments(user), "你没有权限管理评论。");
+  assertPermission(canManageComments(user) || canManageUsers(user), "你没有权限管理禁言。");
   if (!isDatabaseConfigured()) {
     throw new Error("DATABASE_URL 未配置。");
   }
   const parsed = muteUserSchema.parse(input);
+  if (parsed.userId === user.id) {
+    throw new Error("管理员不能禁言自己。");
+  }
+
+  const target = await db.user.findUnique({
+    where: { id: parsed.userId },
+    select: { id: true }
+  });
+  if (!target) {
+    throw new Error("用户不存在。");
+  }
 
   const durationMs = MUTE_DURATIONS[parsed.duration] ?? 0;
 
@@ -180,4 +198,25 @@ export async function muteUser(user: CurrentUser, input: unknown) {
   });
 
   return mutedUntil;
+}
+
+export async function unmuteUser(user: CurrentUser, input: unknown) {
+  assertPermission(canManageComments(user) || canManageUsers(user), "你没有权限管理禁言。");
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL 未配置。");
+  }
+
+  const parsed = unmuteUserSchema.parse(input);
+  const target = await db.user.findUnique({
+    where: { id: parsed.userId },
+    select: { id: true }
+  });
+  if (!target) {
+    throw new Error("用户不存在。");
+  }
+
+  await db.user.update({
+    where: { id: parsed.userId },
+    data: { mutedUntil: null }
+  });
 }
