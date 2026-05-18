@@ -142,11 +142,14 @@ async function exportData() {
       articleTags: await db.articleTag.findMany(),
       articleVersions: await db.articleVersion.findMany(),
       articleTranslations: await db.articleTranslation.findMany(),
+      articleTranslationJobs: await db.articleTranslationJob.findMany(),
       comments: await db.comment.findMany(),
       moments: await db.moment.findMany(),
       momentLikes: await db.momentLike.findMany(),
       momentComments: await db.momentComment.findMany(),
       guestbookMessages: await db.guestbookMessage.findMany(),
+      guestbookComments: await db.guestbookComment.findMany(),
+      guestbookLikes: await db.guestbookLike.findMany(),
       visitLogs: await db.visitLog.findMany(),
       mediaAssets: await db.mediaAsset.findMany(),
       mediaReferences: await db.mediaReference.findMany()
@@ -467,11 +470,14 @@ export async function restoreBackup(user: CurrentUser, bytes: Buffer) {
     await tx.comment.deleteMany();
     await tx.articleAllowedIdentity.deleteMany();
     await tx.articleTag.deleteMany();
+    await tx.articleTranslationJob.deleteMany();
     await tx.articleTranslation.deleteMany();
     await tx.articleVersion.deleteMany();
     await tx.moment.deleteMany();
     await tx.article.deleteMany();
     await tx.tag.deleteMany();
+    await tx.guestbookLike.deleteMany();
+    await tx.guestbookComment.deleteMany();
     await tx.guestbookMessage.deleteMany();
     await tx.mailSendLog.deleteMany();
     await tx.mailTemplate.deleteMany();
@@ -505,11 +511,14 @@ export async function restoreBackup(user: CurrentUser, bytes: Buffer) {
     await insertRows(tx.articleTag, asRows(data, "articleTags"));
     await insertRows(tx.articleVersion, asRows(data, "articleVersions"));
     await insertRows(tx.articleTranslation, asRows(data, "articleTranslations"));
+    await insertRows(tx.articleTranslationJob, asRows(data, "articleTranslationJobs"));
     await insertRows(tx.comment, asRows(data, "comments"));
     await insertRows(tx.moment, asRows(data, "moments"));
     await insertRows(tx.momentLike, asRows(data, "momentLikes"));
     await insertRows(tx.momentComment, asRows(data, "momentComments"));
     await insertRows(tx.guestbookMessage, asRows(data, "guestbookMessages"));
+    await insertRows(tx.guestbookComment, asRows(data, "guestbookComments"));
+    await insertRows(tx.guestbookLike, asRows(data, "guestbookLikes"));
     await insertRows(tx.visitLog, asRows(data, "visitLogs"));
     await insertRows(tx.mediaAsset, asRows(data, "mediaAssets"));
     await insertRows(tx.mediaReference, asRows(data, "mediaReferences"));

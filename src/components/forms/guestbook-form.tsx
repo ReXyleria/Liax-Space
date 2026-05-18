@@ -51,14 +51,12 @@ export function GuestbookForm({
       <ThemedCheckbox
         name="notifyOnly"
         value="true"
-        label="需要发送邮箱"
+        label="仅发送给站主"
         description="勾选后这条留言不会在前台公开展示，会直接发送到管理员邮箱。"
       />
       <FieldError messages={state.fieldErrors.notifyOnly} />
       {state.message ? (
-        <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>
-          {state.message}
-        </p>
+        <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{state.message}</p>
       ) : null}
       <Button type="submit" disabled={isPending}>
         {isPending ? "提交中..." : "提交留言"}

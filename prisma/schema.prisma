@@ -162,6 +162,8 @@ model User {
   momentLikes        MomentLike[]
   momentComments     MomentComment[]
   guestbookMessages  GuestbookMessage[]
+  guestbookComments  GuestbookComment[]
+  guestbookLikes     GuestbookLike[]
   passkeys           PasskeyCredential[]
   totpRecovery       TotpRecoveryCode[]
   webauthnChallenges WebAuthnChallenge[]
@@ -512,23 +514,53 @@ model MomentComment {
 }
 
 model GuestbookMessage {
-  id         String          @id @default(cuid())
+  id         String             @id @default(cuid())
   userId     String?
   nickname   String
   email      String
-  content    String          @db.Text
-  reply      String?         @db.Text
-  notifyOnly Boolean         @default(false)
-  status     GuestbookStatus @default(PENDING)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  content    String             @db.Text
+  reply      String?            @db.Text
+  notifyOnly Boolean            @default(false)
+  status     GuestbookStatus    @default(PENDING)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
   deletedAt  DateTime?
-  user       User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user       User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  comments   GuestbookComment[]
+  likes      GuestbookLike[]
 
   @@index([status])
   @@index([deletedAt])
   @@index([userId])
   @@index([notifyOnly, status])
+}
+
+model GuestbookComment {
+  id        String           @id @default(cuid())
+  messageId String
+  userId    String?
+  nickname  String
+  email     String
+  content   String           @db.Text
+  createdAt DateTime         @default(now())
+  deletedAt DateTime?
+  message   GuestbookMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([messageId, createdAt])
+  @@index([userId])
+  @@index([deletedAt])
+}
+
+model GuestbookLike {
+  messageId String
+  userId    String
+  createdAt DateTime         @default(now())
+  message   GuestbookMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+  @@index([userId])
 }
 
 model Setting {

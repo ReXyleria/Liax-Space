@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArticleTranslationJobStatus } from "@prisma/client";
-import { Languages, RotateCcw } from "lucide-react";
+import { Check, Languages, RotateCcw } from "lucide-react";
 import { ArticleActionsMenu, type ArticleRowData } from "@/components/admin/article-actions-menu";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { Select } from "@/components/ui/select";
 import { articleStatusLabel } from "@/lib/article-status";
 import { contentVisibilityBadgeClass, contentVisibilityLabel } from "@/lib/content-visibility";
 import type { Locale } from "@/lib/i18n-messages";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 type TranslationJob = {
   id: string;
@@ -68,6 +68,45 @@ function statusClass(status?: ArticleTranslationJobStatus) {
 
 async function readJson(response: Response) {
   return response.json().catch(() => ({ ok: false, message: "Invalid response." }));
+}
+
+function SelectionControl({
+  checked,
+  onCheckedChange,
+  label,
+  compact = false
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  label: string;
+  compact?: boolean;
+}) {
+  return (
+    <label
+      className={cn(
+        "group inline-flex cursor-pointer items-center gap-2 rounded-md border bg-background/80 text-sm font-medium shadow-sm shadow-slate-950/5 transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 active:translate-y-0 active:scale-[0.99]",
+        checked && "border-primary/50 bg-primary/10 text-primary",
+        compact ? "h-9 w-9 justify-center p-0" : "px-3 py-2"
+      )}
+    >
+      <input
+        type="checkbox"
+        className="sr-only"
+        checked={checked}
+        onChange={(event) => onCheckedChange(event.currentTarget.checked)}
+        aria-label={label}
+      />
+      <span
+        className={cn(
+          "grid h-5 w-5 shrink-0 place-items-center rounded-md border border-input bg-card text-transparent transition",
+          checked && "border-primary bg-primary text-primary-foreground"
+        )}
+      >
+        <Check className="h-3.5 w-3.5" />
+      </span>
+      {compact ? null : <span>{label}</span>}
+    </label>
+  );
 }
 
 export function AdminArticleTable({
@@ -179,15 +218,11 @@ export function AdminArticleTable({
   return (
     <Card className="overflow-visible">
       <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
-        <label className="flex items-center gap-3 text-sm font-medium">
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-primary"
-            checked={allSelected}
-            onChange={(event) => setSelectedIds(event.currentTarget.checked ? articleIds : [])}
-          />
-          <span>{selectedIds.length ? `${selectedIds.length} selected` : "Select articles"}</span>
-        </label>
+        <SelectionControl
+          checked={allSelected}
+          onCheckedChange={(checked) => setSelectedIds(checked ? articleIds : [])}
+          label={selectedIds.length ? `${selectedIds.length} selected` : "Select articles"}
+        />
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Select
             name="translationTargetLocale"
@@ -213,12 +248,11 @@ export function AdminArticleTable({
               key={article.id}
               className="grid gap-3 p-5 transition hover:bg-muted/60 md:grid-cols-[28px_minmax(0,1fr)_120px_140px_140px_180px_64px] md:items-center"
             >
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4 accent-primary md:mt-0"
+              <SelectionControl
                 checked={selectedIds.includes(article.id)}
-                onChange={(event) => toggleArticle(article.id, event.currentTarget.checked)}
-                aria-label={`Select ${article.title}`}
+                onCheckedChange={(checked) => toggleArticle(article.id, checked)}
+                label={`Select ${article.title}`}
+                compact
               />
               <div>
                 <div className="flex flex-wrap items-center gap-2">

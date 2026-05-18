@@ -3,7 +3,12 @@ import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import { assertPermission, canManageGuestbook } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
 import { sendTemplatedMail } from "@/lib/mail";
-import { guestbookCreateSchema, guestbookModerationSchema } from "@/features/guestbook/validators";
+import {
+  guestbookCommentCreateSchema,
+  guestbookCreateSchema,
+  guestbookLikeSchema,
+  guestbookModerationSchema
+} from "@/features/guestbook/validators";
 
 async function getAdminEmail() {
   return db.user.findFirst({
@@ -65,6 +70,19 @@ export async function listApprovedGuestbookMessages() {
       include: {
         user: {
           select: { nickname: true, avatar: true }
+        },
+        comments: {
+          where: { deletedAt: null },
+          include: {
+            user: { select: { nickname: true, avatar: true } }
+          },
+          orderBy: { createdAt: "asc" }
+        },
+        likes: {
+          select: { userId: true }
+        },
+        _count: {
+          select: { comments: true, likes: true }
         }
       },
       orderBy: { createdAt: "desc" }
@@ -106,10 +124,18 @@ export async function listAdminGuestbookMessages(user: CurrentUser) {
 
   return withDatabase(async () => ({
     messages: await db.guestbookMessage.findMany({
-      where: { deletedAt: null },
       include: {
         user: {
           select: { nickname: true, avatar: true }
+        },
+        comments: {
+          include: {
+            user: { select: { nickname: true, avatar: true } }
+          },
+          orderBy: { createdAt: "asc" }
+        },
+        _count: {
+          select: { comments: true, likes: true }
         }
       },
       orderBy: { createdAt: "desc" }
@@ -155,4 +181,85 @@ export async function moderateGuestbookMessage(user: CurrentUser, input: unknown
   }
 
   return updated;
+}
+
+export async function createGuestbookComment(input: unknown, user?: CurrentUser | null) {
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL 未配置。");
+  }
+
+  const parsed = guestbookCommentCreateSchema.parse(input);
+  const message = await db.guestbookMessage.findFirst({
+    where: {
+      id: parsed.messageId,
+      status: GuestbookStatus.APPROVED,
+      notifyOnly: false,
+      deletedAt: null
+    },
+    select: { id: true }
+  });
+
+  if (!message) {
+    throw new Error("这条留言不可评论或不存在。");
+  }
+
+  return db.guestbookComment.create({
+    data: {
+      messageId: parsed.messageId,
+      nickname: parsed.nickname,
+      email: parsed.email,
+      content: parsed.content,
+      userId: user?.id ?? null
+    }
+  });
+}
+
+export async function toggleGuestbookLike(user: CurrentUser, input: unknown) {
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL 未配置。");
+  }
+
+  const parsed = guestbookLikeSchema.parse(input);
+  const message = await db.guestbookMessage.findFirst({
+    where: {
+      id: parsed.messageId,
+      status: GuestbookStatus.APPROVED,
+      notifyOnly: false,
+      deletedAt: null
+    },
+    select: { id: true }
+  });
+
+  if (!message) {
+    throw new Error("这条留言不可点赞或不存在。");
+  }
+
+  const existing = await db.guestbookLike.findUnique({
+    where: {
+      messageId_userId: {
+        messageId: parsed.messageId,
+        userId: user.id
+      }
+    }
+  });
+
+  if (existing) {
+    await db.guestbookLike.delete({
+      where: {
+        messageId_userId: {
+          messageId: parsed.messageId,
+          userId: user.id
+        }
+      }
+    });
+    return { liked: false };
+  }
+
+  await db.guestbookLike.create({
+    data: {
+      messageId: parsed.messageId,
+      userId: user.id
+    }
+  });
+  return { liked: true };
 }

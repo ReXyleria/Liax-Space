@@ -3,8 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
 import { getCurrentUser, requireUser } from "@/lib/auth";
-import { createGuestbookMessage, moderateGuestbookMessage } from "@/features/guestbook/service";
-import { guestbookCreateSchema } from "@/features/guestbook/validators";
+import {
+  createGuestbookComment,
+  createGuestbookMessage,
+  moderateGuestbookMessage,
+  toggleGuestbookLike
+} from "@/features/guestbook/service";
+import { guestbookCommentCreateSchema, guestbookCreateSchema, guestbookLikeSchema } from "@/features/guestbook/validators";
 import { localizedPath, urlLocales } from "@/lib/locale-url";
 
 export type GuestbookActionState = {
@@ -89,5 +94,65 @@ export async function moderateGuestbookMessageAction(
     return { ok: true, message: "留言已保存。", fieldErrors: {} };
   } catch (error) {
     return stateFromError(error, "留言保存失败，请稍后重试。");
+  }
+}
+
+export async function createGuestbookCommentAction(
+  _previousState: GuestbookActionState,
+  formData: FormData
+): Promise<GuestbookActionState> {
+  const input = {
+    messageId: formData.get("messageId"),
+    nickname: formData.get("nickname"),
+    email: formData.get("email"),
+    content: formData.get("content")
+  };
+  const parsed = guestbookCommentCreateSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "请检查评论表单。",
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>
+    };
+  }
+
+  try {
+    const user = await getCurrentUser();
+    await createGuestbookComment(parsed.data, user);
+    revalidateGuestbookPaths();
+    return { ok: true, message: "评论已发布。", fieldErrors: {} };
+  } catch (error) {
+    return stateFromError(error, "评论提交失败，请稍后重试。");
+  }
+}
+
+export async function toggleGuestbookLikeAction(
+  _previousState: GuestbookActionState,
+  formData: FormData
+): Promise<GuestbookActionState> {
+  const parsed = guestbookLikeSchema.safeParse({
+    messageId: formData.get("messageId")
+  });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "留言不存在。",
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>
+    };
+  }
+
+  try {
+    const user = await requireUser();
+    const result = await toggleGuestbookLike(user, parsed.data);
+    revalidateGuestbookPaths();
+    return {
+      ok: true,
+      message: result.liked ? "已点赞。" : "已取消点赞。",
+      fieldErrors: {}
+    };
+  } catch (error) {
+    return stateFromError(error, "点赞失败，请登录后重试。");
   }
 }
