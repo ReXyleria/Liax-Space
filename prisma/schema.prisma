@@ -84,6 +84,14 @@ enum TranslationStatus {
   FAILED
 }
 
+enum ArticleTranslationJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
 enum MediaReferenceSource {
   ARTICLE
   MOMENT
@@ -130,22 +138,22 @@ enum SettingType {
 }
 
 model User {
-  id                 String              @id @default(cuid())
-  email              String              @unique
-  username           String?             @unique
+  id                 String                  @id @default(cuid())
+  email              String                  @unique
+  username           String?                 @unique
   passwordHash       String
   nickname           String
   avatar             String?
-  role               UserRole            @default(USER)
+  role               UserRole                @default(USER)
   identityId         String?
-  status             UserStatus          @default(ACTIVE)
+  status             UserStatus              @default(ACTIVE)
   mutedUntil         DateTime?
-  emailVerified      Boolean             @default(false)
-  totpSecret         String?             @db.Text
-  totpEnabled        Boolean             @default(false)
+  emailVerified      Boolean                 @default(false)
+  totpSecret         String?                 @db.Text
+  totpEnabled        Boolean                 @default(false)
   totpConfirmedAt    DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
   lastLoginAt        DateTime?
   articles           Article[]
   articleVersions    ArticleVersion[]
@@ -162,7 +170,8 @@ model User {
   trustedDevices     TrustedDevice[]
   uploadedMedia      MediaAsset[]
   visitLogs          VisitLog[]
-  identity           Identity?           @relation(fields: [identityId], references: [id], onDelete: SetNull)
+  translationJobs    ArticleTranslationJob[]
+  identity           Identity?               @relation(fields: [identityId], references: [id], onDelete: SetNull)
 
   @@index([role])
   @@index([identityId])
@@ -309,6 +318,7 @@ model Article {
   allowedIdentities ArticleAllowedIdentity[]
   versions          ArticleVersion[]
   translations      ArticleTranslation[]
+  translationJobs   ArticleTranslationJob[]
   comments          Comment[]
   visitLogs         VisitLog[]
 
@@ -344,6 +354,29 @@ model ArticleTranslation {
   @@unique([articleId, locale])
   @@index([locale, status])
   @@index([contentHash])
+}
+
+model ArticleTranslationJob {
+  id              String                      @id @default(cuid())
+  articleId       String
+  locale          String
+  status          ArticleTranslationJobStatus @default(QUEUED)
+  progress        Int                         @default(0)
+  completedUnits  Int                         @default(0)
+  totalUnits      Int                         @default(0)
+  progressMessage String?                     @db.Text
+  error           String?                     @db.Text
+  createdById     String
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  article         Article                     @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdBy       User                        @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([articleId, locale, createdAt])
+  @@index([status, createdAt])
+  @@index([createdById])
 }
 
 model Tag {

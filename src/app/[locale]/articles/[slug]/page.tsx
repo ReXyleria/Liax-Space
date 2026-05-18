@@ -157,7 +157,7 @@ export default async function ArticleDetailPage({
 
   if (error) {
     return (
-      <PublicShell locale={locale}>
+      <PublicShell locale={locale} autoHideHeader>
         <main className="mx-auto max-w-3xl px-6 py-16">
           <Card className="p-8 text-destructive">{error}</Card>
         </main>
@@ -171,7 +171,7 @@ export default async function ArticleDetailPage({
 
   if (!canView) {
     return (
-      <PublicShell locale={locale}>
+      <PublicShell locale={locale} autoHideHeader>
         <main className="mx-auto max-w-3xl px-6 py-16">
           <Card className="p-8">
             <h1 className="text-2xl font-semibold">{t(locale, "accessDenied")}</h1>
@@ -189,7 +189,7 @@ export default async function ArticleDetailPage({
   const prepared = prepareArticleHtml(article.contentHtml);
 
   return (
-    <PublicShell locale={locale}>
+    <PublicShell locale={locale} autoHideHeader>
       <MotionPage>
         <main className="mx-auto grid max-w-[96rem] gap-8 px-4 py-12 sm:px-6 lg:px-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="min-w-0">

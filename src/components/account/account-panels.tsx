@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState, useTransition, type ReactNode } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Copy, Download, Fingerprint, KeyRound, Laptop, ShieldCheck, UserRound } from "lucide-react";
@@ -8,6 +8,7 @@ import { ImageUploadField } from "@/components/forms/image-upload-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   beginTotpSetupAction,
@@ -51,7 +52,6 @@ function ActionMessage({ state }: { state: AccountActionState }) {
   if (!state.message) {
     return null;
   }
-
   return (
     <p
       className={
@@ -427,9 +427,19 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
     initialState
   );
   const [recoveryCopyMessage, setRecoveryCopyMessage] = useState("");
+  const [recoveryModalOpen, setRecoveryModalOpen] = useState(false);
+  const [oneTimeRecoveryCodes, setOneTimeRecoveryCodes] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (confirmState.recoveryCodes?.length) {
+      setOneTimeRecoveryCodes(confirmState.recoveryCodes);
+      setRecoveryCopyMessage("");
+      setRecoveryModalOpen(true);
+    }
+  }, [confirmState.recoveryCodes]);
 
   function recoveryText() {
-    return confirmState.recoveryCodes?.join("\n") ?? "";
+    return oneTimeRecoveryCodes.join("\n");
   }
 
   async function copyRecoveryCodes() {
@@ -450,6 +460,12 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
     link.click();
     URL.revokeObjectURL(url);
     setRecoveryCopyMessage("恢复码文件已生成。");
+  }
+
+  function closeRecoveryModal() {
+    setRecoveryModalOpen(false);
+    setOneTimeRecoveryCodes([]);
+    setRecoveryCopyMessage("");
   }
 
   return (
@@ -532,29 +548,43 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
 
           <ActionMessage state={setupState} />
           <ActionMessage state={confirmState} />
-          {confirmState.recoveryCodes?.length ? (
+          <Dialog
+            open={recoveryModalOpen}
+            title="TOTP recovery codes"
+            description="Save these one-time recovery codes now. They will not be shown again after this dialog is closed."
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) {
+                closeRecoveryModal();
+              }
+            }}
+            footer={
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={copyRecoveryCodes}>
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copy codes
+                </Button>
+                <Button type="button" variant="secondary" onClick={downloadRecoveryCodes}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download codes
+                </Button>
+                <Button type="button" onClick={closeRecoveryModal}>
+                  I have saved them
+                </Button>
+              </div>
+            }
+          >
             <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              <p className="font-semibold">恢复码只会显示一次，请立即保存。</p>
+              <p className="font-semibold">Recovery codes are shown only once.</p>
               <div className="mt-3 grid gap-2 font-mono text-xs sm:grid-cols-2">
-                {confirmState.recoveryCodes.map((code) => (
+                {oneTimeRecoveryCodes.map((code) => (
                   <span key={code} className="rounded bg-white px-2 py-1">
                     {code}
                   </span>
                 ))}
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={copyRecoveryCodes}>
-                  <Copy className="mr-2 h-4 w-4" />
-                  复制恢复码
-                </Button>
-                <Button type="button" variant="secondary" onClick={downloadRecoveryCodes}>
-                  <Download className="mr-2 h-4 w-4" />
-                  下载恢复码
-                </Button>
-              </div>
-              {recoveryCopyMessage ? <p className="mt-2 text-xs">{recoveryCopyMessage}</p> : null}
+              {recoveryCopyMessage ? <p className="mt-3 text-xs">{recoveryCopyMessage}</p> : null}
             </div>
-          ) : null}
+          </Dialog>
         </div>
       )}
     </PanelShell>

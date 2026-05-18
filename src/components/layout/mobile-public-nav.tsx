@@ -38,7 +38,7 @@ export function MobilePublicNav({
     <>
       <button
         type="button"
-        className="fixed bottom-5 left-5 z-[80] grid h-12 w-12 place-items-center rounded-full border border-white/90 bg-white text-foreground shadow-2xl shadow-primary/20 transition duration-300 hover:-translate-y-0.5 hover:border-primary/35 hover:text-primary active:translate-y-0 active:scale-95 md:hidden"
+        className="fixed bottom-5 left-5 z-[80] grid h-12 w-12 place-items-center rounded-full border border-white/95 bg-white text-foreground shadow-2xl shadow-primary/20 transition duration-500 ease-out hover:-translate-y-0.5 hover:border-primary/35 hover:text-primary active:translate-y-0 active:scale-95 md:hidden"
         onClick={() => setOpen(true)}
         aria-label={locale === "en" ? "Open navigation" : "打开导航"}
       >
@@ -54,7 +54,7 @@ export function MobilePublicNav({
         <button
           type="button"
           className={cn(
-            "absolute inset-0 bg-black/20 transition-opacity duration-500",
+            "absolute inset-0 bg-slate-950/20 backdrop-blur-[2px] transition-opacity duration-700",
             open ? "opacity-100" : "opacity-0"
           )}
           aria-label={locale === "en" ? "Close navigation" : "关闭导航"}
@@ -62,7 +62,7 @@ export function MobilePublicNav({
         />
         <aside
           className={cn(
-            "absolute left-0 top-0 flex h-full w-80 max-w-[86vw] flex-col border-r border-slate-200 bg-white p-5 shadow-2xl shadow-slate-950/15 transition-transform duration-500 ease-out",
+            "absolute left-0 top-0 flex h-full w-80 max-w-[86vw] flex-col border-r border-white/90 bg-white p-5 shadow-2xl shadow-slate-950/15 transition-transform duration-700 ease-out",
             open ? "translate-x-0" : "-translate-x-full"
           )}
         >

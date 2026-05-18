@@ -102,7 +102,7 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
 
       <button
         type="button"
-        className="fixed right-0 top-1/2 z-[90] grid h-14 w-8 -translate-y-1/2 place-items-center rounded-l-full border border-r-0 border-white/90 bg-white/88 text-muted-foreground shadow-soft transition duration-300 hover:w-10 hover:bg-white hover:text-primary xl:hidden"
+        className="fixed bottom-5 right-0 z-[90] grid h-12 w-8 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white/92 text-muted-foreground shadow-2xl shadow-primary/15 transition-all duration-500 ease-out hover:w-10 hover:bg-white hover:text-primary xl:hidden"
         onClick={() => setOpen(true)}
         aria-label="打开目录"
       >
@@ -113,7 +113,7 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
         <button
           type="button"
           className={cn(
-            "absolute inset-0 bg-black/20 transition-opacity duration-500",
+            "absolute inset-0 bg-slate-950/20 backdrop-blur-[2px] transition-opacity duration-700",
             open ? "opacity-100" : "opacity-0"
           )}
           aria-label="关闭目录"
@@ -121,7 +121,7 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
         />
         <aside
           className={cn(
-            "absolute right-0 top-0 flex h-full w-80 max-w-[86vw] flex-col border-l border-slate-200 bg-white p-5 shadow-2xl shadow-slate-950/15 transition-transform duration-500 ease-out",
+            "absolute right-0 top-0 flex h-full w-80 max-w-[86vw] flex-col border-l border-white/90 bg-white p-5 shadow-2xl shadow-slate-950/15 transition-transform duration-700 ease-out",
             open ? "translate-x-0" : "translate-x-full"
           )}
         >

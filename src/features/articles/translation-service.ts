@@ -4,7 +4,11 @@ import { db, isDatabaseConfigured } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
 import { assertPermission, canManageArticles } from "@/lib/permissions";
 import { sanitizeArticleHtml } from "@/lib/sanitize";
-import { getTranslationConfig, callTranslationApi } from "@/features/settings/translation-settings";
+import {
+  getTranslationConfig,
+  callTranslationApi,
+  type TranslationProgressUpdate
+} from "@/features/settings/translation-settings";
 
 export function hashArticleSource(input: { title: string; summary: string | null; contentHtml: string }) {
   return createHash("sha256")
@@ -228,9 +232,11 @@ async function updateTranslationProgress(
   });
 }
 
-export async function translateArticle(user: CurrentUser, articleId: string, targetLocale: string) {
-  assertPermission(canManageArticles(user), "You do not have permission to translate articles.");
-
+export async function executeArticleTranslation(
+  articleId: string,
+  targetLocale: string,
+  onProgress?: (progress: TranslationProgressUpdate) => void | Promise<void>
+) {
   if (!isDatabaseConfigured()) {
     throw new Error("DATABASE_URL is not configured.");
   }
@@ -270,10 +276,12 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
     existing?.status === TranslationStatus.TRANSLATED &&
     existing.contentHash === contentHash
   ) {
+    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "Translation already current" });
     return { articleSlug: article.slug };
   }
 
   await markTranslationInProgress(article, locale, contentHash);
+  await onProgress?.({ completedUnits: 0, totalUnits: 0, message: "Translation queued" });
 
   try {
     const translated = await callTranslationApi(
@@ -285,8 +293,10 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
         targetLocale: locale
       },
       {
-        onProgress: (progress) =>
-          updateTranslationProgress(article.id, locale, progress.completedUnits, progress.totalUnits, progress.message)
+        onProgress: async (progress) => {
+          await updateTranslationProgress(article.id, locale, progress.completedUnits, progress.totalUnits, progress.message);
+          await onProgress?.(progress);
+        }
       }
     );
 
@@ -301,9 +311,12 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
         sourceUpdatedAt: article.updatedAt,
         translatedAt: new Date(),
         progress: 100,
+        completedUnits: 1,
+        totalUnits: 1,
         progressMessage: "Translation complete"
       }
     });
+    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "Translation complete" });
     return { articleSlug: article.slug };
   } catch (error) {
     await db.articleTranslation.update({
@@ -318,6 +331,11 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
     });
     throw error;
   }
+}
+
+export async function translateArticle(user: CurrentUser, articleId: string, targetLocale: string) {
+  assertPermission(canManageArticles(user), "You do not have permission to translate articles.");
+  return executeArticleTranslation(articleId, targetLocale);
 }
 
 const scheduledArticleTranslationSync = new Set<string>();

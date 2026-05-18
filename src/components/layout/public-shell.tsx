@@ -4,6 +4,7 @@ import { VisitTracker } from "@/components/analytics/visit-tracker";
 import { CodeInjectionRenderer } from "@/components/layout/code-injection-renderer";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { MobilePublicNav } from "@/components/layout/mobile-public-nav";
+import { PublicHeaderFrame } from "@/components/layout/public-header-frame";
 import { PublicSearch } from "@/components/layout/public-search";
 import { SiteBackground, resolveSiteBackground } from "@/components/layout/site-background";
 import { UserAvatar } from "@/components/ui/user-avatar";
@@ -61,12 +62,14 @@ export async function PublicShell({
   children,
   transparentHeader = false,
   homePage = false,
-  locale
+  locale,
+  autoHideHeader = false
 }: {
   children: React.ReactNode;
   transparentHeader?: boolean;
   homePage?: boolean;
   locale?: Locale;
+  autoHideHeader?: boolean;
 }) {
   const [{ settings }, { settings: codeInjection }, user, resolvedLocale] = await Promise.all([
     getSettingsMap(),
@@ -100,12 +103,7 @@ export async function PublicShell({
       <VisitTracker />
       <SiteBackground src={sharedBackground} variant={homePage ? "home" : "frosted"} />
 
-      <header
-        className={cn(
-          "top-0 z-30 w-full border-b backdrop-blur-xl",
-          transparentHeader ? "fixed border-white/10 bg-transparent text-white" : "sticky border-white/70 bg-background/72"
-        )}
-      >
+      <PublicHeaderFrame transparentHeader={transparentHeader} autoHideOnScroll={autoHideHeader}>
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <MobilePublicNav
             navItems={navItems}
@@ -181,7 +179,7 @@ export async function PublicShell({
             </Link>
           </nav>
         </div>
-      </header>
+      </PublicHeaderFrame>
 
       <div className={cn("flex-1", homePage && "min-h-0")}>{children}</div>
 

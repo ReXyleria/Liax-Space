@@ -4,10 +4,8 @@ import { revalidatePath } from "next/cache";
 import { ZodError, z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { localizedPath, urlLocales } from "@/lib/locale-url";
-import {
-  translateArticle,
-  upsertManualArticleTranslation
-} from "@/features/articles/translation-service";
+import { enqueueArticleTranslationJobs } from "@/features/articles/translation-jobs";
+import { upsertManualArticleTranslation } from "@/features/articles/translation-service";
 
 export type ArticleTranslationActionState = {
   ok: boolean;
@@ -58,15 +56,14 @@ export async function translateArticleAction(
     const user = await requireUser();
     const articleId = String(formData.get("articleId") ?? "");
     const locale = String(formData.get("locale") ?? "en");
-    const result = await translateArticle(user, articleId, locale);
+    await enqueueArticleTranslationJobs(user, { articleIds: [articleId], locale });
     revalidatePath(`/admin/articles/${articleId}/edit`);
     revalidateLocalizedArticleIndex();
-    revalidateLocalizedArticleDetail(result.articleSlug);
-    return { ok: true, message: "译文已重新生成。" };
+    return { ok: true, message: "Translation job queued." };
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "翻译失败。"
+      message: error instanceof Error ? error.message : "Translation failed."
     };
   }
 }
@@ -89,7 +86,7 @@ export async function updateArticleTranslationAction(
   if (!parsed.success) {
     return {
       ok: false,
-      message: "请检查译文表单。",
+      message: "Please check the translation form.",
       fieldErrors: zodFieldErrors(parsed.error)
     };
   }
@@ -103,11 +100,11 @@ export async function updateArticleTranslationAction(
     revalidatePath(`/admin/articles/${parsed.data.articleId}/edit`);
     revalidateLocalizedArticleIndex();
     revalidateLocalizedArticleDetail(result.articleSlug);
-    return { ok: true, message: "译文已保存。" };
+    return { ok: true, message: "Translation saved." };
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "译文保存失败。",
+      message: error instanceof Error ? error.message : "Failed to save translation.",
       fieldErrors: {}
     };
   }

@@ -63,6 +63,7 @@ export const adminSidebarGroups: AdminSidebarGroup[] = [
       { href: "/admin/tags", labelKey: "tags", iconKey: "tags", visibility: "articles" },
       { href: "/admin/moments", labelKey: "moments", iconKey: "moments", visibility: "moments" },
       { href: "/admin/comments", labelKey: "adminComments", iconKey: "comments", visibility: "comments" },
+      { href: "/admin/guestbook", labelKey: "guestbook", iconKey: "comments", visibility: "comments" },
       { href: "/admin/data/media", labelKey: "adminMedia", iconKey: "media", visibility: "settings" }
     ]
   },
