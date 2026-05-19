@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        message: error instanceof Error ? error.message : "Failed to load translation jobs."
+        message: error instanceof Error ? error.message : "翻译任务加载失败。"
       },
       { status: 500 }
     );
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        message: error instanceof Error ? error.message : "Failed to enqueue translation jobs."
+        message: error instanceof Error ? error.message : "翻译任务加入队列失败。"
       },
       { status: 500 }
     );

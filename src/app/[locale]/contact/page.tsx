@@ -1,3 +1,4 @@
+import { PublicContentTranslationEntity } from "@prisma/client";
 import { ExternalLink, Github, Globe, Mail, MessageCircle } from "lucide-react";
 import { notFound } from "next/navigation";
 import { MotionItem, MotionList, MotionPage } from "@/components/animations/reveal";
@@ -5,6 +6,7 @@ import { PublicShell } from "@/components/layout/public-shell";
 import { Card } from "@/components/ui/card";
 import { parseContactItems, type ContactItem } from "@/features/settings/contact-items";
 import { getSettingsMap } from "@/features/settings/service";
+import { getPublicContentTranslationMap, translatedField } from "@/features/i18n/public-content-translations";
 import { urlLocaleToLocale } from "@/lib/locale-url";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +62,15 @@ export default async function ContactPage({
   const contacts = parseContactItems(settings)
     .filter((item) => item.enabled)
     .sort((left, right) => left.sort - right.sort);
+  const translations = await getPublicContentTranslationMap(
+    PublicContentTranslationEntity.SETTING,
+    locale,
+    contacts.map((contact) => `contact:${contact.id}`)
+  );
+  const localizedContacts = contacts.map((contact) => ({
+    ...contact,
+    label: translatedField(translations, `contact:${contact.id}`, "label", contact.label)
+  }));
 
   return (
     <PublicShell locale={locale}>
@@ -70,8 +81,8 @@ export default async function ContactPage({
           {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
           <MotionList className="mt-8 grid gap-4 md:grid-cols-2">
-            {contacts.length ? (
-              contacts.map((contact) => {
+            {localizedContacts.length ? (
+              localizedContacts.map((contact) => {
                 const Icon = getIcon(contact);
                 return (
                   <MotionItem key={contact.id}>

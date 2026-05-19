@@ -1,10 +1,12 @@
 "use server";
 
+import { PublicContentTranslationEntity } from "@prisma/client";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { contactItemsSchema, serializeContactItems } from "@/features/settings/contact-items";
+import { contactItemsSchema, serializeContactItems, type ContactItem } from "@/features/settings/contact-items";
 import { updateIdentitySettings, updateSettings } from "@/features/settings/service";
 import { settingsUpdateSchema } from "@/features/settings/validators";
+import { schedulePublicContentTranslation } from "@/features/i18n/public-content-translations";
 import { localizedPath, urlLocales } from "@/lib/locale-url";
 
 export type SettingsActionState = {
@@ -23,6 +25,33 @@ function revalidateSettingsPaths() {
   revalidatePath("/admin/settings/basic");
   revalidatePath("/admin/settings/homepage");
   revalidatePath("/admin/settings/footer");
+  revalidatePath("/admin/settings/translation");
+}
+
+function scheduleSettingTranslation(key: string, value: string) {
+  if (!value.trim()) {
+    return;
+  }
+  schedulePublicContentTranslation({
+    entity: PublicContentTranslationEntity.SETTING,
+    entityId: key,
+    fields: { value },
+    sourceUpdatedAt: new Date()
+  });
+}
+
+function scheduleContactTranslations(items: ContactItem[]) {
+  for (const item of items) {
+    if (!item.label.trim()) {
+      continue;
+    }
+    schedulePublicContentTranslation({
+      entity: PublicContentTranslationEntity.SETTING,
+      entityId: `contact:${item.id}`,
+      fields: { label: item.label },
+      sourceUpdatedAt: new Date()
+    });
+  }
 }
 
 export async function updateSettingsAction(
@@ -34,6 +63,9 @@ export async function updateSettingsAction(
     const values = Object.fromEntries(formData.entries());
     const parsed = settingsUpdateSchema.parse(values);
     await updateSettings(user, parsed);
+    if (typeof parsed["site.subtitle"] === "string") {
+      scheduleSettingTranslation("site.subtitle", parsed["site.subtitle"]);
+    }
     revalidateSettingsPaths();
     return { ok: true, message: "设置已保存。" };
   } catch (error) {
@@ -55,6 +87,7 @@ export async function updateContactItemsAction(
     await updateSettings(user, {
       "contact.items": serializeContactItems(parsed)
     });
+    scheduleContactTranslations(parsed);
     revalidateSettingsPaths();
     return { ok: true, message: "联系方式已保存。" };
   } catch (error) {
@@ -95,6 +128,7 @@ export async function updateFooterSettingsAction(
       "contact.showOnHome": formData.get("contact.showOnHome") === "on" ? "true" : "false",
       "contact.items": serializeContactItems(parsedItems)
     });
+    scheduleContactTranslations(parsedItems);
     revalidateSettingsPaths();
     return { ok: true, message: "页脚设置已保存。" };
   } catch (error) {

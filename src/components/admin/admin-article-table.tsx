@@ -30,6 +30,19 @@ const activeStatuses = new Set<ArticleTranslationJobStatus>([
   ArticleTranslationJobStatus.RUNNING
 ]);
 
+const progressMessageLabels: Record<string, string> = {
+  Queued: "队列中",
+  "Queued for retry": "已重新排队",
+  "Recovered stale running job": "已恢复停滞任务",
+  "Starting translation": "开始翻译",
+  "Translation queued": "翻译已排队",
+  "Preparing translation": "准备翻译",
+  "Metadata translated": "元数据已翻译",
+  "Sending translation request": "正在发送翻译请求",
+  "Translation complete": "翻译完成",
+  "Translation already current": "译文已是最新"
+};
+
 function jobKey(articleId: string, locale: string) {
   return `${articleId}:${locale}`;
 }
@@ -37,17 +50,17 @@ function jobKey(articleId: string, locale: string) {
 function statusLabel(status?: ArticleTranslationJobStatus) {
   switch (status) {
     case ArticleTranslationJobStatus.QUEUED:
-      return "Queued";
+      return "队列中";
     case ArticleTranslationJobStatus.RUNNING:
-      return "Translating";
+      return "翻译中";
     case ArticleTranslationJobStatus.SUCCEEDED:
-      return "Translated";
+      return "已完成";
     case ArticleTranslationJobStatus.FAILED:
-      return "Failed";
+      return "失败";
     case ArticleTranslationJobStatus.CANCELED:
-      return "Canceled";
+      return "已取消";
     default:
-      return "Idle";
+      return "空闲";
   }
 }
 
@@ -66,8 +79,24 @@ function statusClass(status?: ArticleTranslationJobStatus) {
   }
 }
 
+function languageLabel(value: string) {
+  if (value === "zh-CN") return "简体中文";
+  if (value === "en") return "英文";
+  return value;
+}
+
+function localizeProgressMessage(value: string | null | undefined) {
+  if (!value) return "";
+  if (progressMessageLabels[value]) return progressMessageLabels[value];
+  const chunkMatch = value.match(/^Translated (\d+)\/(\d+) content chunks$/);
+  if (chunkMatch) {
+    return `已翻译 ${chunkMatch[1]}/${chunkMatch[2]} 个正文分段`;
+  }
+  return value;
+}
+
 async function readJson(response: Response) {
-  return response.json().catch(() => ({ ok: false, message: "Invalid response." }));
+  return response.json().catch(() => ({ ok: false, message: "响应格式无效。" }));
 }
 
 function SelectionControl({
@@ -84,9 +113,9 @@ function SelectionControl({
   return (
     <label
       className={cn(
-        "group inline-flex cursor-pointer items-center gap-2 rounded-md border bg-background/80 text-sm font-medium shadow-sm shadow-slate-950/5 transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 active:translate-y-0 active:scale-[0.99]",
-        checked && "border-primary/50 bg-primary/10 text-primary",
-        compact ? "h-9 w-9 justify-center p-0" : "px-3 py-2"
+        "group inline-flex cursor-pointer items-center gap-2 rounded-md text-sm font-medium transition hover:-translate-y-0.5 hover:bg-primary/5 active:translate-y-0 active:scale-[0.99]",
+        checked && "text-primary",
+        compact ? "h-9 w-9 justify-center p-0" : "h-10 bg-muted/55 px-3"
       )}
     >
       <input
@@ -130,10 +159,7 @@ export function AdminArticleTable({
   const hasActiveJobs = Object.values(jobsByKey).some((job) => activeStatuses.has(job.status));
   const languageOptions = useMemo(() => {
     const values = Array.from(new Set([defaultTargetLocale || "en", "en", "zh-CN"]));
-    return values.map((value) => ({
-      value,
-      label: value === "zh-CN" ? "简体中文" : value === "en" ? "English" : value
-    }));
+    return values.map((value) => ({ value, label: languageLabel(value) }));
   }, [defaultTargetLocale]);
 
   const loadJobs = useCallback(async () => {
@@ -146,7 +172,7 @@ export function AdminArticleTable({
     });
     const payload = await readJson(response);
     if (!response.ok || !payload.ok) {
-      setMessage(payload.message ?? "Failed to load translation jobs.");
+      setMessage(payload.message ?? "翻译任务加载失败。");
       return;
     }
 
@@ -180,7 +206,7 @@ export function AdminArticleTable({
 
   async function enqueueSelected() {
     if (!selectedIds.length) {
-      setMessage("Select at least one article.");
+      setMessage("请至少选择一篇文章。");
       return;
     }
 
@@ -194,10 +220,10 @@ export function AdminArticleTable({
       });
       const payload = await readJson(response);
       if (!response.ok || !payload.ok) {
-        setMessage(payload.message ?? "Failed to enqueue translation jobs.");
+        setMessage(payload.message ?? "翻译任务加入队列失败。");
         return;
       }
-      setMessage("Translation jobs queued.");
+      setMessage("翻译任务已加入队列。");
       await loadJobs();
     } finally {
       setBusy(false);
@@ -209,7 +235,7 @@ export function AdminArticleTable({
     const response = await fetch(`/api/admin/articles/translation-jobs/${jobId}/retry`, { method: "POST" });
     const payload = await readJson(response);
     if (!response.ok || !payload.ok) {
-      setMessage(payload.message ?? "Failed to retry translation job.");
+      setMessage(payload.message ?? "重试翻译任务失败。");
       return;
     }
     await loadJobs();
@@ -221,7 +247,7 @@ export function AdminArticleTable({
         <SelectionControl
           checked={allSelected}
           onCheckedChange={(checked) => setSelectedIds(checked ? articleIds : [])}
-          label={selectedIds.length ? `${selectedIds.length} selected` : "Select articles"}
+          label={selectedIds.length ? `已选择 ${selectedIds.length} 篇` : "选择文章"}
         />
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Select
@@ -233,7 +259,7 @@ export function AdminArticleTable({
           />
           <Button type="button" disabled={busy || !selectedIds.length} onClick={enqueueSelected}>
             <Languages className="mr-2 h-4 w-4" />
-            {busy ? "Queueing..." : "Translate selected"}
+            {busy ? "排队中..." : "翻译选中"}
           </Button>
         </div>
       </div>
@@ -251,7 +277,7 @@ export function AdminArticleTable({
               <SelectionControl
                 checked={selectedIds.includes(article.id)}
                 onCheckedChange={(checked) => toggleArticle(article.id, checked)}
-                label={`Select ${article.title}`}
+                label={`选择 ${article.title}`}
                 compact
               />
               <div>
@@ -265,12 +291,12 @@ export function AdminArticleTable({
                     }`}
                     title={
                       article.translationReady
-                        ? `Translated: ${article.translationTargetLocale}`
-                        : `Not translated: ${article.translationTargetLocale}`
+                        ? `已翻译：${article.translationTargetLocale}`
+                        : `未翻译：${article.translationTargetLocale}`
                     }
                   />
                   <span className="text-xs text-muted-foreground">
-                    {article.translationReady ? "Translated" : "Not translated"}
+                    {article.translationReady ? "已翻译" : "未翻译"}
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{article.slug}</p>
@@ -294,7 +320,7 @@ export function AdminArticleTable({
                       onClick={() => retryJob(activeJob.id)}
                     >
                       <RotateCcw className="h-3 w-3" />
-                      Retry
+                      重试
                     </button>
                   ) : null}
                 </div>
@@ -304,7 +330,7 @@ export function AdminArticleTable({
                       <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
                     </div>
                     <p className="line-clamp-2 text-xs text-muted-foreground">
-                      {activeJob.error || activeJob.progressMessage || `${progress}%`}
+                      {activeJob.error || localizeProgressMessage(activeJob.progressMessage) || `${progress}%`}
                     </p>
                   </>
                 ) : null}

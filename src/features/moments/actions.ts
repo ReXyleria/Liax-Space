@@ -57,6 +57,7 @@ function revalidateMomentPaths() {
     revalidatePath(localizedPath(locale, "/moments"));
   }
   revalidatePath("/admin/moments");
+  revalidatePath("/admin/settings/translation");
 }
 
 export async function createMomentAction(
@@ -71,7 +72,7 @@ export async function createMomentAction(
   } catch (error) {
     logMomentError("create", error);
     if (error instanceof ZodError) {
-      return failure("ZodError: 请检查表单中标出的字段。", error.flatten().fieldErrors as Record<string, string[]>);
+      return failure("请检查表单中标出的字段。", error.flatten().fieldErrors as Record<string, string[]>);
     }
 
     return failure(errorSummary(error, "瞬间发布失败。"));
@@ -90,7 +91,7 @@ export async function updateMomentAction(
   } catch (error) {
     logMomentError("update", error);
     if (error instanceof ZodError) {
-      return failure("ZodError: 请检查表单中标出的字段。", error.flatten().fieldErrors as Record<string, string[]>);
+      return failure("请检查表单中标出的字段。", error.flatten().fieldErrors as Record<string, string[]>);
     }
 
     return failure(errorSummary(error, "瞬间更新失败。"));

@@ -1,7 +1,13 @@
+import { PublicContentTranslationEntity } from "@prisma/client";
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
 import { sendTemplatedMail } from "@/lib/mail";
 import { assertPermission, canManageMoments, canViewContent } from "@/lib/permissions";
+import {
+  getPublicContentTranslationMap,
+  schedulePublicContentTranslation,
+  translatedField
+} from "@/features/i18n/public-content-translations";
 import { momentCommentSchema, momentMutationSchema } from "@/features/moments/validators";
 import { localizedPath } from "@/lib/locale-url";
 
@@ -11,13 +17,31 @@ function ensureMomentRuntime() {
   }
 }
 
-export async function listPublicMoments(user: CurrentUser | null) {
+function scheduleMomentTranslation(moment: { id: string; content: string; updatedAt: Date }) {
+  schedulePublicContentTranslation({
+    entity: PublicContentTranslationEntity.MOMENT,
+    entityId: moment.id,
+    fields: { content: moment.content },
+    sourceUpdatedAt: moment.updatedAt
+  });
+}
+
+function scheduleMomentCommentTranslation(comment: { id: string; content: string; createdAt: Date }) {
+  schedulePublicContentTranslation({
+    entity: PublicContentTranslationEntity.MOMENT_COMMENT,
+    entityId: comment.id,
+    fields: { content: comment.content },
+    sourceUpdatedAt: comment.createdAt
+  });
+}
+
+export async function listPublicMoments(user: CurrentUser | null, locale?: string | null) {
   if (!isDatabaseConfigured()) {
     return { moments: [], error: "DATABASE_URL 未配置，无法加载瞬间。" };
   }
 
   return withDatabase(async () => {
-    const moments = await db.moment.findMany({
+    const rows = await db.moment.findMany({
       where: { deletedAt: null },
       include: {
         author: { select: { nickname: true } },
@@ -32,13 +56,28 @@ export async function listPublicMoments(user: CurrentUser | null) {
       take: 100
     });
 
+    const visible = rows.filter((moment) => canViewContent(user, moment.visibility));
+    const momentTranslations = await getPublicContentTranslationMap(
+      PublicContentTranslationEntity.MOMENT,
+      locale ?? "zh-CN",
+      visible.map((moment) => moment.id)
+    );
+    const commentTranslations = await getPublicContentTranslationMap(
+      PublicContentTranslationEntity.MOMENT_COMMENT,
+      locale ?? "zh-CN",
+      visible.flatMap((moment) => moment.comments.map((comment) => comment.id))
+    );
+
     return {
-      moments: moments
-        .filter((moment) => canViewContent(user, moment.visibility))
-        .map((moment) => ({
-          ...moment,
-          likedByViewer: user ? moment.likes.length > 0 : false
+      moments: visible.map((moment) => ({
+        ...moment,
+        content: translatedField(momentTranslations, moment.id, "content", moment.content),
+        comments: moment.comments.map((comment) => ({
+          ...comment,
+          content: translatedField(commentTranslations, comment.id, "content", comment.content)
         })),
+        likedByViewer: user ? moment.likes.length > 0 : false
+      })),
       error: null as string | null
     };
   }, { moments: [], error: "加载瞬间失败。" });
@@ -67,8 +106,7 @@ export async function createMoment(user: CurrentUser, input: unknown) {
   ensureMomentRuntime();
 
   const parsed = momentMutationSchema.parse(input);
-
-  return db.moment.create({
+  const moment = await db.moment.create({
     data: {
       content: parsed.content,
       images: parsed.images,
@@ -78,6 +116,8 @@ export async function createMoment(user: CurrentUser, input: unknown) {
       ...(parsed.createdAt ? { createdAt: parsed.createdAt } : {})
     }
   });
+  scheduleMomentTranslation(moment);
+  return moment;
 }
 
 export async function updateMoment(user: CurrentUser, input: unknown) {
@@ -99,7 +139,7 @@ export async function updateMoment(user: CurrentUser, input: unknown) {
     throw new Error("瞬间不存在。");
   }
 
-  return db.moment.update({
+  const moment = await db.moment.update({
     where: { id: parsed.id },
     data: {
       content: parsed.content,
@@ -109,6 +149,8 @@ export async function updateMoment(user: CurrentUser, input: unknown) {
       ...(parsed.createdAt ? { createdAt: parsed.createdAt } : {})
     }
   });
+  scheduleMomentTranslation(moment);
+  return moment;
 }
 
 export async function deleteMoment(user: CurrentUser, id: string) {
@@ -193,6 +235,7 @@ export async function createMomentComment(user: CurrentUser, input: unknown) {
       deviceName: parsed.deviceName
     }
   });
+  scheduleMomentCommentTranslation(comment);
 
   if (moment.author.email && moment.author.id !== user.id) {
     const mailResult = await sendTemplatedMail({

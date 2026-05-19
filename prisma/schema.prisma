@@ -92,6 +92,23 @@ enum ArticleTranslationJobStatus {
   CANCELED
 }
 
+enum PublicContentTranslationEntity {
+  TAG
+  MOMENT
+  MOMENT_COMMENT
+  GUESTBOOK_MESSAGE
+  GUESTBOOK_COMMENT
+  SETTING
+}
+
+enum PublicContentTranslationJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
 enum MediaReferenceSource {
   ARTICLE
   MOMENT
@@ -379,6 +396,46 @@ model ArticleTranslationJob {
   @@index([articleId, locale, createdAt])
   @@index([status, createdAt])
   @@index([createdById])
+}
+
+model PublicContentTranslation {
+  id              String                         @id @default(cuid())
+  entity          PublicContentTranslationEntity
+  entityId        String
+  locale          String
+  fields          Json
+  status          TranslationStatus              @default(NOT_TRANSLATED)
+  progress        Int                            @default(0)
+  error           String?                        @db.Text
+  sourceHash      String?                        @db.VarChar(64)
+  sourceUpdatedAt DateTime?
+  translatedAt    DateTime?
+  createdAt       DateTime                       @default(now())
+  updatedAt       DateTime                       @updatedAt
+
+  @@unique([entity, entityId, locale])
+  @@index([entity, locale, status])
+  @@index([sourceHash])
+}
+
+model PublicContentTranslationJob {
+  id          String                            @id @default(cuid())
+  entity      PublicContentTranslationEntity
+  entityId    String
+  locale      String
+  fields      Json
+  sourceHash  String?                           @db.VarChar(64)
+  status      PublicContentTranslationJobStatus @default(QUEUED)
+  progress    Int                               @default(0)
+  error       String?                           @db.Text
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime                          @default(now())
+  updatedAt   DateTime                          @updatedAt
+
+  @@index([entity, entityId, locale, createdAt])
+  @@index([status, createdAt])
+  @@index([sourceHash])
 }
 
 model Tag {

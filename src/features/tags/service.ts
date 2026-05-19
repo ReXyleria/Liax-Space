@@ -1,6 +1,10 @@
 import type { CurrentUser } from "@/lib/auth";
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import { assertPermission, canManageArticles } from "@/lib/permissions";
+import {
+  PublicContentTranslationEntity,
+  schedulePublicContentTranslation
+} from "@/features/i18n/public-content-translations";
 import { normalizeTagSlug } from "@/features/tags/utils";
 import { tagMutationSchema } from "@/features/tags/validators";
 
@@ -25,6 +29,15 @@ async function ensureUniqueTagSlug(requestedSlug: string, tagId?: string) {
     candidate = `${base}-${index}`;
     index += 1;
   }
+}
+
+function scheduleTagTranslation(tag: { id: string; name: string; updatedAt: Date }) {
+  schedulePublicContentTranslation({
+    entity: PublicContentTranslationEntity.TAG,
+    entityId: tag.id,
+    fields: { name: tag.name },
+    sourceUpdatedAt: tag.updatedAt
+  });
 }
 
 export async function listAdminTags(user: CurrentUser) {
@@ -63,13 +76,15 @@ export async function createTag(user: CurrentUser, input: unknown) {
   const parsed = tagMutationSchema.parse(input);
   const slug = await ensureUniqueTagSlug(parsed.slug || parsed.name);
 
-  return db.tag.create({
+  const tag = await db.tag.create({
     data: {
       name: parsed.name,
       slug,
       color: parsed.color || null
     }
   });
+  scheduleTagTranslation(tag);
+  return tag;
 }
 
 export async function updateTag(user: CurrentUser, input: unknown) {
@@ -91,7 +106,7 @@ export async function updateTag(user: CurrentUser, input: unknown) {
 
   const slug = await ensureUniqueTagSlug(parsed.slug || parsed.name || existing.slug, parsed.id);
 
-  return db.tag.update({
+  const tag = await db.tag.update({
     where: { id: parsed.id },
     data: {
       name: parsed.name,
@@ -99,6 +114,8 @@ export async function updateTag(user: CurrentUser, input: unknown) {
       color: parsed.color || null
     }
   });
+  scheduleTagTranslation(tag);
+  return tag;
 }
 
 export async function deleteTag(user: CurrentUser, id: string) {
@@ -119,6 +136,12 @@ export async function deleteTag(user: CurrentUser, id: string) {
 
   await db.$transaction([
     db.articleTag.deleteMany({ where: { tagId: id } }),
-    db.tag.delete({ where: { id } })
+    db.tag.delete({ where: { id } }),
+    db.publicContentTranslation.deleteMany({
+      where: { entity: PublicContentTranslationEntity.TAG, entityId: id }
+    }),
+    db.publicContentTranslationJob.deleteMany({
+      where: { entity: PublicContentTranslationEntity.TAG, entityId: id }
+    })
   ]);
 }

@@ -193,7 +193,7 @@ async function markTranslationInProgress(
       progress: toProgressPercent(completedUnits, totalUnits),
       completedUnits,
       totalUnits,
-      progressMessage: progress.message ?? "Translation queued"
+      progressMessage: progress.message ?? "翻译已排队"
     },
     create: {
       articleId: article.id,
@@ -209,7 +209,7 @@ async function markTranslationInProgress(
       progress: toProgressPercent(completedUnits, totalUnits),
       completedUnits,
       totalUnits,
-      progressMessage: progress.message ?? "Translation queued"
+      progressMessage: progress.message ?? "翻译已排队"
     }
   });
 }
@@ -243,10 +243,10 @@ export async function executeArticleTranslation(
 
   const config = await getTranslationConfig();
   if (!config.enabled) {
-    throw new Error("Translation is disabled.");
+    throw new Error("翻译功能未启用。");
   }
   if (!config.isConfigured) {
-    throw new Error("Translation API is not configured.");
+    throw new Error("翻译 API 尚未配置。");
   }
 
   const locale = normalizeTranslationLocale(targetLocale);
@@ -276,12 +276,12 @@ export async function executeArticleTranslation(
     existing?.status === TranslationStatus.TRANSLATED &&
     existing.contentHash === contentHash
   ) {
-    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "Translation already current" });
+    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "译文已是最新状态" });
     return { articleSlug: article.slug };
   }
 
   await markTranslationInProgress(article, locale, contentHash);
-  await onProgress?.({ completedUnits: 0, totalUnits: 0, message: "Translation queued" });
+  await onProgress?.({ completedUnits: 0, totalUnits: 0, message: "翻译已排队" });
 
   try {
     const translated = await callTranslationApi(
@@ -313,20 +313,20 @@ export async function executeArticleTranslation(
         progress: 100,
         completedUnits: 1,
         totalUnits: 1,
-        progressMessage: "Translation complete"
+        progressMessage: "翻译已完成"
       }
     });
-    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "Translation complete" });
+    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "翻译已完成" });
     return { articleSlug: article.slug };
   } catch (error) {
     await db.articleTranslation.update({
       where: { articleId_locale: { articleId, locale } },
       data: {
         status: TranslationStatus.FAILED,
-        error: error instanceof Error ? error.message : "Translation failed.",
+        error: error instanceof Error ? error.message : "翻译失败。",
         contentHash,
         sourceUpdatedAt: article.updatedAt,
-        progressMessage: error instanceof Error ? error.message : "Translation failed."
+        progressMessage: error instanceof Error ? error.message : "翻译失败。"
       }
     });
     throw error;
@@ -446,7 +446,7 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
         sourceUpdatedAt: article.updatedAt,
         translatedAt: new Date(),
         progress: 100,
-        progressMessage: "Translation complete"
+        progressMessage: "翻译已完成"
       }
     });
   } catch (error) {
@@ -454,10 +454,10 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
       where: { articleId_locale: { articleId: article.id, locale } },
       data: {
         status: TranslationStatus.FAILED,
-        error: error instanceof Error ? error.message : "Translation failed.",
+        error: error instanceof Error ? error.message : "翻译失败。",
         contentHash,
         sourceUpdatedAt: article.updatedAt,
-        progressMessage: error instanceof Error ? error.message : "Translation failed."
+        progressMessage: error instanceof Error ? error.message : "翻译失败。"
       }
     });
     console.error("Article translation sync failed", error);

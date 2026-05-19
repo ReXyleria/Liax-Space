@@ -181,6 +181,7 @@ export function ArticleLanguageWorkspace({
         <ArticleEditorForm
           locale={locale}
           article={article}
+          englishTranslation={englishTranslation}
           tagOptions={tagOptions}
           site={site}
         />

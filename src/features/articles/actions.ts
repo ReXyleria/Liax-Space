@@ -15,9 +15,12 @@ import {
   restoreArticleVersion,
   setArticleStatus,
   updateArticle,
-  updateArticleMeta
+  updateArticleMeta,
+  updateArticleTranslationSeo
 } from "@/features/articles/service";
 import { generateArticleSeo } from "@/features/articles/seo-service";
+import { enqueueArticleTranslationJobs } from "@/features/articles/translation-jobs";
+import { normalizeTranslationLocale } from "@/features/articles/translation-service";
 import { articleMutationSchema, articleMetaSchema } from "@/features/articles/validators";
 
 export type ArticleActionState = {
@@ -86,6 +89,33 @@ function parseArticleForm(formData: FormData, options: { defaultAllowComments?: 
     publishedAt: formData.get("publishedAt") ? new Date(String(formData.get("publishedAt"))).toISOString() : null,
     tagNames
   };
+}
+
+async function syncArticleTranslationSeo(
+  user: Awaited<ReturnType<typeof requireUser>>,
+  articleId: string,
+  formData: FormData
+) {
+  const translationLocale = String(formData.get("translationLocale") ?? "").trim();
+  const hasTranslationSeoFields = formData.has("translationSeoTitle") || formData.has("translationSeoDescription");
+  if (!translationLocale || !hasTranslationSeoFields) {
+    return;
+  }
+
+  const translationSeoTitle = String(formData.get("translationSeoTitle") ?? "");
+  const translationSeoDescription = String(formData.get("translationSeoDescription") ?? "");
+  const normalizedLocale = normalizeTranslationLocale(translationLocale);
+  const result = await updateArticleTranslationSeo(
+    user,
+    articleId,
+    normalizedLocale,
+    translationSeoTitle,
+    translationSeoDescription
+  );
+
+  if (!result.updated && (translationSeoTitle.trim() || translationSeoDescription.trim())) {
+    await enqueueArticleTranslationJobs(user, { articleIds: [articleId], locale: normalizedLocale });
+  }
 }
 
 function fieldErrorsFromZod(error: ZodError) {
@@ -196,6 +226,7 @@ export async function updateArticleAction(
   try {
     const user = await requireUser();
     const article = await updateArticle(user, id, parsed.data);
+    await syncArticleTranslationSeo(user, id, formData);
     const shouldReturnToList = formData.get("returnToList") === "1" || parsed.data.status === ArticleStatus.PUBLISHED;
     revalidatePublicArticleIndex();
     revalidatePublicArticle(article.slug);
@@ -314,6 +345,7 @@ export async function updateArticleSettingsAction(
   try {
     const user = await requireUser();
     const article = await updateArticleMeta(user, id, parsed.data);
+    await syncArticleTranslationSeo(user, id, formData);
     revalidatePath("/admin/articles");
     revalidatePublicArticleIndex();
     revalidatePublicArticle(article.slug);

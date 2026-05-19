@@ -17,6 +17,7 @@ import {
   canManageBackups,
   canManageCodeInjection,
   canManageComments,
+  canManageGuestbook,
   canManageIdentities,
   canManageMailTemplates,
   canManageMoments,
@@ -40,6 +41,8 @@ function canSeeTab(tab: AdminTabItem, user: CurrentUser) {
       return canManageMoments(user);
     case "comments":
       return canManageComments(user);
+    case "guestbook":
+      return canManageGuestbook(user);
     case "users":
       return canManageUsers(user);
     case "identities":

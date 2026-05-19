@@ -1,7 +1,9 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { assertPermission, canManageSettings } from "@/lib/permissions";
+import { retryPublicContentTranslationJob } from "@/features/i18n/public-content-translations";
 import {
   getTranslationConfig,
   parseTranslationSettingsInput,
@@ -59,6 +61,7 @@ export async function updateTranslationSettingsAction(
     const user = await requireUser();
     const input = parseFormData(formData);
     await updateTranslationSettings(user, input);
+    revalidatePath("/admin/settings/translation");
     return { ok: true, message: "翻译设置已保存。" };
   } catch (error) {
     return {
@@ -104,4 +107,10 @@ export async function testTranslationSampleAction(formData: FormData): Promise<T
       message: error instanceof Error ? error.message : "测试翻译失败。"
     };
   }
+}
+
+export async function retryPublicContentTranslationJobAction(formData: FormData) {
+  const user = await requireUser();
+  await retryPublicContentTranslationJob(user, String(formData.get("jobId") ?? ""));
+  revalidatePath("/admin/settings/translation");
 }

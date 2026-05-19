@@ -1,8 +1,13 @@
-import { GuestbookStatus, UserRole } from "@prisma/client";
+import { GuestbookStatus, PublicContentTranslationEntity, UserRole } from "@prisma/client";
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import { assertPermission, canManageGuestbook } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
 import { sendTemplatedMail } from "@/lib/mail";
+import {
+  getPublicContentTranslationMap,
+  schedulePublicContentTranslation,
+  translatedField
+} from "@/features/i18n/public-content-translations";
 import {
   guestbookCommentCreateSchema,
   guestbookCreateSchema,
@@ -59,13 +64,31 @@ async function notifyAdmin(message: { nickname: string; email: string; content: 
   }
 }
 
-export async function listApprovedGuestbookMessages() {
+function scheduleMessageTranslation(message: { id: string; content: string; reply: string | null; updatedAt: Date }) {
+  schedulePublicContentTranslation({
+    entity: PublicContentTranslationEntity.GUESTBOOK_MESSAGE,
+    entityId: message.id,
+    fields: { content: message.content, reply: message.reply ?? "" },
+    sourceUpdatedAt: message.updatedAt
+  });
+}
+
+function scheduleCommentTranslation(comment: { id: string; content: string; createdAt: Date }) {
+  schedulePublicContentTranslation({
+    entity: PublicContentTranslationEntity.GUESTBOOK_COMMENT,
+    entityId: comment.id,
+    fields: { content: comment.content },
+    sourceUpdatedAt: comment.createdAt
+  });
+}
+
+export async function listApprovedGuestbookMessages(locale?: string | null) {
   if (!isDatabaseConfigured()) {
     return { messages: [], error: "DATABASE_URL 未配置，暂无留言。" };
   }
 
-  return withDatabase(async () => ({
-    messages: await db.guestbookMessage.findMany({
+  return withDatabase(async () => {
+    const messages = await db.guestbookMessage.findMany({
       where: { status: GuestbookStatus.APPROVED, notifyOnly: false, deletedAt: null },
       include: {
         user: {
@@ -86,9 +109,31 @@ export async function listApprovedGuestbookMessages() {
         }
       },
       orderBy: { createdAt: "desc" }
-    }),
-    error: null as string | null
-  }), { messages: [], error: "留言读取超时或失败。" });
+    });
+    const messageTranslations = await getPublicContentTranslationMap(
+      PublicContentTranslationEntity.GUESTBOOK_MESSAGE,
+      locale ?? "zh-CN",
+      messages.map((message) => message.id)
+    );
+    const commentTranslations = await getPublicContentTranslationMap(
+      PublicContentTranslationEntity.GUESTBOOK_COMMENT,
+      locale ?? "zh-CN",
+      messages.flatMap((message) => message.comments.map((comment) => comment.id))
+    );
+
+    return {
+      messages: messages.map((message) => ({
+        ...message,
+        content: translatedField(messageTranslations, message.id, "content", message.content),
+        reply: translatedField(messageTranslations, message.id, "reply", message.reply),
+        comments: message.comments.map((comment) => ({
+          ...comment,
+          content: translatedField(commentTranslations, comment.id, "content", comment.content)
+        }))
+      })),
+      error: null as string | null
+    };
+  }, { messages: [], error: "留言读取超时或失败。" });
 }
 
 export async function createGuestbookMessage(input: unknown, user?: CurrentUser | null) {
@@ -108,7 +153,9 @@ export async function createGuestbookMessage(input: unknown, user?: CurrentUser 
     }
   });
 
-  if (parsed.notifyOnly) {
+  if (!parsed.notifyOnly) {
+    scheduleMessageTranslation(message);
+  } else {
     await notifyAdmin(parsed);
   }
 
@@ -165,6 +212,10 @@ export async function moderateGuestbookMessage(user: CurrentUser, input: unknown
     }
   });
 
+  if (updated.status === GuestbookStatus.APPROVED && !updated.notifyOnly) {
+    scheduleMessageTranslation(updated);
+  }
+
   if (existing?.email && parsed.reply && parsed.reply !== existing.reply) {
     const mailResult = await sendTemplatedMail({
       to: existing.email,
@@ -203,7 +254,7 @@ export async function createGuestbookComment(input: unknown, user?: CurrentUser 
     throw new Error("这条留言不可评论或不存在。");
   }
 
-  return db.guestbookComment.create({
+  const comment = await db.guestbookComment.create({
     data: {
       messageId: parsed.messageId,
       nickname: parsed.nickname,
@@ -212,6 +263,8 @@ export async function createGuestbookComment(input: unknown, user?: CurrentUser 
       userId: user?.id ?? null
     }
   });
+  scheduleCommentTranslation(comment);
+  return comment;
 }
 
 export async function toggleGuestbookLike(user: CurrentUser, input: unknown) {

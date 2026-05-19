@@ -11,6 +11,26 @@ import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+function copy(locale: "zh-CN" | "en", articleCount: number) {
+  return locale === "en"
+    ? {
+        eyebrow: "Archive",
+        title: "Archives",
+        description: `Published articles are grouped by year and month. ${articleCount} visible articles are available now.`,
+        count: "articles",
+        emptyTitle: "No archives yet",
+        emptyDescription: "After articles are published, archives will be grouped by year and month automatically."
+      }
+    : {
+        eyebrow: "归档",
+        title: "归档",
+        description: `按年份和月份整理已发布文章，目前共 ${articleCount} 篇可见文章。`,
+        count: "篇文章",
+        emptyTitle: "暂无归档",
+        emptyDescription: "发布文章后，归档会自动按年月聚合展示。"
+      };
+}
+
 export default async function ArchivesPage({
   params
 }: {
@@ -25,6 +45,7 @@ export default async function ArchivesPage({
   const user = await getCurrentUser();
   const { archives, error } = await listPublishedArticleArchives(user, locale);
   const articleCount = archives.reduce((total, group) => total + group.articles.length, 0);
+  const text = copy(locale, articleCount);
 
   return (
     <PublicShell locale={locale}>
@@ -34,12 +55,10 @@ export default async function ArchivesPage({
             <div className="p-6 md:p-8">
               <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
                 <Archive className="h-3.5 w-3.5" />
-                Archive
+                {text.eyebrow}
               </p>
-              <h1 className="text-4xl font-semibold leading-tight tracking-normal md:text-5xl">归档</h1>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-                按年份和月份整理已发布文章，目前共 {articleCount} 篇可见文章。
-              </p>
+              <h1 className="text-4xl font-semibold leading-tight tracking-normal md:text-5xl">{text.title}</h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">{text.description}</p>
             </div>
           </section>
 
@@ -61,7 +80,7 @@ export default async function ArchivesPage({
                         </span>
                         <div>
                           <h2 className="text-xl font-semibold">{group.label}</h2>
-                          <p className="text-sm text-muted-foreground">{group.articles.length} 篇文章</p>
+                          <p className="text-sm text-muted-foreground">{group.articles.length} {text.count}</p>
                         </div>
                       </div>
                     </div>
@@ -85,10 +104,8 @@ export default async function ArchivesPage({
             </MotionList>
           ) : (
             <Card className="p-10 text-center">
-              <p className="text-lg font-medium">暂无归档</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                发布文章后，归档会自动按年月聚合展示。
-              </p>
+              <p className="text-lg font-medium">{text.emptyTitle}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{text.emptyDescription}</p>
             </Card>
           )}
         </main>

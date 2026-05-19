@@ -10,6 +10,26 @@ import { localizedPath, urlLocaleToLocale } from "@/lib/locale-url";
 
 export const dynamic = "force-dynamic";
 
+function copy(locale: "zh-CN" | "en") {
+  return locale === "en"
+    ? {
+        eyebrow: "Tag index",
+        title: "Tags",
+        description: "Browse article collections by topic. Each tag shows the number of published articles you can currently read.",
+        count: "articles",
+        emptyTitle: "No tags yet",
+        emptyDescription: "Tags and article counts will appear here after published articles are tagged."
+      }
+    : {
+        eyebrow: "标签索引",
+        title: "标签",
+        description: "按主题进入文章集合，每个标签显示当前可见的已发布文章数量。",
+        count: "篇",
+        emptyTitle: "暂无标签",
+        emptyDescription: "发布文章并添加标签后，这里会显示标签名称和文章数量。"
+      };
+}
+
 export default async function TagsPage({
   params
 }: {
@@ -20,8 +40,9 @@ export default async function TagsPage({
   if (!locale) {
     notFound();
   }
+  const text = copy(locale);
   const user = await getCurrentUser();
-  const { tags, error } = await listPublicTags(user);
+  const { tags, error } = await listPublicTags(user, locale);
 
   return (
     <PublicShell locale={locale}>
@@ -31,12 +52,10 @@ export default async function TagsPage({
             <div className="p-6 md:p-8">
               <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
                 <Tags className="h-3.5 w-3.5" />
-                Tag index
+                {text.eyebrow}
               </p>
-              <h1 className="text-4xl font-semibold leading-tight tracking-normal md:text-5xl">标签</h1>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-                按主题进入文章集合，每个标签显示当前可见的已发布文章数量。
-              </p>
+              <h1 className="text-4xl font-semibold leading-tight tracking-normal md:text-5xl">{text.title}</h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">{text.description}</p>
             </div>
           </section>
 
@@ -65,7 +84,7 @@ export default async function TagsPage({
                         </div>
                       </div>
                       <span className="rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground">
-                        {tag.articleCount} 篇
+                        {tag.articleCount} {text.count}
                       </span>
                     </Card>
                   </Link>
@@ -74,10 +93,8 @@ export default async function TagsPage({
             </MotionList>
           ) : (
             <Card className="p-10 text-center">
-              <p className="text-lg font-medium">暂无标签</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                发布文章并添加标签后，这里会显示标签名称和文章数量。
-              </p>
+              <p className="text-lg font-medium">{text.emptyTitle}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{text.emptyDescription}</p>
             </Card>
           )}
         </main>

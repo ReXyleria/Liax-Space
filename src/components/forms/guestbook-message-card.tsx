@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { Heart, MessageCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import {
   toggleGuestbookLikeAction,
   type GuestbookActionState
 } from "@/features/guestbook/actions";
+import type { Locale } from "@/lib/i18n-messages";
 import { formatDate } from "@/lib/utils";
 
 type GuestbookCardMessage = {
@@ -41,6 +42,30 @@ const initialState: GuestbookActionState = {
   fieldErrors: {}
 };
 
+function copy(locale: Locale) {
+  return locale === "en"
+    ? {
+        ownerReply: "Owner reply:",
+        loginToLike: "Sign in to like",
+        comment: "Comment",
+        nickname: "Nickname",
+        email: "Email",
+        placeholder: "Reply to this message",
+        submitting: "Submitting...",
+        submit: "Post comment"
+      }
+    : {
+        ownerReply: "站主回复：",
+        loginToLike: "登录后点赞",
+        comment: "评论",
+        nickname: "昵称",
+        email: "邮箱",
+        placeholder: "回复这条留言",
+        submitting: "提交中...",
+        submit: "发布评论"
+      };
+}
+
 function FieldError({ messages }: { messages?: string[] }) {
   if (!messages?.length) {
     return null;
@@ -51,12 +76,16 @@ function FieldError({ messages }: { messages?: string[] }) {
 
 export function GuestbookMessageCard({
   message,
-  currentUser
+  currentUser,
+  locale
 }: {
   message: GuestbookCardMessage;
   currentUser?: { id: string; nickname: string; email: string; avatar: string | null } | null;
+  locale: Locale;
 }) {
+  const text = copy(locale);
   const commentFormRef = useRef<HTMLFormElement>(null);
+  const [commentOpen, setCommentOpen] = useState(false);
   const [commentState, commentAction, commentPending] = useActionState<GuestbookActionState, FormData>(
     createGuestbookCommentAction,
     initialState
@@ -76,6 +105,7 @@ export function GuestbookMessageCard({
   useEffect(() => {
     if (commentState.ok) {
       commentFormRef.current?.reset();
+      setCommentOpen(false);
     }
   }, [commentState.ok]);
 
@@ -97,7 +127,7 @@ export function GuestbookMessageCard({
       <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{message.content}</p>
       {message.reply ? (
         <div className="mt-4 rounded-md bg-muted p-3 text-sm">
-          <span className="font-medium">站主回复：</span>
+          <span className="font-medium">{text.ownerReply}</span>
           {message.reply}
         </div>
       ) : null}
@@ -110,16 +140,16 @@ export function GuestbookMessageCard({
             variant={liked ? "primary" : "secondary"}
             className="h-9 px-3"
             disabled={likePending || !currentUser}
-            title={currentUser ? undefined : "登录后点赞"}
+            title={currentUser ? undefined : text.loginToLike}
           >
             <Heart className={`mr-1.5 h-4 w-4 ${liked ? "fill-current" : ""}`} />
             {likeCount}
           </Button>
         </form>
-        <span className="inline-flex h-9 items-center rounded-md bg-muted px-3 text-sm text-muted-foreground">
+        <Button type="button" variant="secondary" className="h-9 px-3" onClick={() => setCommentOpen((open) => !open)}>
           <MessageCircle className="mr-1.5 h-4 w-4" />
-          {commentCount}
-        </span>
+          {text.comment} · {commentCount}
+        </Button>
         {likeState.message ? (
           <span className={likeState.ok ? "text-xs text-emerald-600" : "text-xs text-destructive"}>
             {likeState.message}
@@ -145,28 +175,30 @@ export function GuestbookMessageCard({
         </div>
       ) : null}
 
-      <form ref={commentFormRef} action={commentAction} className="mt-4 space-y-3 rounded-md border bg-background/70 p-3">
-        <input type="hidden" name="messageId" value={message.id} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Input name="nickname" placeholder="昵称" defaultValue={currentUser?.nickname ?? ""} required maxLength={32} />
-          <Input name="email" type="email" placeholder="邮箱" defaultValue={currentUser?.email ?? ""} required />
-        </div>
-        <FieldError messages={commentState.fieldErrors.nickname} />
-        <FieldError messages={commentState.fieldErrors.email} />
-        <Textarea name="content" placeholder="回复这条留言" required maxLength={500} />
-        <FieldError messages={commentState.fieldErrors.content} />
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" disabled={commentPending}>
-            <Send className="mr-2 h-4 w-4" />
-            {commentPending ? "提交中..." : "发布评论"}
-          </Button>
-          {commentState.message ? (
-            <span className={commentState.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>
-              {commentState.message}
-            </span>
-          ) : null}
-        </div>
-      </form>
+      {commentOpen ? (
+        <form ref={commentFormRef} action={commentAction} className="mt-4 space-y-3 rounded-md border bg-background/70 p-3">
+          <input type="hidden" name="messageId" value={message.id} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input name="nickname" placeholder={text.nickname} defaultValue={currentUser?.nickname ?? ""} required maxLength={32} />
+            <Input name="email" type="email" placeholder={text.email} defaultValue={currentUser?.email ?? ""} required />
+          </div>
+          <FieldError messages={commentState.fieldErrors.nickname} />
+          <FieldError messages={commentState.fieldErrors.email} />
+          <Textarea name="content" placeholder={text.placeholder} required maxLength={500} />
+          <FieldError messages={commentState.fieldErrors.content} />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" disabled={commentPending}>
+              <Send className="mr-2 h-4 w-4" />
+              {commentPending ? text.submitting : text.submit}
+            </Button>
+            {commentState.message ? (
+              <span className={commentState.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>
+                {commentState.message}
+              </span>
+            ) : null}
+          </div>
+        </form>
+      ) : null}
     </Card>
   );
 }

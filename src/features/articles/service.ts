@@ -3,6 +3,7 @@ import {
   ContentVisibility,
   MediaReferenceSource,
   Prisma,
+  PublicContentTranslationEntity,
   TranslationStatus
 } from "@prisma/client";
 import { randomUUID } from "crypto";
@@ -18,6 +19,10 @@ import {
   scheduleArticleTranslationSync
 } from "@/features/articles/translation-service";
 import { getTranslationConfig } from "@/features/settings/translation-settings";
+import {
+  getPublicContentTranslationMap,
+  translatedField
+} from "@/features/i18n/public-content-translations";
 import { pushArticleUrlAfterPublish } from "@/features/site-push/service";
 import { normalizeTagSlug } from "@/features/tags/utils";
 import { mediaUrlMatchesReference, normalizeMediaReferenceUrl } from "@/lib/media-reference";
@@ -142,9 +147,38 @@ function mapArticle(article: ArticleWithRelations, locale?: string | null, trans
     translationTargetLocale: normalizedTargetLocale,
     translationReady,
     targetTranslationStatus: targetTranslation?.status ?? null,
+    targetTranslationTitle: targetTranslation?.title ?? null,
+    targetTranslationSummary: targetTranslation?.summary ?? null,
+    targetTranslationContentHtml: targetTranslation?.contentHtml ?? null,
+    targetTranslationSeoTitle: targetTranslation?.seoTitle ?? null,
+    targetTranslationSeoDescription: targetTranslation?.seoDescription ?? null,
     publishedAt: rest.publishedAt?.toISOString() ?? null,
     tags: tags.map((item) => item.tag).filter(isDefined)
   };
+}
+
+async function applyTranslatedTagNames<T extends { tags: Array<{ id: string; name: string }> }>(
+  rows: T[],
+  locale?: string | null
+) {
+  const tagIds = rows.flatMap((row) => row.tags.map((tag) => tag.id));
+  const translations = await getPublicContentTranslationMap(
+    PublicContentTranslationEntity.TAG,
+    locale ?? "zh-CN",
+    tagIds
+  );
+
+  if (!translations.size) {
+    return rows;
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    tags: row.tags.map((tag) => ({
+      ...tag,
+      name: translatedField(translations, tag.id, "name", tag.name)
+    }))
+  }));
 }
 
 function canViewArticle(
@@ -242,14 +276,16 @@ export async function listPublishedArticles(input: unknown, user: CurrentUser | 
       take: 100
     });
 
+    const articles = rows.filter((article) => canViewArticle(user, article)).map((article) => mapArticle(article, locale));
+
     return {
-      articles: rows.filter((article) => canViewArticle(user, article)).map((article) => mapArticle(article, locale)),
+      articles: await applyTranslatedTagNames(articles, locale),
       error: null as string | null
     };
   }, { articles: [], error: "Failed to load published articles." });
 }
 
-export async function listPublicTags(user: CurrentUser | null) {
+export async function listPublicTags(user: CurrentUser | null, locale?: string | null) {
   if (!isDatabaseConfigured()) {
     return { tags: [], error: "DATABASE_URL is not configured; tags cannot be loaded." };
   }
@@ -260,10 +296,16 @@ export async function listPublicTags(user: CurrentUser | null) {
       orderBy: { name: "asc" }
     });
 
+    const translations = await getPublicContentTranslationMap(
+      PublicContentTranslationEntity.TAG,
+      locale ?? "zh-CN",
+      rows.map((tag) => tag.id)
+    );
+
     return {
       tags: rows.map((tag) => ({
         id: tag.id,
-        name: tag.name,
+        name: translatedField(translations, tag.id, "name", tag.name),
         slug: tag.slug,
         color: tag.color,
         articleCount: tag.articles.filter(({ article }) => (
@@ -715,6 +757,37 @@ export async function updateArticleMeta(user: CurrentUser, id: string, input: un
   scheduleArticleTranslationSync(article);
 
   return article;
+}
+
+export async function updateArticleTranslationSeo(
+  user: CurrentUser,
+  articleId: string,
+  locale: string,
+  seoTitle: string,
+  seoDescription: string
+) {
+  assertPermission(canManageArticles(user), "You do not have permission to update article translation SEO.");
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL is not configured.");
+  }
+
+  const normalizedLocale = normalizeTranslationLocale(locale);
+  const existing = await db.articleTranslation.findUnique({
+    where: { articleId_locale: { articleId, locale: normalizedLocale } },
+    select: { id: true }
+  });
+  if (!existing) {
+    return { updated: false };
+  }
+
+  await db.articleTranslation.update({
+    where: { articleId_locale: { articleId, locale: normalizedLocale } },
+    data: {
+      seoTitle: seoTitle.trim() || null,
+      seoDescription: seoDescription.trim() || null
+    }
+  });
+  return { updated: true };
 }
 
 export async function getAllTags() {

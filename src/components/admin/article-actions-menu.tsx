@@ -21,6 +21,7 @@ export type ArticleRowData = {
   slug: string;
   summary: string | null;
   cover: string | null;
+  contentHtml: string;
   status: ArticleStatus;
   visibility: ContentVisibility;
   allowComments: boolean;
@@ -28,6 +29,11 @@ export type ArticleRowData = {
   featured: boolean;
   seoTitle: string | null;
   seoDescription: string | null;
+  targetTranslationTitle?: string | null;
+  targetTranslationSummary?: string | null;
+  targetTranslationContentHtml?: string | null;
+  targetTranslationSeoTitle?: string | null;
+  targetTranslationSeoDescription?: string | null;
   publishedAt: string | null;
   createdAt: Date | string;
   translationReady?: boolean;

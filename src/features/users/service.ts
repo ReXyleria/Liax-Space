@@ -278,7 +278,7 @@ export async function deleteManagedUser(user: CurrentUser, targetUserId: string)
   }
 
   if (!targetUserId) {
-    throw new Error("需要提供用�?ID。");
+    throw new Error("需要提供用户 ID。");
   }
 
   if (targetUserId === user.id) {

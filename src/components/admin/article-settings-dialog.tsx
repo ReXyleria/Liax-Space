@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
 import { ContentVisibility } from "@prisma/client";
-import { Send } from "lucide-react";
+import { Languages, Send, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -12,7 +12,11 @@ import { Select } from "@/components/ui/select";
 import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { ImageUploadField } from "@/components/forms/image-upload-field";
-import { updateArticleSettingsAction, type ArticleActionState } from "@/features/articles/actions";
+import {
+  generateArticleSeoAction,
+  updateArticleSettingsAction,
+  type ArticleActionState
+} from "@/features/articles/actions";
 import { contentVisibilityOptions } from "@/lib/content-visibility";
 import type { Locale } from "@/lib/i18n-messages";
 
@@ -22,6 +26,7 @@ type ArticleSettingsData = {
   slug: string;
   summary: string | null;
   cover: string | null;
+  contentHtml: string;
   visibility: ContentVisibility;
   allowComments: boolean;
   pinned: boolean;
@@ -29,6 +34,12 @@ type ArticleSettingsData = {
   seoTitle: string | null;
   seoDescription: string | null;
   publishedAt: string | null;
+  translationTargetLocale?: string;
+  targetTranslationTitle?: string | null;
+  targetTranslationSummary?: string | null;
+  targetTranslationContentHtml?: string | null;
+  targetTranslationSeoTitle?: string | null;
+  targetTranslationSeoDescription?: string | null;
   tags: Array<{ name: string }>;
 };
 
@@ -47,8 +58,13 @@ function labels(locale: Locale) {
         visibilityLabel: "Visibility",
         tagsLabel: "Tags",
         tagsPlaceholder: "Choose or create tags",
+        chineseSeo: "Chinese SEO",
+        englishSeo: "English SEO",
         seoTitleLabel: "SEO title",
         seoDescriptionLabel: "SEO description",
+        generateSeo: "AI generate SEO",
+        generatingSeo: "Generating...",
+        translationQueued: "English translation is not ready. The article has been queued for translation.",
         allowCommentsLabel: "Allow comments",
         pinnedLabel: "Pinned",
         featuredLabel: "Featured",
@@ -69,8 +85,13 @@ function labels(locale: Locale) {
         visibilityLabel: "可见范围",
         tagsLabel: "标签",
         tagsPlaceholder: "选择或新建标签",
+        chineseSeo: "中文 SEO",
+        englishSeo: "英文 SEO",
         seoTitleLabel: "SEO 标题",
         seoDescriptionLabel: "SEO 描述",
+        generateSeo: "AI 生成 SEO",
+        generatingSeo: "生成中...",
+        translationQueued: "英文译文尚未准备好，已将文章加入翻译队列。",
         allowCommentsLabel: "允许评论",
         pinnedLabel: "置顶",
         featuredLabel: "精选",
@@ -109,10 +130,13 @@ export function ArticleSettingsDialog({
   const visOptions = contentVisibilityOptions(locale);
   const action = updateArticleSettingsAction.bind(null, article.id);
   const [state, formAction, isPending] = useActionState(action, initialActionState);
+  const [isSeoPending, startSeoTransition] = useTransition();
   const formId = `article-settings-form-${article.id}`;
+  const translationLocale = article.translationTargetLocale || "en";
 
   const initialTags = article.tags.flatMap((tag) => (tag?.name ? [tag.name] : []));
   const [selectedTags, setSelectedTags] = useState(initialTags);
+  const [summary, setSummary] = useState(article.summary ?? "");
   const [visibility, setVisibility] = useState<string>(article.visibility);
   const [publishedAt, setPublishedAt] = useState(
     article.publishedAt ? new Date(article.publishedAt).toISOString().slice(0, 16) : ""
@@ -120,6 +144,13 @@ export function ArticleSettingsDialog({
   const [allowComments, setAllowComments] = useState(article.allowComments);
   const [pinned, setPinned] = useState(article.pinned);
   const [featured, setFeatured] = useState(article.featured);
+  const [seoTitle, setSeoTitle] = useState(article.seoTitle ?? "");
+  const [seoDescription, setSeoDescription] = useState(article.seoDescription ?? "");
+  const [translationSeoTitle, setTranslationSeoTitle] = useState(article.targetTranslationSeoTitle ?? "");
+  const [translationSeoDescription, setTranslationSeoDescription] = useState(article.targetTranslationSeoDescription ?? "");
+  const [seoTarget, setSeoTarget] = useState<"zh-CN" | "en" | null>(null);
+  const [seoMessage, setSeoMessage] = useState("");
+  const [seoError, setSeoError] = useState("");
   const [submitLocked, setSubmitLocked] = useState(false);
 
   const tagSelectOptions = useMemo(
@@ -146,6 +177,58 @@ export function ArticleSettingsDialog({
   }, [isPending]);
 
   const isSubmitting = isPending || submitLocked;
+
+  function generateSeo(target: "zh-CN" | "en") {
+    if (isSeoPending) {
+      return;
+    }
+
+    setSeoTarget(target);
+    setSeoMessage("");
+    setSeoError("");
+
+    if (target === "en" && !article.targetTranslationContentHtml?.trim()) {
+      startSeoTransition(() => {
+        void fetch("/api/admin/articles/translation-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ articleIds: [article.id], locale: translationLocale })
+        }).finally(() => {
+          setSeoTarget(null);
+          setSeoMessage(text.translationQueued);
+        });
+      });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set("title", target === "en" ? article.targetTranslationTitle || article.title : article.title);
+    formData.set("summary", target === "en" ? article.targetTranslationSummary || "" : summary);
+    formData.set("contentHtml", target === "en" ? article.targetTranslationContentHtml || "" : article.contentHtml);
+    formData.set("targetLocale", target);
+
+    startSeoTransition(() => {
+      void generateArticleSeoAction(formData)
+        .then((result) => {
+          if (!result.ok) {
+            setSeoError(result.message);
+            return;
+          }
+          if (target === "en") {
+            setTranslationSeoTitle(result.seoTitle ?? "");
+            setTranslationSeoDescription(result.seoDescription ?? "");
+          } else {
+            setSeoTitle(result.seoTitle ?? "");
+            setSeoDescription(result.seoDescription ?? "");
+          }
+          setSeoMessage(result.message);
+        })
+        .catch((error) => {
+          setSeoError(error instanceof Error ? error.message : "AI SEO 生成失败。");
+        })
+        .finally(() => setSeoTarget(null));
+    });
+  }
 
   return (
     <Dialog
@@ -182,7 +265,12 @@ export function ArticleSettingsDialog({
             {state.message}
           </p>
         ) : null}
+        {seoMessage ? <p className="text-sm text-emerald-600">{seoMessage}</p> : null}
+        {seoError ? <p className="text-sm text-destructive">{seoError}</p> : null}
         <input type="hidden" name="publishedAt" value={publishedAt} />
+        <input type="hidden" name="translationLocale" value={translationLocale} />
+        <input type="hidden" name="translationSeoTitle" value={translationSeoTitle} />
+        <input type="hidden" name="translationSeoDescription" value={translationSeoDescription} />
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{text.slugLabel}</span>
           <Input name="slug" defaultValue={article.slug} placeholder={text.slugPlaceholder} />
@@ -190,7 +278,7 @@ export function ArticleSettingsDialog({
         </label>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{text.summaryLabel}</span>
-          <Textarea name="summary" placeholder={text.summaryPlaceholder} defaultValue={article.summary ?? ""} />
+          <Textarea name="summary" placeholder={text.summaryPlaceholder} value={summary} onChange={(event) => setSummary(event.target.value)} />
         </label>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{text.coverLabel}</span>
@@ -198,12 +286,7 @@ export function ArticleSettingsDialog({
         </label>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{text.visibilityLabel}</span>
-          <Select
-            name="visibility"
-            value={visibility}
-            onValueChange={setVisibility}
-            options={visOptions}
-          />
+          <Select name="visibility" value={visibility} onValueChange={setVisibility} options={visOptions} />
         </label>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{text.tagsLabel}</span>
@@ -217,12 +300,33 @@ export function ArticleSettingsDialog({
           />
           <FieldError messages={state.fieldErrors.tagNames} />
         </label>
-        <div className="space-y-3">
-          <Input name="seoTitle" placeholder={text.seoTitleLabel} defaultValue={article.seoTitle ?? ""} />
+        <section className="space-y-3 rounded-md border bg-background/70 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium">{text.chineseSeo}</p>
+            <Button type="button" variant="secondary" className="h-9 px-3" disabled={isSeoPending} onClick={() => generateSeo("zh-CN")}>
+              <Sparkles className="mr-2 h-4 w-4" />
+              {isSeoPending && seoTarget === "zh-CN" ? text.generatingSeo : text.generateSeo}
+            </Button>
+          </div>
+          <Input name="seoTitle" placeholder={text.seoTitleLabel} value={seoTitle} onChange={(event) => setSeoTitle(event.target.value)} />
           <FieldError messages={state.fieldErrors.seoTitle} />
-          <Textarea name="seoDescription" placeholder={text.seoDescriptionLabel} defaultValue={article.seoDescription ?? ""} />
+          <Textarea name="seoDescription" placeholder={text.seoDescriptionLabel} value={seoDescription} onChange={(event) => setSeoDescription(event.target.value)} />
           <FieldError messages={state.fieldErrors.seoDescription} />
-        </div>
+        </section>
+        <section className="space-y-3 rounded-md border bg-background/70 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="inline-flex items-center gap-2 text-sm font-medium">
+              <Languages className="h-4 w-4 text-primary" />
+              {text.englishSeo}
+            </p>
+            <Button type="button" variant="secondary" className="h-9 px-3" disabled={isSeoPending} onClick={() => generateSeo("en")}>
+              <Sparkles className="mr-2 h-4 w-4" />
+              {isSeoPending && seoTarget === "en" ? text.generatingSeo : text.generateSeo}
+            </Button>
+          </div>
+          <Input placeholder={text.seoTitleLabel} value={translationSeoTitle} onChange={(event) => setTranslationSeoTitle(event.target.value)} />
+          <Textarea placeholder={text.seoDescriptionLabel} value={translationSeoDescription} onChange={(event) => setTranslationSeoDescription(event.target.value)} />
+        </section>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{text.publishedAtLabel}</span>
           <Input

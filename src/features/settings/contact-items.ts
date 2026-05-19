@@ -13,7 +13,7 @@ export const contactItemSchema = z.object({
   if (!data.enabled) return true;
   return data.label.trim().length > 0 && data.value.trim().length > 0 && data.href.trim().length > 0;
 }, {
-  message: "Enabled contact items must have label, value, and href.",
+  message: "启用的联系方式必须填写名称、内容和链接。",
   path: ["enabled"]
 });
 
@@ -82,4 +82,3 @@ export function serializeContactItems(items: ContactItem[]) {
     }))
   );
 }
-

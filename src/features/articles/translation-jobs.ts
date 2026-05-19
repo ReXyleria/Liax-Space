@@ -38,15 +38,15 @@ export async function enqueueArticleTranslationJobs(
   user: CurrentUser,
   input: { articleIds: unknown; locale: unknown }
 ) {
-  assertPermission(canManageArticles(user), "You do not have permission to translate articles.");
+  assertPermission(canManageArticles(user), "你没有权限翻译文章。");
 
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const articleIds = normalizeArticleIds(input.articleIds);
   if (!articleIds.length) {
-    throw new Error("Select at least one article.");
+    throw new Error("请至少选择一篇文章。");
   }
 
   const locale = normalizeTranslationLocale(String(input.locale || "en"));
@@ -76,7 +76,7 @@ export async function enqueueArticleTranslationJobs(
         articleId,
         locale,
         createdById: user.id,
-        progressMessage: "Queued"
+        progressMessage: "队列中"
       }))
     });
   }
@@ -86,7 +86,7 @@ export async function enqueueArticleTranslationJobs(
 }
 
 export async function listLatestArticleTranslationJobs(user: CurrentUser, articleIds: string[]) {
-  assertPermission(canManageArticles(user), "You do not have permission to view article translation jobs.");
+  assertPermission(canManageArticles(user), "你没有权限查看文章翻译任务。");
 
   if (!isDatabaseConfigured()) {
     return [];
@@ -125,10 +125,10 @@ export async function listLatestArticleTranslationJobs(user: CurrentUser, articl
 }
 
 export async function retryArticleTranslationJob(user: CurrentUser, jobId: string) {
-  assertPermission(canManageArticles(user), "You do not have permission to retry article translation jobs.");
+  assertPermission(canManageArticles(user), "你没有权限重试文章翻译任务。");
 
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const job = await db.articleTranslationJob.findUnique({
@@ -136,7 +136,7 @@ export async function retryArticleTranslationJob(user: CurrentUser, jobId: strin
     select: { id: true, status: true }
   });
   if (!job) {
-    throw new Error("Translation job not found.");
+    throw new Error("翻译任务不存在。");
   }
 
   if (ACTIVE_STATUSES.includes(job.status)) {
@@ -151,7 +151,7 @@ export async function retryArticleTranslationJob(user: CurrentUser, jobId: strin
       progress: 0,
       completedUnits: 0,
       totalUnits: 0,
-      progressMessage: "Queued for retry",
+      progressMessage: "已重新排队",
       error: null,
       startedAt: null,
       completedAt: null
@@ -171,7 +171,7 @@ async function resetStaleRunningJobs() {
     },
     data: {
       status: ArticleTranslationJobStatus.QUEUED,
-      progressMessage: "Recovered stale running job",
+      progressMessage: "已恢复停滞任务",
       startedAt: null
     }
   });
@@ -197,7 +197,7 @@ async function claimNextJob() {
     data: {
       status: ArticleTranslationJobStatus.RUNNING,
       startedAt: new Date(),
-      progressMessage: "Starting translation"
+      progressMessage: "开始翻译"
     }
   });
 
@@ -234,7 +234,7 @@ async function runJob(job: NonNullable<Awaited<ReturnType<typeof claimNextJob>>>
       data: {
         status: ArticleTranslationJobStatus.SUCCEEDED,
         progress: 100,
-        progressMessage: "Translation complete",
+        progressMessage: "翻译完成",
         error: null,
         completedAt: new Date()
       }
@@ -244,8 +244,8 @@ async function runJob(job: NonNullable<Awaited<ReturnType<typeof claimNextJob>>>
       where: { id: job.id },
       data: {
         status: ArticleTranslationJobStatus.FAILED,
-        error: error instanceof Error ? error.message : "Translation failed.",
-        progressMessage: error instanceof Error ? error.message : "Translation failed.",
+        error: error instanceof Error ? error.message : "翻译失败。",
+        progressMessage: error instanceof Error ? error.message : "翻译失败。",
         completedAt: new Date()
       }
     });

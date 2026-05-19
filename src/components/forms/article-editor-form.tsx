@@ -49,6 +49,14 @@ type ArticleFormValue = {
   tags: Array<{ name: string }>;
 };
 
+type ArticleTranslationFormValue = {
+  title: string;
+  summary: string | null;
+  contentHtml: string;
+  seoTitle: string | null;
+  seoDescription: string | null;
+};
+
 type ArticleDraft = ArticlePreviewDraft;
 
 type ArticleVersionValue = {
@@ -84,7 +92,7 @@ function labels(locale: Locale) {
         restoreDraft: "Restore draft",
         ignore: "Ignore",
         articleSettings: "Article settings",
-        articleSettingsDescription: "Configure the slug, summary, cover, visibility, tags, and SEO.",
+        articleSettingsDescription: "Configure slug, summary, cover, visibility, tags, SEO, and publish options.",
         close: "Close",
         slugLabel: "Slug",
         slugPlaceholder: "Leave empty to generate a stable UUID slug",
@@ -94,13 +102,21 @@ function labels(locale: Locale) {
         visibilityLabel: "Visibility",
         tagsLabel: "Tags",
         tagsPlaceholder: "Choose or create tags",
+        seoSectionTitle: "SEO settings",
+        seoSectionHint: "Use the translation AI settings to generate metadata, then adjust it manually.",
+        chineseSeoTitle: "Chinese SEO",
+        englishSeoTitle: "English SEO",
         seoTitleLabel: "SEO title",
-        seoDescriptionLabel: "SEO 描述",
+        seoDescriptionLabel: "SEO description",
+        generateSeo: "Generate SEO with AI",
+        generatingSeo: "Generating...",
+        englishSeoNeedsTranslation: "No English translation is available yet. The article translation has been queued first.",
+        englishSeoUnavailableForNew: "Save the article first, then generate English SEO from its translation.",
         allowCommentsLabel: "Allow comments",
         pinnedLabel: "Pinned",
         featuredLabel: "Featured",
         publishedAtLabel: "Publish date",
-        publishedAtHint: "For importing old articles, set the original publish date.",
+        publishedAtHint: "For imported old articles, set the original publish date.",
         versionHistoryDescription:
           "Load and review historical versions on demand. Restoring writes back to the current article.",
         loading: "Loading...",
@@ -111,6 +127,10 @@ function labels(locale: Locale) {
         restoring: "Restoring...",
         restoreFailed: "Version restore failed.",
         noVersions: "Saving the article will create version records.",
+        optionalEditorDataFailed: "Some optional editor data could not be loaded.",
+        versionLabel: "Version",
+        seoGenerated: "SEO has been generated. You can continue adjusting it manually.",
+        seoGenerateFailed: "AI SEO generation failed.",
         statusLabels: {
           [ArticleStatus.DRAFT]: "Draft",
           [ArticleStatus.PUBLISHED]: "Published",
@@ -127,23 +147,31 @@ function labels(locale: Locale) {
         versions: "版本历史",
         settings: "设置",
         publish: "发布",
-        updatePublish: "更新发布",
-        draftDetected: "检测到",
+        updatePublish: "更新并发布",
+        draftDetected: "检测到本地草稿，保存时间：",
         restoreDraft: "恢复草稿",
         ignore: "忽略",
         articleSettings: "文章设置",
-        articleSettingsDescription: "配置文章链接、摘要、封面、可见性、标签和 SEO。",
+        articleSettingsDescription: "配置文章链接、摘要、封面、可见性、标签、SEO 和发布选项。",
         close: "关闭",
         slugLabel: "文章链接",
         slugPlaceholder: "留空时自动生成稳定 UUID 链接",
         summaryLabel: "摘要",
         summaryPlaceholder: "文章摘要...",
         coverLabel: "封面",
-        visibilityLabel: "可见性",
+        visibilityLabel: "可见范围",
         tagsLabel: "标签",
         tagsPlaceholder: "选择或新建标签",
+        seoSectionTitle: "SEO 设置",
+        seoSectionHint: "使用翻译页的 AI 接口配置生成，生成后可继续手动修改。",
+        chineseSeoTitle: "中文 SEO",
+        englishSeoTitle: "英文 SEO",
         seoTitleLabel: "SEO 标题",
-        seoDescriptionLabel: "SEO description",
+        seoDescriptionLabel: "SEO 描述",
+        generateSeo: "AI 生成 SEO",
+        generatingSeo: "生成中...",
+        englishSeoNeedsTranslation: "当前还没有英文译文，已先排队文章翻译。",
+        englishSeoUnavailableForNew: "请先保存文章，再基于英文译文生成英文 SEO。",
         allowCommentsLabel: "允许评论",
         pinnedLabel: "置顶",
         featuredLabel: "精选",
@@ -158,6 +186,10 @@ function labels(locale: Locale) {
         restoring: "恢复中...",
         restoreFailed: "版本恢复失败。",
         noVersions: "保存文章后会生成版本记录。",
+        optionalEditorDataFailed: "部分可选编辑器数据加载失败。",
+        versionLabel: "版本",
+        seoGenerated: "SEO 已生成，可继续手动调整。",
+        seoGenerateFailed: "AI SEO 生成失败。",
         statusLabels: {
           [ArticleStatus.DRAFT]: "草稿",
           [ArticleStatus.PUBLISHED]: "已发布",
@@ -228,6 +260,7 @@ function createShortUuid() {
 
 export function ArticleEditorForm({
   article,
+  englishTranslation = null,
   tagOptions = [],
   versions: initialVersions = [],
   site,
@@ -235,6 +268,7 @@ export function ArticleEditorForm({
   locale = "zh-CN"
 }: {
   article?: ArticleFormValue | null;
+  englishTranslation?: ArticleTranslationFormValue | null;
   tagOptions?: Array<{ name: string }>;
   versions?: ArticleVersionValue[];
   site: PreviewSiteSettings;
@@ -265,6 +299,8 @@ export function ArticleEditorForm({
   const [cover, setCover] = useState(article?.cover ?? "");
   const [seoTitle, setSeoTitle] = useState(article?.seoTitle ?? "");
   const [seoDescription, setSeoDescription] = useState(article?.seoDescription ?? "");
+  const [translationSeoTitle, setTranslationSeoTitle] = useState(englishTranslation?.seoTitle ?? "");
+  const [translationSeoDescription, setTranslationSeoDescription] = useState(englishTranslation?.seoDescription ?? "");
   const [allowComments, setAllowComments] = useState(article?.allowComments ?? true);
   const [pinned, setPinned] = useState(article?.pinned ?? false);
   const [featured, setFeatured] = useState(article?.featured ?? false);
@@ -288,6 +324,7 @@ export function ArticleEditorForm({
   const [submitLocked, setSubmitLocked] = useState(false);
   const [seoMessage, setSeoMessage] = useState("");
   const [seoError, setSeoError] = useState("");
+  const [seoTarget, setSeoTarget] = useState<"zh-CN" | "en" | null>(null);
 
   const tagSelectOptions = useMemo(
     () => Array.from(new Set([...tagOptions.map((tag) => tag.name), ...selectedTags]))
@@ -365,6 +402,11 @@ export function ArticleEditorForm({
     setPendingDraft(null);
   }, []);
 
+  useEffect(() => {
+    setTranslationSeoTitle(englishTranslation?.seoTitle ?? "");
+    setTranslationSeoDescription(englishTranslation?.seoDescription ?? "");
+  }, [englishTranslation?.seoDescription, englishTranslation?.seoTitle]);
+
   function submitWithStatus(nextStatus: ArticleStatus, returnToList = false) {
     const form = formRef.current;
     if (!form || isPending || submitLocked) {
@@ -410,7 +452,35 @@ export function ArticleEditorForm({
     }
   }
 
-  function handleGenerateSeo() {
+  function queueEnglishTranslation() {
+    if (!article) {
+      setSeoError(text.englishSeoUnavailableForNew);
+      return;
+    }
+
+    setSeoTarget("en");
+    setSeoError("");
+    setSeoMessage("");
+    startSeoTransition(() => {
+      void fetch("/api/admin/articles/translation-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ articleIds: [article.id], locale: "en" })
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            throw new Error(payload?.message || text.seoGenerateFailed);
+          }
+          setSeoMessage(text.englishSeoNeedsTranslation);
+        })
+        .catch((error) => {
+          setSeoError(error instanceof Error ? error.message : text.seoGenerateFailed);
+        });
+    });
+  }
+
+  function handleGenerateSeo(target: "zh-CN" | "en") {
     const draft = collectDraft();
     if (!draft || isGeneratingSeo) {
       return;
@@ -418,11 +488,18 @@ export function ArticleEditorForm({
 
     setSeoError("");
     setSeoMessage("");
+    setSeoTarget(target);
+
+    if (target === "en" && !englishTranslation?.contentHtml?.trim()) {
+      queueEnglishTranslation();
+      return;
+    }
+
     const formData = new FormData();
-    formData.set("title", draft.title);
-    formData.set("summary", draft.summary);
-    formData.set("contentHtml", draft.contentHtml);
-    formData.set("targetLocale", "zh-CN");
+    formData.set("title", target === "en" ? englishTranslation?.title || draft.title : draft.title);
+    formData.set("summary", target === "en" ? englishTranslation?.summary || "" : draft.summary);
+    formData.set("contentHtml", target === "en" ? englishTranslation?.contentHtml || "" : draft.contentHtml);
+    formData.set("targetLocale", target);
 
     startSeoTransition(() => {
       void generateArticleSeoAction(formData)
@@ -432,17 +509,18 @@ export function ArticleEditorForm({
             return;
           }
 
-          if (result.seoTitle) {
-            setSeoTitle(result.seoTitle);
+          if (target === "en") {
+            setTranslationSeoTitle(result.seoTitle ?? "");
+            setTranslationSeoDescription(result.seoDescription ?? "");
+          } else {
+            setSeoTitle(result.seoTitle ?? "");
+            setSeoDescription(result.seoDescription ?? "");
           }
-          if (result.seoDescription) {
-            setSeoDescription(result.seoDescription);
-          }
-          setSeoMessage(result.message);
+          setSeoMessage(result.message || text.seoGenerated);
           scheduleDraftSave();
         })
         .catch((error) => {
-          setSeoError(error instanceof Error ? error.message : "AI SEO 生成失败。");
+          setSeoError(error instanceof Error ? error.message : text.seoGenerateFailed);
         });
     });
   }
@@ -537,6 +615,13 @@ export function ArticleEditorForm({
         ))}
         <input type="hidden" name="seoTitle" value={seoTitle} readOnly />
         <input type="hidden" name="seoDescription" value={seoDescription} readOnly />
+        {article ? (
+          <>
+            <input type="hidden" name="translationLocale" value="en" readOnly />
+            <input type="hidden" name="translationSeoTitle" value={translationSeoTitle} readOnly />
+            <input type="hidden" name="translationSeoDescription" value={translationSeoDescription} readOnly />
+          </>
+        ) : null}
         <input type="hidden" name="publishedAt" value={publishedAt} readOnly />
         {allowComments ? <input type="hidden" name="allowComments" value="on" readOnly /> : null}
         {pinned ? <input type="hidden" name="pinned" value="on" readOnly /> : null}
@@ -549,7 +634,7 @@ export function ArticleEditorForm({
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="space-y-1">
                   <p className="text-sm font-medium">
-                    {locale === "en" ? "Some optional editor data could not be loaded." : "部分可选编辑器数据加载失败。"}
+                    {text.optionalEditorDataFailed}
                   </p>
                   <ul className="space-y-1 text-xs">
                     {warnings.map((warning) => (
@@ -591,7 +676,7 @@ export function ArticleEditorForm({
                 <div className="min-w-0">
                   <CardTitle>{article ? text.editArticle : text.createArticle}</CardTitle>
                   <p className="mt-2 truncate text-sm text-muted-foreground">
-                    {title || text.fillTitleHint} · {text.currentStatusPrefix}{statusText}
+                    {title || text.fillTitleHint} / {text.currentStatusPrefix}{statusText}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -704,7 +789,7 @@ export function ArticleEditorForm({
               />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{locale === "en" ? text.visibilityLabel : "可见范围"}</span>
+              <span className="text-sm font-medium">{text.visibilityLabel}</span>
               <Select
                 name="visibility-preview"
                 value={visibility}
@@ -730,18 +815,19 @@ export function ArticleEditorForm({
               />
               <FieldError messages={state.fieldErrors.tagNames} />
             </label>
-            <div className="rounded-lg border bg-muted/20 p-3">
-              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium">SEO</p>
-                  <p className="text-xs text-muted-foreground">使用翻译页的 AI 接口配置生成，生成后可继续手动修改。</p>
-                </div>
-                <Button type="button" variant="secondary" onClick={handleGenerateSeo} disabled={isGeneratingSeo}>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  {isGeneratingSeo ? "生成中..." : "AI 生成 SEO"}
-                </Button>
+            <div className="space-y-4 rounded-lg border bg-muted/20 p-3">
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-medium">{text.seoSectionTitle}</p>
+                <p className="text-xs text-muted-foreground">{text.seoSectionHint}</p>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-3 rounded-md border bg-background/70 p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm font-medium">{text.chineseSeoTitle}</p>
+                  <Button type="button" variant="secondary" onClick={() => handleGenerateSeo("zh-CN")} disabled={isGeneratingSeo}>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    {isGeneratingSeo && seoTarget === "zh-CN" ? text.generatingSeo : text.generateSeo}
+                  </Button>
+                </div>
                 <Input
                   name="seoTitle-preview"
                   placeholder={text.seoTitleLabel}
@@ -762,9 +848,30 @@ export function ArticleEditorForm({
                   }}
                 />
                 <FieldError messages={state.fieldErrors.seoDescription} />
-                {seoError ? <p className="text-xs text-destructive">{seoError}</p> : null}
-                {seoMessage ? <p className="text-xs text-emerald-700">{seoMessage}</p> : null}
               </div>
+              <div className="space-y-3 rounded-md border bg-background/70 p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm font-medium">{text.englishSeoTitle}</p>
+                  <Button type="button" variant="secondary" onClick={() => handleGenerateSeo("en")} disabled={isGeneratingSeo}>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    {isGeneratingSeo && seoTarget === "en" ? text.generatingSeo : text.generateSeo}
+                  </Button>
+                </div>
+                <Input
+                  placeholder={text.seoTitleLabel}
+                  value={translationSeoTitle}
+                  onChange={(event) => setTranslationSeoTitle(event.target.value)}
+                  disabled={!article}
+                />
+                <Textarea
+                  placeholder={text.seoDescriptionLabel}
+                  value={translationSeoDescription}
+                  onChange={(event) => setTranslationSeoDescription(event.target.value)}
+                  disabled={!article}
+                />
+              </div>
+              {seoError ? <p className="text-xs text-destructive">{seoError}</p> : null}
+              {seoMessage ? <p className="text-xs text-emerald-700">{seoMessage}</p> : null}
             </div>
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">{text.publishedAtLabel}</span>
@@ -833,9 +940,9 @@ export function ArticleEditorForm({
                 <div key={version.id} className="rounded-md border bg-background/70 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">版本 {version.version} · {version.title}</p>
+                      <p className="truncate text-sm font-medium">{text.versionLabel} {version.version} / {version.title}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {new Date(version.createdAt).toLocaleString("zh-CN")} · {version.createdByName}
+                        {new Date(version.createdAt).toLocaleString(dateLocale)} / {version.createdByName}
                       </p>
                       {versionPreview?.id === version.id ? (
                         <div className="mt-3 max-h-64 overflow-y-auto rounded border bg-muted/30 p-3 text-sm">

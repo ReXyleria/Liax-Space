@@ -1,7 +1,9 @@
+import { PublicContentTranslationEntity } from "@prisma/client";
 import { notFound } from "next/navigation";
 import { MotionItem, MotionPage } from "@/components/animations/reveal";
 import { FloatingContactCard } from "@/components/home/floating-contact-card";
 import { PublicShell } from "@/components/layout/public-shell";
+import { getPublicContentTranslationMap, translatedField } from "@/features/i18n/public-content-translations";
 import { parseContactItems } from "@/features/settings/contact-items";
 import { shouldShowHomeContactCard } from "@/features/settings/footer";
 import { getSettingsMap } from "@/features/settings/service";
@@ -26,11 +28,24 @@ export default async function HomePage({
     getOwnerProfile()
   ]);
 
-  const ownerNickname = ownerProfile?.nickname || settings["site.title"] || (locale === "en" ? "Administer" : "站主");
+  const ownerNickname = ownerProfile?.nickname || settings["site.title"] || (locale === "en" ? "Owner" : "站主");
   const ownerAvatar = ownerProfile?.avatar || "";
   const contacts = parseContactItems(settings)
     .filter((contact) => contact.enabled)
     .sort((left, right) => left.sort - right.sort);
+  const [contactTranslations, settingTranslations] = await Promise.all([
+    getPublicContentTranslationMap(
+      PublicContentTranslationEntity.SETTING,
+      locale,
+      contacts.map((contact) => `contact:${contact.id}`)
+    ),
+    getPublicContentTranslationMap(PublicContentTranslationEntity.SETTING, locale, ["site.subtitle"])
+  ]);
+  const localizedContacts = contacts.map((contact) => ({
+    ...contact,
+    label: translatedField(contactTranslations, `contact:${contact.id}`, "label", contact.label)
+  }));
+  const subtitle = translatedField(settingTranslations, "site.subtitle", "value", settings["site.subtitle"]);
   const showContactCard = shouldShowHomeContactCard(settings) && contacts.length > 0;
 
   return (
@@ -59,19 +74,19 @@ export default async function HomePage({
                   <span className="font-medium">{ownerNickname}</span>
                 </div>
 
-                {settings["site.subtitle"] ? (
+                {subtitle ? (
                   <h1
                     data-home-obstacle
                     className="max-w-3xl text-5xl font-semibold leading-tight tracking-normal drop-shadow-[0_2px_18px_rgba(0,0,0,0.45)] md:text-7xl"
                   >
-                    {settings["site.subtitle"]}
+                    {subtitle}
                   </h1>
                 ) : null}
 
                 {settingsError ? <p data-home-obstacle className="mt-4 text-sm text-red-200">{settingsError}</p> : null}
               </MotionItem>
 
-              {showContactCard ? <FloatingContactCard locale={locale} contacts={contacts} /> : null}
+              {showContactCard ? <FloatingContactCard locale={locale} contacts={localizedContacts} /> : null}
             </div>
           </section>
         </main>

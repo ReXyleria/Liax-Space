@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { ZodError, z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { getAdminLocale } from "@/lib/i18n-server";
 import { localizedPath, urlLocales } from "@/lib/locale-url";
 import { enqueueArticleTranslationJobs } from "@/features/articles/translation-jobs";
 import { upsertManualArticleTranslation } from "@/features/articles/translation-service";
@@ -48,10 +49,29 @@ function revalidateLocalizedArticleDetail(slug: string) {
   }
 }
 
+function translationActionText(locale: Awaited<ReturnType<typeof getAdminLocale>>) {
+  return locale === "en"
+    ? {
+        queued: "Translation job queued.",
+        failed: "Translation failed.",
+        checkForm: "Please check the translation form.",
+        saved: "Translation saved.",
+        saveFailed: "Failed to save translation."
+      }
+    : {
+        queued: "翻译任务已加入队列。",
+        failed: "翻译失败。",
+        checkForm: "请检查译文表单。",
+        saved: "译文已保存。",
+        saveFailed: "译文保存失败。"
+      };
+}
+
 export async function translateArticleAction(
   _previousState: ArticleTranslationActionState,
   formData: FormData
 ): Promise<ArticleTranslationActionState> {
+  const text = translationActionText(await getAdminLocale());
   try {
     const user = await requireUser();
     const articleId = String(formData.get("articleId") ?? "");
@@ -59,11 +79,11 @@ export async function translateArticleAction(
     await enqueueArticleTranslationJobs(user, { articleIds: [articleId], locale });
     revalidatePath(`/admin/articles/${articleId}/edit`);
     revalidateLocalizedArticleIndex();
-    return { ok: true, message: "Translation job queued." };
+    return { ok: true, message: text.queued };
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "Translation failed."
+      message: error instanceof Error ? error.message : text.failed
     };
   }
 }
@@ -72,6 +92,7 @@ export async function updateArticleTranslationAction(
   _previousState: ArticleTranslationActionState,
   formData: FormData
 ): Promise<ArticleTranslationActionState> {
+  const text = translationActionText(await getAdminLocale());
   const parsed = translationEditSchema.safeParse({
     articleId: formData.get("articleId"),
     locale: formData.get("locale") ?? "en",
@@ -86,7 +107,7 @@ export async function updateArticleTranslationAction(
   if (!parsed.success) {
     return {
       ok: false,
-      message: "Please check the translation form.",
+      message: text.checkForm,
       fieldErrors: zodFieldErrors(parsed.error)
     };
   }
@@ -100,11 +121,11 @@ export async function updateArticleTranslationAction(
     revalidatePath(`/admin/articles/${parsed.data.articleId}/edit`);
     revalidateLocalizedArticleIndex();
     revalidateLocalizedArticleDetail(result.articleSlug);
-    return { ok: true, message: "Translation saved." };
+    return { ok: true, message: text.saved };
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "Failed to save translation.",
+      message: error instanceof Error ? error.message : text.saveFailed,
       fieldErrors: {}
     };
   }

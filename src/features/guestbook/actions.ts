@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { GuestbookStatus } from "@prisma/client";
 import { ZodError } from "zod";
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import {
@@ -43,6 +44,7 @@ function revalidateGuestbookPaths() {
     revalidatePath(localizedPath(locale, "/guestbook"));
   }
   revalidatePath("/admin/guestbook");
+  revalidatePath("/admin/settings/translation");
 }
 
 export async function createGuestbookMessageAction(
@@ -71,7 +73,7 @@ export async function createGuestbookMessageAction(
     revalidateGuestbookPaths();
     return {
       ok: true,
-      message: parsed.data.notifyOnly ? "重要留言已发送到邮箱。" : "留言已提交。",
+      message: parsed.data.notifyOnly ? "重要留言已发送到邮箱。" : "留言已提交并公开展示。",
       fieldErrors: {}
     };
   } catch (error) {
@@ -95,6 +97,30 @@ export async function moderateGuestbookMessageAction(
   } catch (error) {
     return stateFromError(error, "留言保存失败，请稍后重试。");
   }
+}
+
+export async function hideGuestbookMessageAction(
+  _previousState: GuestbookActionState,
+  formData: FormData
+): Promise<GuestbookActionState> {
+  formData.set("status", GuestbookStatus.HIDDEN);
+  return moderateGuestbookMessageAction(_previousState, formData);
+}
+
+export async function deleteGuestbookMessageAction(
+  _previousState: GuestbookActionState,
+  formData: FormData
+): Promise<GuestbookActionState> {
+  formData.set("status", GuestbookStatus.DELETED);
+  return moderateGuestbookMessageAction(_previousState, formData);
+}
+
+export async function replyGuestbookMessageAction(
+  _previousState: GuestbookActionState,
+  formData: FormData
+): Promise<GuestbookActionState> {
+  formData.set("status", GuestbookStatus.APPROVED);
+  return moderateGuestbookMessageAction(_previousState, formData);
 }
 
 export async function createGuestbookCommentAction(

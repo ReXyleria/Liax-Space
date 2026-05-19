@@ -10,6 +10,21 @@ import { urlLocaleToLocale } from "@/lib/locale-url";
 
 export const dynamic = "force-dynamic";
 
+function copy(locale: "zh-CN" | "en") {
+  return locale === "en"
+    ? {
+        title: "Guestbook",
+        description:
+          "Your email is not shown publicly. Public messages are approved automatically; important messages can be sent only to the owner.",
+        empty: "No public messages yet."
+      }
+    : {
+        title: "留言",
+        description: "邮箱不会在前台公开。公开留言会自动通过并展示；重要留言可选择只发送给站主。",
+        empty: "暂无公开留言。"
+      };
+}
+
 export default async function GuestbookPage({
   params
 }: {
@@ -20,9 +35,10 @@ export default async function GuestbookPage({
   if (!locale) {
     notFound();
   }
+  const text = copy(locale);
 
   const [{ messages, error }, user] = await Promise.all([
-    listApprovedGuestbookMessages(),
+    listApprovedGuestbookMessages(locale),
     getCurrentUser()
   ]);
   const currentUser = user
@@ -39,11 +55,9 @@ export default async function GuestbookPage({
       <MotionPage>
         <main className="mx-auto grid max-w-6xl gap-8 px-6 py-12 lg:grid-cols-[380px_1fr]">
           <section>
-            <h1 className="text-4xl font-semibold">留言</h1>
-            <p className="mt-3 text-muted-foreground">
-              邮箱不会在前台公开。公开留言会自动通过并展示；重要留言可选择只发送给站主。
-            </p>
-            <GuestbookForm defaultNickname={user?.nickname ?? ""} defaultEmail={user?.email ?? ""} />
+            <h1 className="text-4xl font-semibold">{text.title}</h1>
+            <p className="mt-3 text-muted-foreground">{text.description}</p>
+            <GuestbookForm defaultNickname={user?.nickname ?? ""} defaultEmail={user?.email ?? ""} locale={locale} />
           </section>
           <section className="space-y-4">
             {error ? <Card className="p-5 text-destructive">{error}</Card> : null}
@@ -51,11 +65,11 @@ export default async function GuestbookPage({
               {messages.length ? (
                 messages.map((message) => (
                   <MotionItem key={message.id}>
-                    <GuestbookMessageCard message={message} currentUser={currentUser} />
+                    <GuestbookMessageCard message={message} currentUser={currentUser} locale={locale} />
                   </MotionItem>
                 ))
               ) : (
-                <Card className="p-8 text-center text-muted-foreground">暂无公开留言。</Card>
+                <Card className="p-8 text-center text-muted-foreground">{text.empty}</Card>
               )}
             </MotionList>
           </section>

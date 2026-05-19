@@ -12,6 +12,28 @@ import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+function copy(locale: "zh-CN" | "en") {
+  return locale === "en"
+    ? {
+        eyebrow: "Reading index",
+        title: "Articles",
+        description: "Search titles, summaries, body text, and tags while keeping the reading entry simple.",
+        activeTag: "Current tag:",
+        search: "Search articles",
+        emptyTitle: "No matching articles",
+        emptyDescription: "Try another keyword or tag, or clear filters to view all articles."
+      }
+    : {
+        eyebrow: "阅读索引",
+        title: "文章",
+        description: "搜索标题、摘要、正文和标签，保持阅读入口简单直接。",
+        activeTag: "当前标签：",
+        search: "搜索文章",
+        emptyTitle: "没有找到相关文章",
+        emptyDescription: "换一个关键词或标签，或者清空筛选后查看全部文章。"
+      };
+}
+
 export default async function ArticlesPage({
   params: routeParams,
   searchParams
@@ -25,6 +47,7 @@ export default async function ArticlesPage({
   if (!locale) {
     notFound();
   }
+  const text = copy(locale);
 
   const user = await getCurrentUser();
   const { articles, error } = await listPublishedArticles({ q: params.q, tag: params.tag, sort: "newest" }, user, locale);
@@ -38,15 +61,13 @@ export default async function ArticlesPage({
             <div className="p-6 md:p-8">
               <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
                 <Sparkles className="h-3.5 w-3.5" />
-                Reading index
+                {text.eyebrow}
               </p>
-              <h1 className="text-4xl font-semibold leading-tight tracking-tight md:text-5xl">文章</h1>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-                搜索标题、摘要、正文和标签，保持阅读入口简单直接。
-              </p>
+              <h1 className="text-4xl font-semibold leading-tight tracking-tight md:text-5xl">{text.title}</h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">{text.description}</p>
               {activeTag ? (
                 <p className="mt-4 inline-flex rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground">
-                  当前标签：{activeTag}
+                  {text.activeTag}{activeTag}
                 </p>
               ) : null}
               <form className="mt-6 max-w-2xl">
@@ -55,7 +76,7 @@ export default async function ArticlesPage({
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     name="q"
-                    placeholder="搜索文章"
+                    placeholder={text.search}
                     defaultValue={params.q ?? ""}
                     className="h-12 w-full rounded-md border bg-background pl-10 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
                   />
@@ -109,8 +130,8 @@ export default async function ArticlesPage({
             </MotionList>
           ) : (
             <Card className="p-10 text-center">
-              <p className="text-lg font-medium">没有找到相关文章</p>
-              <p className="mt-2 text-sm text-muted-foreground">换一个关键词或标签，或者清空筛选后查看全部文章。</p>
+              <p className="text-lg font-medium">{text.emptyTitle}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{text.emptyDescription}</p>
             </Card>
           )}
         </main>

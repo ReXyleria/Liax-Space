@@ -18,7 +18,7 @@ export async function POST(
     return NextResponse.json(
       {
         ok: false,
-        message: error instanceof Error ? error.message : "Failed to retry translation job."
+        message: error instanceof Error ? error.message : "重试翻译任务失败。"
       },
       { status: 500 }
     );

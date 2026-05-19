@@ -12,6 +12,22 @@ import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+function copy(locale: "zh-CN" | "en") {
+  return locale === "en"
+    ? {
+        title: "Moments",
+        description: "A short-form timeline filtered by your current access level.",
+        empty: "No moments yet.",
+        unknownDevice: "Unknown device"
+      }
+    : {
+        title: "瞬间",
+        description: "短内容时间线会按身份可见性过滤。",
+        empty: "暂无瞬间。",
+        unknownDevice: "未知设备"
+      };
+}
+
 export default async function MomentsPage({
   params
 }: {
@@ -22,15 +38,16 @@ export default async function MomentsPage({
   if (!locale) {
     notFound();
   }
+  const text = copy(locale);
   const user = await getCurrentUser();
-  const { moments, error } = await listPublicMoments(user);
+  const { moments, error } = await listPublicMoments(user, locale);
 
   return (
     <PublicShell locale={locale}>
       <MotionPage>
         <main className="mx-auto max-w-3xl px-6 py-12">
-          <h1 className="text-4xl font-semibold">瞬间</h1>
-          <p className="mt-3 text-muted-foreground">短内容时间线会按身份可见性过滤。</p>
+          <h1 className="text-4xl font-semibold">{text.title}</h1>
+          <p className="mt-3 text-muted-foreground">{text.description}</p>
           {error ? <Card className="mt-6 p-5 text-destructive">{error}</Card> : null}
           <MotionList className="mt-8 space-y-5">
             {moments.length ? moments.map((moment) => (
@@ -53,6 +70,7 @@ export default async function MomentsPage({
                     likeCount={moment.likeCount}
                     liked={moment.likedByViewer}
                     canInteract={Boolean(user)}
+                    locale={locale}
                   />
                   {moment.comments.length ? (
                     <div className="mt-4 space-y-3 border-t pt-4">
@@ -61,7 +79,7 @@ export default async function MomentsPage({
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                             <span className="text-sm font-medium">{comment.user.nickname}</span>
                             <span className="text-xs text-muted-foreground">
-                              {formatDate(comment.createdAt)} · {comment.deviceName || "未知设备"}
+                              {formatDate(comment.createdAt)} · {comment.deviceName || text.unknownDevice}
                             </span>
                           </div>
                           <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{comment.content}</p>
@@ -72,7 +90,7 @@ export default async function MomentsPage({
                   <p className="mt-4 text-xs text-muted-foreground">{moment.visibility}</p>
                 </Card>
               </MotionItem>
-            )) : <Card className="p-8 text-center text-muted-foreground">暂无瞬间。</Card>}
+            )) : <Card className="p-8 text-center text-muted-foreground">{text.empty}</Card>}
           </MotionList>
         </main>
       </MotionPage>
