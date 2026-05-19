@@ -86,7 +86,11 @@ export default async function HomePage({
                 {settingsError ? <p data-home-obstacle className="mt-4 text-sm text-red-200">{settingsError}</p> : null}
               </MotionItem>
 
-              {showContactCard ? <FloatingContactCard locale={locale} contacts={localizedContacts} /> : null}
+              {showContactCard ? (
+                <div className="hidden lg:block">
+                  <FloatingContactCard locale={locale} contacts={localizedContacts} />
+                </div>
+              ) : null}
             </div>
           </section>
         </main>

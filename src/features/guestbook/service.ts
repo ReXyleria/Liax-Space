@@ -110,6 +110,7 @@ export async function listApprovedGuestbookMessages(locale?: string | null) {
       },
       orderBy: { createdAt: "desc" }
     });
+
     const messageTranslations = await getPublicContentTranslationMap(
       PublicContentTranslationEntity.GUESTBOOK_MESSAGE,
       locale ?? "zh-CN",
@@ -171,6 +172,10 @@ export async function listAdminGuestbookMessages(user: CurrentUser) {
 
   return withDatabase(async () => ({
     messages: await db.guestbookMessage.findMany({
+      where: {
+        deletedAt: null,
+        status: { not: GuestbookStatus.DELETED }
+      },
       include: {
         user: {
           select: { nickname: true, avatar: true }
@@ -198,6 +203,10 @@ export async function moderateGuestbookMessage(user: CurrentUser, input: unknown
   }
 
   const parsed = guestbookModerationSchema.parse(input);
+  if (parsed.status === GuestbookStatus.DELETED) {
+    return deleteGuestbookMessage(user, parsed.id);
+  }
+
   const existing = await db.guestbookMessage.findUnique({
     where: { id: parsed.id },
     select: { email: true, nickname: true, reply: true }
@@ -208,7 +217,7 @@ export async function moderateGuestbookMessage(user: CurrentUser, input: unknown
     data: {
       reply: parsed.reply,
       status: parsed.status,
-      deletedAt: parsed.status === GuestbookStatus.DELETED ? new Date() : null
+      deletedAt: null
     }
   });
 
@@ -232,6 +241,48 @@ export async function moderateGuestbookMessage(user: CurrentUser, input: unknown
   }
 
   return updated;
+}
+
+export async function deleteGuestbookMessage(user: CurrentUser, id: string) {
+  assertPermission(canManageGuestbook(user), "你没有权限管理留言板。");
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL 未配置。");
+  }
+
+  const message = await db.guestbookMessage.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      comments: { select: { id: true } }
+    }
+  });
+
+  if (!message) {
+    return null;
+  }
+
+  const commentIds = message.comments.map((comment) => comment.id);
+  await db.$transaction([
+    db.publicContentTranslation.deleteMany({
+      where: {
+        OR: [
+          { entity: PublicContentTranslationEntity.GUESTBOOK_MESSAGE, entityId: id },
+          { entity: PublicContentTranslationEntity.GUESTBOOK_COMMENT, entityId: { in: commentIds } }
+        ]
+      }
+    }),
+    db.publicContentTranslationJob.deleteMany({
+      where: {
+        OR: [
+          { entity: PublicContentTranslationEntity.GUESTBOOK_MESSAGE, entityId: id },
+          { entity: PublicContentTranslationEntity.GUESTBOOK_COMMENT, entityId: { in: commentIds } }
+        ]
+      }
+    }),
+    db.guestbookMessage.delete({ where: { id } })
+  ]);
+
+  return message;
 }
 
 export async function createGuestbookComment(input: unknown, user?: CurrentUser | null) {

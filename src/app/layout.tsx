@@ -3,6 +3,7 @@ import { RouteTransition } from "@/components/animations/route-transition";
 import { CodeInjectionRenderer } from "@/components/layout/code-injection-renderer";
 import { ServerHeadInjection } from "@/components/layout/server-head-injection";
 import { getCodeInjectionMap, getEnabledCodeInjection } from "@/features/code-injection/service";
+import { ensureScheduledBackupWorker } from "@/features/backup/scheduler";
 import { getSettingsMap } from "@/features/settings/service";
 import { getCurrentLocale } from "@/lib/i18n-server";
 import { getMetadataBase, getSiteConfig } from "@/lib/site";
@@ -30,6 +31,8 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  ensureScheduledBackupWorker();
+
   const [locale, { settings }, { settings: codeInjection }] = await Promise.all([
     getCurrentLocale(),
     getSettingsMap(),

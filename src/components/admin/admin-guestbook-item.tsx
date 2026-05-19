@@ -88,9 +88,8 @@ export function AdminGuestbookItem({ message }: { message: AdminGuestbookMessage
           <div className="min-w-0">
             <p className="truncate font-medium">{displayName}</p>
             <p className="text-sm text-muted-foreground">
-              {formatDate(message.createdAt)} · {statusLabels[message.status] ?? message.status}
-              {message.notifyOnly ? " · 仅通知" : ""}
-              {message.deletedAt ? " · 已标记删除" : ""}
+              {formatDate(message.createdAt)} / {statusLabels[message.status] ?? message.status}
+              {message.notifyOnly ? " / 仅通知" : ""}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">{message.email}</p>
           </div>
@@ -121,7 +120,7 @@ export function AdminGuestbookItem({ message }: { message: AdminGuestbookMessage
             隐藏
           </Button>
         </form>
-        <Button type="button" variant="danger" onClick={() => setDeleteOpen(true)} disabled={message.status === GuestbookStatus.DELETED}>
+        <Button type="button" variant="danger" onClick={() => setDeleteOpen(true)}>
           <Trash2 className="mr-2 h-4 w-4" />
           删除
         </Button>
@@ -180,16 +179,13 @@ export function AdminGuestbookItem({ message }: { message: AdminGuestbookMessage
       <ConfirmActionDialog
         open={deleteOpen}
         title="确认删除留言"
-        description="删除后这条留言会从前台隐藏，并在后台标记为已删除。"
+        description="删除后会永久移除这条留言及其评论、点赞和翻译任务记录。隐藏才会继续保留在后台。"
         confirmLabel="删除"
         cancelLabel="取消"
         pending={deletePending}
         onOpenChange={setDeleteOpen}
         action={deleteAction}
-        hiddenFields={[
-          { name: "id", value: message.id },
-          { name: "reply", value: message.reply ?? "" }
-        ]}
+        hiddenFields={[{ name: "id", value: message.id }]}
       />
     </Card>
   );

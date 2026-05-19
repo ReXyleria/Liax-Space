@@ -27,7 +27,7 @@ function TocNav({
           type="button"
           onClick={() => onNavigate(item)}
           className={cn(
-            "block w-full rounded-md px-2 py-2 text-left text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground",
+            "block w-full rounded-md px-2 py-2 text-left text-sm text-muted-foreground transition duration-300 hover:bg-muted hover:text-foreground",
             item.level === 2 && "pl-4",
             item.level === 3 && "pl-6 text-xs",
             item.level === 4 && "pl-8 text-xs",
@@ -35,7 +35,7 @@ function TocNav({
           )}
         >
           <span className="mr-2 text-[10px] font-semibold text-muted-foreground">H{item.level}</span>
-          {item.title}
+          <span>{item.title}</span>
         </button>
       ))}
     </nav>
@@ -102,18 +102,19 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
 
       <button
         type="button"
-        className="fixed bottom-5 right-0 z-[90] grid h-12 w-8 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white/92 text-muted-foreground shadow-2xl shadow-primary/15 transition-all duration-500 ease-out hover:w-10 hover:bg-white hover:text-primary xl:hidden"
+        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] -right-5 z-[155] grid h-12 w-10 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white text-muted-foreground shadow-2xl shadow-slate-950/14 transition-all duration-500 ease-out hover:right-0 hover:text-primary focus-visible:right-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 active:right-0 md:hidden"
         onClick={() => setOpen(true)}
         aria-label="打开目录"
+        aria-expanded={open}
       >
-        <ChevronLeft className="h-4 w-4" />
+        <ChevronLeft className="mr-4 h-4 w-4" />
       </button>
 
-      <div className={cn("fixed inset-0 z-[130] xl:hidden", open ? "pointer-events-auto" : "pointer-events-none")}>
+      <div className={cn("fixed inset-0 z-[980] md:hidden", open ? "pointer-events-auto" : "pointer-events-none")}>
         <button
           type="button"
           className={cn(
-            "absolute inset-0 bg-slate-950/20 backdrop-blur-[2px] transition-opacity duration-700",
+            "absolute inset-0 bg-slate-950/18 backdrop-blur-[2px] transition-opacity duration-700 ease-out",
             open ? "opacity-100" : "opacity-0"
           )}
           aria-label="关闭目录"
@@ -121,17 +122,18 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
         />
         <aside
           className={cn(
-            "absolute right-0 top-0 flex h-full w-80 max-w-[86vw] flex-col border-l border-white/90 bg-white p-5 shadow-2xl shadow-slate-950/15 transition-transform duration-700 ease-out",
+            "absolute bottom-0 right-0 top-0 flex w-[min(21rem,86vw)] flex-col border-l border-slate-200/80 bg-white px-5 py-5 shadow-2xl shadow-slate-950/14 transition-transform duration-700 ease-out",
             open ? "translate-x-0" : "translate-x-full"
           )}
         >
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold">目录</p>
+              <p className="text-sm font-semibold">标题目录</p>
+              <p className="mt-1 text-xs text-muted-foreground">H1-H4</p>
             </div>
             <button
               type="button"
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-md border bg-white transition hover:bg-muted"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-slate-200 bg-white text-muted-foreground transition duration-300 hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
               onClick={() => setOpen(false)}
               aria-label="关闭目录"
             >

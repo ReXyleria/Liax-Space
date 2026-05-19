@@ -11,10 +11,18 @@ const backupRoot = getBackupRoot();
 const uploadRoot = getUploadRoot();
 const backupVersion = 2;
 const legacyJsonBackupVersion = 1;
-const scheduleEnabledKey = "backup.schedule.enabled";
-const scheduleFrequencyKey = "backup.schedule.frequency";
-const scheduleRetentionDaysKey = "backup.schedule.retentionDays";
-const scheduleGroup = "Data and Backup";
+export const backupScheduleSettingKeys = {
+  enabled: "backup.schedule.enabled",
+  frequency: "backup.schedule.frequency",
+  retentionDays: "backup.schedule.retentionDays",
+  time: "backup.schedule.time",
+  lastRunDate: "backup.schedule.lastRunDate",
+  lastRunAt: "backup.schedule.lastRunAt",
+  lastRunStatus: "backup.schedule.lastRunStatus"
+} as const;
+
+export const defaultBackupScheduleTime = "08:00";
+export const scheduleGroup = "Data and Backup";
 
 export type BackupScheduleFrequency = "daily" | "weekly" | "monthly";
 export type BackupRetentionDays = 1 | 3 | 5 | 7 | 30;
@@ -23,6 +31,7 @@ export type BackupScheduleConfig = {
   enabled: boolean;
   frequency: BackupScheduleFrequency;
   retentionDays: BackupRetentionDays;
+  time: string;
 };
 
 const retentionOptions = [1, 3, 5, 7, 30] as const;
@@ -30,6 +39,11 @@ const retentionOptions = [1, 3, 5, 7, 30] as const;
 function normalizeRetentionDays(value: unknown): BackupRetentionDays {
   const parsed = Number(value);
   return retentionOptions.includes(parsed as BackupRetentionDays) ? parsed as BackupRetentionDays : 7;
+}
+
+export function normalizeScheduleTime(value: unknown) {
+  const raw = String(value ?? "").trim();
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(raw) ? raw : defaultBackupScheduleTime;
 }
 
 async function ensureBackupRoot() {
@@ -254,32 +268,52 @@ export async function getBackupScheduleConfig(user: CurrentUser) {
 
   if (!isDatabaseConfigured()) {
     return {
-      config: { enabled: false, frequency: "daily" as BackupScheduleFrequency, retentionDays: 7 as BackupRetentionDays },
+      config: {
+        enabled: true,
+        frequency: "daily" as BackupScheduleFrequency,
+        retentionDays: 7 as BackupRetentionDays,
+        time: defaultBackupScheduleTime
+      },
       error: "DATABASE_URL is not configured."
     };
   }
 
   try {
     const settings = await db.setting.findMany({
-      where: { key: { in: [scheduleEnabledKey, scheduleFrequencyKey, scheduleRetentionDaysKey] } }
+      where: {
+        key: {
+          in: [
+            backupScheduleSettingKeys.enabled,
+            backupScheduleSettingKeys.frequency,
+            backupScheduleSettingKeys.retentionDays,
+            backupScheduleSettingKeys.time
+          ]
+        }
+      }
     });
     const map = new Map(settings.map((setting) => [setting.key, setting.value]));
-    const rawFrequency = map.get(scheduleFrequencyKey);
+    const rawFrequency = map.get(backupScheduleSettingKeys.frequency);
     const frequency: BackupScheduleFrequency =
       rawFrequency === "weekly" || rawFrequency === "monthly" ? rawFrequency : "daily";
 
     return {
       config: {
-        enabled: map.get(scheduleEnabledKey) === "true",
+        enabled: map.get(backupScheduleSettingKeys.enabled) !== "false",
         frequency,
-        retentionDays: normalizeRetentionDays(map.get(scheduleRetentionDaysKey))
+        retentionDays: normalizeRetentionDays(map.get(backupScheduleSettingKeys.retentionDays)),
+        time: normalizeScheduleTime(map.get(backupScheduleSettingKeys.time))
       },
       error: null as string | null
     };
   } catch (error) {
     console.error("Failed to read backup schedule config", error);
     return {
-      config: { enabled: false, frequency: "daily" as BackupScheduleFrequency, retentionDays: 7 as BackupRetentionDays },
+      config: {
+        enabled: true,
+        frequency: "daily" as BackupScheduleFrequency,
+        retentionDays: 7 as BackupRetentionDays,
+        time: defaultBackupScheduleTime
+      },
       error: "Failed to load backup schedule config."
     };
   }
@@ -304,38 +338,48 @@ export async function updateBackupScheduleConfig(user: CurrentUser, input: unkno
 
   await db.$transaction([
     db.setting.upsert({
-      where: { key: scheduleEnabledKey },
+      where: { key: backupScheduleSettingKeys.enabled },
       update: { value: data.enabled ? "true" : "false" },
       create: {
-        key: scheduleEnabledKey,
+        key: backupScheduleSettingKeys.enabled,
         value: data.enabled ? "true" : "false",
         group: scheduleGroup,
         type: SettingType.BOOLEAN
       }
     }),
     db.setting.upsert({
-      where: { key: scheduleFrequencyKey },
+      where: { key: backupScheduleSettingKeys.frequency },
       update: { value: frequency },
       create: {
-        key: scheduleFrequencyKey,
+        key: backupScheduleSettingKeys.frequency,
         value: frequency,
         group: scheduleGroup,
         type: SettingType.TEXT
       }
     }),
     db.setting.upsert({
-      where: { key: scheduleRetentionDaysKey },
+      where: { key: backupScheduleSettingKeys.retentionDays },
       update: { value: String(retentionDays) },
       create: {
-        key: scheduleRetentionDaysKey,
+        key: backupScheduleSettingKeys.retentionDays,
         value: String(retentionDays),
         group: scheduleGroup,
         type: SettingType.NUMBER
       }
+    }),
+    db.setting.upsert({
+      where: { key: backupScheduleSettingKeys.time },
+      update: { value: defaultBackupScheduleTime },
+      create: {
+        key: backupScheduleSettingKeys.time,
+        value: defaultBackupScheduleTime,
+        group: scheduleGroup,
+        type: SettingType.TEXT
+      }
     })
   ]);
 
-  return { enabled: Boolean(data.enabled), frequency, retentionDays };
+  return { enabled: Boolean(data.enabled), frequency, retentionDays, time: defaultBackupScheduleTime };
 }
 
 async function pruneScheduledBackups(retentionDays: BackupRetentionDays) {

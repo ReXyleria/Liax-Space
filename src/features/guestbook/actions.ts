@@ -7,6 +7,7 @@ import { getCurrentUser, requireUser } from "@/lib/auth";
 import {
   createGuestbookComment,
   createGuestbookMessage,
+  deleteGuestbookMessage,
   moderateGuestbookMessage,
   toggleGuestbookLike
 } from "@/features/guestbook/service";
@@ -111,8 +112,14 @@ export async function deleteGuestbookMessageAction(
   _previousState: GuestbookActionState,
   formData: FormData
 ): Promise<GuestbookActionState> {
-  formData.set("status", GuestbookStatus.DELETED);
-  return moderateGuestbookMessageAction(_previousState, formData);
+  try {
+    const user = await requireUser();
+    await deleteGuestbookMessage(user, String(formData.get("id") ?? ""));
+    revalidateGuestbookPaths();
+    return { ok: true, message: "留言已彻底删除。", fieldErrors: {} };
+  } catch (error) {
+    return stateFromError(error, "留言删除失败，请稍后重试。");
+  }
 }
 
 export async function replyGuestbookMessageAction(
