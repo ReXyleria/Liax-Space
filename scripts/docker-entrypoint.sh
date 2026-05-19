@@ -8,15 +8,59 @@ BACKUP_DIR="${BACKUP_DIR:-$STORAGE_DIR/backups}"
 CACHE_DIR="${CACHE_DIR:-$STORAGE_DIR/cache}"
 TOKEN_FILE="$CONFIG_DIR/setup-token"
 STATUS_FILE="$CONFIG_DIR/setup-status.json"
-INSTALL_LOCK="$CONFIG_DIR/install.lock"
 PRISMA_BIN="${PRISMA_BIN:-./node_modules/.bin/prisma}"
 RUNTIME_USER="nextjs"
 RUNTIME_GROUP="nodejs"
 RUNTIME_UID="1001"
 RUNTIME_GID="1001"
+DATABASE_BOOTSTRAP_ATTEMPTS="${DATABASE_BOOTSTRAP_ATTEMPTS:-45}"
+DATABASE_BOOTSTRAP_INTERVAL_SECONDS="${DATABASE_BOOTSTRAP_INTERVAL_SECONDS:-2}"
 
 prepare_runtime_dirs() {
   mkdir -p "$STORAGE_DIR" "$CONFIG_DIR" "$BACKUP_DIR" "$CACHE_DIR" "$UPLOAD_DIR"
+}
+
+check_database_connection() {
+  node - <<'NODE'
+const { PrismaClient } = require("@prisma/client");
+
+const prisma = new PrismaClient({ log: [] });
+
+(async () => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    await prisma.$disconnect();
+    process.exit(0);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    try {
+      await prisma.$disconnect();
+    } catch {
+      // Ignore disconnect errors during startup probing.
+    }
+    process.exit(1);
+  }
+})();
+NODE
+}
+
+wait_for_database_connection() {
+  attempt=1
+
+  while [ "$attempt" -le "$DATABASE_BOOTSTRAP_ATTEMPTS" ]; do
+    if check_database_connection; then
+      return 0
+    fi
+
+    if [ "$attempt" -lt "$DATABASE_BOOTSTRAP_ATTEMPTS" ]; then
+      echo "[setup] Database is not ready yet. Retrying in ${DATABASE_BOOTSTRAP_INTERVAL_SECONDS}s (${attempt}/${DATABASE_BOOTSTRAP_ATTEMPTS})."
+      sleep "$DATABASE_BOOTSTRAP_INTERVAL_SECONDS"
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  return 1
 }
 
 if [ "$(id -u)" = "0" ]; then
@@ -171,11 +215,25 @@ if [ -z "${DATABASE_URL:-}" ]; then
   exec node server.js
 fi
 
+# MySQL may still be starting when the app container comes up, so wait briefly
+# before treating the database as unavailable and falling back to setup mode.
+if ! wait_for_database_connection; then
+  echo "[setup] Database did not become ready during startup. Starting setup-safe web server."
+  write_status "migration-failed" "Database was not reachable during startup."
+  export SETUP_REQUIRED=true
+  exec node server.js
+fi
+
 echo "[setup] DATABASE_URL detected. Running production migrations."
 if "$PRISMA_BIN" migrate deploy; then
   echo "[setup] Prisma migrations applied."
 else
   echo "[setup] Prisma migrate deploy failed. Falling back to db push."
+  if check_installation_exists; then
+    echo "[setup] Existing installation detected. Skipping db push and starting normal web server."
+    rm -f "$TOKEN_FILE" "$STATUS_FILE" 2>/dev/null || true
+    exec node server.js
+  fi
   if "$PRISMA_BIN" db push --accept-data-loss; then
     echo "[setup] Prisma db push completed successfully."
   else
@@ -193,7 +251,7 @@ if [ "${RUN_SEED:-false}" = "true" ]; then
   fi
 fi
 
-if [ -f "$INSTALL_LOCK" ] || check_installation_exists; then
+if check_installation_exists; then
   echo "[setup] System is already installed (SystemInstallation record or Administer user found)."
   rm -f "$TOKEN_FILE" "$STATUS_FILE" 2>/dev/null || true
   exec node server.js

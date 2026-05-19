@@ -19,7 +19,6 @@ const storageRoot = process.env.APP_STORAGE_DIR || path.join(process.cwd(), "sto
 const configDir = process.env.SETUP_CONFIG_DIR || path.join(storageRoot, "config");
 const setupStatusPath = path.join(configDir, "setup-status.json");
 const setupTokenPath = path.join(configDir, "setup-token");
-const installLockPath = path.join(configDir, "install.lock");
 
 const allPermissionKeys = [
   "articles.manage",
@@ -513,10 +512,6 @@ export async function submitSetup(input: unknown, request: Request) {
       message: "系统初始化失败，请检查日志。"
     };
   }
-
-  // Write install.lock (backward compatibility)
-  await ensureConfigDir();
-  await writeFile(installLockPath, new Date().toISOString(), { mode: 0o600 });
 
   // Delete setup token and mark in database
   try {

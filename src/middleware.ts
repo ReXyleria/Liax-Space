@@ -11,10 +11,14 @@ const legacyPublicPrefixes = [
   "/contact"
 ];
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   if (process.env.SETUP_REQUIRED === "true" && !isSetupSafePath(pathname)) {
+    if (await isInstallationComplete(request)) {
+      return NextResponse.next();
+    }
+
     const setupUrl = new URL("/setup", request.url);
     setupUrl.searchParams.set("reason", "migration");
     return NextResponse.redirect(setupUrl);
@@ -92,6 +96,23 @@ function isSetupSafePath(pathname: string) {
     pathname === "/sitemap.xml" ||
     pathname.match(/\.[a-zA-Z0-9]+$/)
   );
+}
+
+async function isInstallationComplete(request: NextRequest) {
+  try {
+    const response = await fetch(new URL("/api/setup", request.url), {
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const status = (await response.json()) as { completed?: boolean; hasOwner?: boolean };
+    return Boolean(status.completed || status.hasOwner);
+  } catch {
+    return false;
+  }
 }
 
 export const config = {

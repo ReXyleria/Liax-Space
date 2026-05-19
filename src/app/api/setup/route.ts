@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server";
+import { getSetupStatus } from "@/features/setup/service";
 import { submitSetup } from "@/features/setup/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export async function GET() {
+  const status = await getSetupStatus();
+  return NextResponse.json(status, {
+    headers: {
+      "Cache-Control": "no-store"
+    }
+  });
+}
 
 export async function POST(request: Request) {
   let payload: unknown;
