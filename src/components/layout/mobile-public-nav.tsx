@@ -40,17 +40,15 @@ export function MobilePublicNav({
 
   return (
     <>
-      <div className="relative z-[160] h-16 w-11 shrink-0 md:hidden">
-        <button
-          type="button"
-          className="absolute left-0 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-white/95 bg-white text-foreground shadow-2xl shadow-slate-950/15 transition-all duration-500 ease-out hover:-translate-y-1/2 hover:border-primary/35 hover:text-primary active:translate-y-[calc(-50%+1px)] active:scale-95"
-          onClick={() => setOpen(true)}
-          aria-label={openLabel}
-          aria-expanded={open}
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-      </div>
+      <button
+        type="button"
+        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-4 z-[160] grid h-12 w-12 place-items-center rounded-full border border-white/95 bg-white text-foreground shadow-2xl shadow-slate-950/15 transition-all duration-500 ease-out hover:-translate-y-0.5 hover:border-primary/35 hover:text-primary active:scale-95 md:hidden"
+        onClick={() => setOpen(true)}
+        aria-label={openLabel}
+        aria-expanded={open}
+      >
+        <Menu className="h-5 w-5" />
+      </button>
 
       <div
         className={cn(

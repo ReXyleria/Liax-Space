@@ -84,57 +84,66 @@ function scheduleCommentTranslation(comment: { id: string; content: string; crea
 
 export async function listApprovedGuestbookMessages(locale?: string | null) {
   if (!isDatabaseConfigured()) {
-    return { messages: [], error: "DATABASE_URL 未配置，暂无留言。" };
+    return { messages: [], error: null as string | null };
   }
 
-  return withDatabase(async () => {
-    const messages = await db.guestbookMessage.findMany({
-      where: { status: GuestbookStatus.APPROVED, notifyOnly: false, deletedAt: null },
-      include: {
-        user: {
-          select: { nickname: true, avatar: true }
-        },
-        comments: {
-          where: { deletedAt: null },
-          include: {
-            user: { select: { nickname: true, avatar: true } }
+  const messages = await withDatabase(
+    async () => {
+      return db.guestbookMessage.findMany({
+        where: { status: GuestbookStatus.APPROVED, notifyOnly: false, deletedAt: null },
+        include: {
+          user: {
+            select: { nickname: true, avatar: true }
           },
-          orderBy: { createdAt: "asc" }
+          comments: {
+            where: { deletedAt: null },
+            include: {
+              user: { select: { nickname: true, avatar: true } }
+            },
+            orderBy: { createdAt: "asc" }
+          },
+          likes: {
+            select: { userId: true }
+          },
+          _count: {
+            select: { comments: true, likes: true }
+          }
         },
-        likes: {
-          select: { userId: true }
-        },
-        _count: {
-          select: { comments: true, likes: true }
-        }
-      },
-      orderBy: { createdAt: "desc" }
-    });
+        orderBy: { createdAt: "desc" }
+      });
+    },
+    []
+  );
 
-    const messageTranslations = await getPublicContentTranslationMap(
+  if (!messages.length) {
+    return { messages: [], error: null as string | null };
+  }
+
+  const [messageTranslations, commentTranslations] = await Promise.all([
+    getPublicContentTranslationMap(
       PublicContentTranslationEntity.GUESTBOOK_MESSAGE,
       locale ?? "zh-CN",
       messages.map((message) => message.id)
-    );
-    const commentTranslations = await getPublicContentTranslationMap(
+    ),
+    getPublicContentTranslationMap(
       PublicContentTranslationEntity.GUESTBOOK_COMMENT,
       locale ?? "zh-CN",
       messages.flatMap((message) => message.comments.map((comment) => comment.id))
-    );
+    )
+  ]);
 
-    return {
-      messages: messages.map((message) => ({
-        ...message,
-        content: translatedField(messageTranslations, message.id, "content", message.content),
-        reply: translatedField(messageTranslations, message.id, "reply", message.reply),
-        comments: message.comments.map((comment) => ({
-          ...comment,
-          content: translatedField(commentTranslations, comment.id, "content", comment.content)
-        }))
-      })),
-      error: null as string | null
-    };
-  }, { messages: [], error: "留言读取超时或失败。" });
+  return {
+    messages: messages.map((message) => ({
+      ...message,
+      content: translatedField(messageTranslations, message.id, "content", message.content),
+      reply: translatedField(messageTranslations, message.id, "reply", message.reply),
+      comments: message.comments.map((comment) => ({
+        ...comment,
+        content: translatedField(commentTranslations, comment.id, "content", comment.content)
+      }))
+    })),
+    error: null as string | null
+  };
 }
 
 export async function createGuestbookMessage(input: unknown, user?: CurrentUser | null) {

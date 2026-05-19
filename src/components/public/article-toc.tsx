@@ -103,14 +103,13 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
       <button
         type="button"
         className={cn(
-          "fixed right-0 top-1/2 z-[990] grid h-12 w-10 -translate-y-1/2 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white text-muted-foreground shadow-2xl shadow-slate-950/14 transition-all duration-500 ease-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 md:hidden",
-          open ? "-right-0" : "-right-5 hover:right-0 focus-visible:right-0 active:right-0"
+          "fixed right-0 top-1/2 z-[990] grid h-12 w-10 -translate-y-1/2 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white text-muted-foreground shadow-2xl shadow-slate-950/14 transition-all duration-500 ease-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 md:hidden"
         )}
         onClick={() => setOpen((value) => !value)}
         aria-label={open ? "关闭目录" : "打开目录"}
         aria-expanded={open}
       >
-        {open ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="mr-4 h-4 w-4" />}
+        {open ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </button>
 
       <aside
