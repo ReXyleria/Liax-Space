@@ -103,8 +103,8 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
       <button
         type="button"
         className={cn(
-          "fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-[990] grid h-12 w-10 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white text-muted-foreground shadow-2xl shadow-slate-950/14 transition-all duration-500 ease-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 md:hidden",
-          open ? "right-0" : "-right-5 hover:right-0 focus-visible:right-0 active:right-0"
+          "fixed right-0 top-1/2 z-[990] grid h-12 w-10 -translate-y-1/2 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white text-muted-foreground shadow-2xl shadow-slate-950/14 transition-all duration-500 ease-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 md:hidden",
+          open ? "-right-0" : "-right-5 hover:right-0 focus-visible:right-0 active:right-0"
         )}
         onClick={() => setOpen((value) => !value)}
         aria-label={open ? "关闭目录" : "打开目录"}
@@ -113,42 +113,31 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
         {open ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="mr-4 h-4 w-4" />}
       </button>
 
-      <div className={cn("fixed inset-0 z-[980] md:hidden", open ? "pointer-events-auto" : "pointer-events-none")}>
-        <button
-          type="button"
-          className={cn(
-            "absolute inset-0 bg-slate-950/18 backdrop-blur-[2px] transition-opacity duration-700 ease-out",
-            open ? "opacity-100" : "opacity-0"
-          )}
-          aria-label="关闭目录"
-          onClick={() => setOpen(false)}
-        />
-        <aside
-          className={cn(
-            "absolute bottom-[max(5rem,calc(env(safe-area-inset-bottom)+5rem))] right-4 flex max-h-[min(34rem,calc(100dvh-7rem))] w-[min(21rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-slate-200/80 bg-white px-5 py-5 shadow-2xl shadow-slate-950/14 transition-all duration-700 ease-out",
-            open ? "translate-x-0 opacity-100" : "translate-x-[115%] opacity-0"
-          )}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold">标题目录</p>
-              <p className="mt-1 text-xs text-muted-foreground">H1-H4</p>
-            </div>
-            <button
-              type="button"
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-slate-200 bg-white text-muted-foreground transition duration-300 hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
-              onClick={() => setOpen(false)}
-              aria-label="关闭目录"
-            >
-              <X className="h-4 w-4" />
-            </button>
+      <aside
+        className={cn(
+          "fixed right-4 top-1/2 z-[980] flex max-h-[calc(100dvh-8rem)] w-[min(18rem,calc(100vw-4rem))] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/98 px-5 py-5 shadow-2xl shadow-slate-950/14 backdrop-blur-xl transition-all duration-500 ease-out md:hidden",
+          open ? "translate-x-0 opacity-100" : "translate-x-[120%] opacity-0 pointer-events-none"
+        )}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">标题目录</p>
+            <p className="mt-1 text-xs text-muted-foreground">H1-H4</p>
           </div>
+          <button
+            type="button"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-primary/10 bg-white text-muted-foreground transition duration-300 hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
+            onClick={() => setOpen(false)}
+            aria-label="关闭目录"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
-          <div className="mt-5 min-h-0 flex-1">
-            <TocNav items={items} activeId={activeId} onNavigate={(item) => navigateTo(item, true)} />
-          </div>
-        </aside>
-      </div>
+        <div className="mt-5 min-h-0 flex-1">
+          <TocNav items={items} activeId={activeId} onNavigate={(item) => navigateTo(item, true)} />
+        </div>
+      </aside>
     </>
   );
 }

@@ -62,7 +62,7 @@ export function SiteBackground({
     <>
       <div
         aria-hidden
-        className={cn("pointer-events-none fixed inset-0 -z-20 bg-center bg-cover bg-no-repeat", className)}
+        className={cn("pointer-events-none absolute inset-0 -z-20 bg-center bg-cover bg-no-repeat", className)}
         style={{
           backgroundImage: `url(${image})`,
           backgroundPosition: "center",
@@ -73,7 +73,7 @@ export function SiteBackground({
       />
       <div
         aria-hidden
-        className="pointer-events-none fixed inset-0 -z-10"
+        className="pointer-events-none absolute inset-0 -z-10"
         style={
           variant === "home" || variant === "auth"
             ? {
