@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -102,12 +102,15 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
 
       <button
         type="button"
-        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] -right-5 z-[155] grid h-12 w-10 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white text-muted-foreground shadow-2xl shadow-slate-950/14 transition-all duration-500 ease-out hover:right-0 hover:text-primary focus-visible:right-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 active:right-0 md:hidden"
-        onClick={() => setOpen(true)}
-        aria-label="打开目录"
+        className={cn(
+          "fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-[990] grid h-12 w-10 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white text-muted-foreground shadow-2xl shadow-slate-950/14 transition-all duration-500 ease-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 md:hidden",
+          open ? "right-0" : "-right-5 hover:right-0 focus-visible:right-0 active:right-0"
+        )}
+        onClick={() => setOpen((value) => !value)}
+        aria-label={open ? "关闭目录" : "打开目录"}
         aria-expanded={open}
       >
-        <ChevronLeft className="mr-4 h-4 w-4" />
+        {open ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="mr-4 h-4 w-4" />}
       </button>
 
       <div className={cn("fixed inset-0 z-[980] md:hidden", open ? "pointer-events-auto" : "pointer-events-none")}>
@@ -122,8 +125,8 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
         />
         <aside
           className={cn(
-            "absolute bottom-0 right-0 top-0 flex w-[min(21rem,86vw)] flex-col border-l border-slate-200/80 bg-white px-5 py-5 shadow-2xl shadow-slate-950/14 transition-transform duration-700 ease-out",
-            open ? "translate-x-0" : "translate-x-full"
+            "absolute bottom-[max(5rem,calc(env(safe-area-inset-bottom)+5rem))] right-4 flex max-h-[min(34rem,calc(100dvh-7rem))] w-[min(21rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-slate-200/80 bg-white px-5 py-5 shadow-2xl shadow-slate-950/14 transition-all duration-700 ease-out",
+            open ? "translate-x-0 opacity-100" : "translate-x-[115%] opacity-0"
           )}
         >
           <div className="flex items-center justify-between gap-3">

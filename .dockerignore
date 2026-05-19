@@ -1,12 +1,18 @@
 .next
 node_modules
 .git
+.github
 .claude
 .codex
+.codegraph
+.vscode
+.idea
 .npm-cache
 coverage
 dist
 out
+*.tsbuildinfo
+.DS_Store
 
 # Never bake local/private data into the image
 docs
@@ -14,16 +20,26 @@ storage
 public/uploads
 pet-runs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 *.sql
 !prisma/migrations/**/migration.sql
 *.dump
 *.tar.gz
 *.tgz
 *.zip
+*.bak
+*.tmp
+*.pid
+*.out
+*.err
 
 # Environment files
 .env
 .env.local
 .env.*.local
 runtime.env
-npm-debug.log*
+
+# Documentation and local-only files are not needed for the runtime image.
+README.md

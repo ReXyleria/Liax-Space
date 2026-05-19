@@ -18,6 +18,7 @@ storage/**/setup-status.json
 # Private operational notes and generated data
 .codex/
 docs/
+.codegraph/
 storage/
 public/uploads/*
 !public/uploads/.gitkeep
