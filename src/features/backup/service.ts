@@ -76,6 +76,18 @@ async function backupFilename() {
   return `${safeFilenameSegment(await getBackupSiteTitle())}-${stamp}.tar.gz`;
 }
 
+function uploadedBackupFilename(originalName: string) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const fallback = "backup.tar.gz";
+  const basename = path.basename(originalName || fallback);
+  const safeName = basename
+    .replace(/[^\p{L}\p{N}._-]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || fallback;
+
+  return `uploaded-${stamp}-${safeName}`;
+}
+
 function safeBackupPath(filePath: string) {
   const root = path.resolve(backupRoot);
   const resolved = path.resolve(filePath);
@@ -480,6 +492,41 @@ export async function getBackupFile(user: CurrentUser, id: string) {
     backup,
     bytes: await readFile(filePath)
   };
+}
+
+export async function importBackupFile(user: CurrentUser, originalName: string, bytes: Buffer) {
+  assertPermission(canManageBackups(user), "You do not have permission to upload backups.");
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL is not configured.");
+  }
+  if (bytes.length <= 0) {
+    throw new Error("备份文件为空。");
+  }
+
+  try {
+    const { payload } = parseBackupPayload(bytes);
+    if (![backupVersion, legacyJsonBackupVersion].includes(payload.version) || !payload.data) {
+      throw new Error("Unsupported backup file.");
+    }
+  } catch {
+    throw new Error("备份文件格式不正确，未找到可还原的数据。");
+  }
+
+  await ensureBackupRoot();
+  const filename = uploadedBackupFilename(originalName);
+  const filePath = path.join(backupRoot, filename);
+  await writeFile(filePath, bytes);
+  const fileStat = await stat(filePath);
+
+  return db.backupRecord.create({
+    data: {
+      filename,
+      filePath,
+      sizeBytes: fileStat.size,
+      reason: "uploaded",
+      createdById: user.id
+    }
+  });
 }
 
 export async function deleteBackup(user: CurrentUser, id: string) {

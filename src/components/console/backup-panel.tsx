@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, FileArchive, Loader2, UploadCloud, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
@@ -10,7 +11,6 @@ import { Select } from "@/components/ui/select";
 import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
 import {
   deleteBackupAction,
-  restoreBackupAction,
   restoreStoredBackupAction,
   updateBackupScheduleAction,
   type BackupActionState
@@ -34,11 +34,18 @@ export type BackupPanelText = {
   monthly: string;
   saveSchedule: string;
   saving: string;
-  restoreFromUpload: string;
-  restoreFromUploadDescription: string;
+  uploadBackupFile: string;
+  uploadBackupDescription: string;
   chooseBackupFile: string;
   backupFileSupport: string;
   browse: string;
+  uploadBackup: string;
+  uploadingBackup: string;
+  uploadProgressReady: string;
+  uploadProgressRunning: string;
+  uploadProgressSuccess: string;
+  uploadProgressFailed: string;
+  retryUpload: string;
   restore: string;
   restoring: string;
   backupList: string;
@@ -56,7 +63,6 @@ export type BackupPanelText = {
   restoreProgressRunning: string;
   restoreProgressSuccess: string;
   restoreProgressFailed: string;
-  restoreSelectedFile: string;
   restoreSelectedBackup: string;
   retryRestore: string;
   deleteBackupDescription: string;
@@ -80,6 +86,20 @@ type BackupSchedule = {
 };
 
 const initialState: BackupActionState = { ok: false, message: "" };
+
+type UploadState = {
+  status: "idle" | "uploading" | "success" | "error";
+  progress: number;
+  filename: string;
+  message: string;
+};
+
+const initialUploadState: UploadState = {
+  status: "idle",
+  progress: 0,
+  filename: "",
+  message: ""
+};
 
 function formatFileSize(size: number) {
   if (size < 1024) {
@@ -209,6 +229,99 @@ function RestoreProgressDialog({
   );
 }
 
+function BackupUploadDialog({
+  open,
+  state,
+  onOpenChange,
+  onRetry,
+  text
+}: {
+  open: boolean;
+  state: UploadState;
+  onOpenChange: (open: boolean) => void;
+  onRetry: () => void;
+  text: BackupPanelText;
+}) {
+  const isUploading = state.status === "uploading";
+  const isSuccess = state.status === "success";
+  const isError = state.status === "error";
+  const statusText = isUploading
+    ? text.uploadProgressRunning
+    : isSuccess
+      ? text.uploadProgressSuccess
+      : isError
+        ? text.uploadProgressFailed
+        : text.uploadProgressReady;
+  const progress = Math.max(0, Math.min(100, state.progress));
+
+  return (
+    <Dialog
+      open={open}
+      title={text.uploadBackupFile}
+      description={statusText}
+      closeLabel={text.close}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && isUploading) {
+          return;
+        }
+        onOpenChange(nextOpen);
+      }}
+      className="max-w-lg"
+      footer={
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" disabled={isUploading} onClick={() => onOpenChange(false)}>
+            {isSuccess ? text.close : text.cancel}
+          </Button>
+          {isError ? (
+            <Button type="button" disabled={isUploading} onClick={onRetry}>
+              {text.retryUpload}
+            </Button>
+          ) : null}
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <span
+            className={
+              isSuccess
+                ? "grid h-10 w-10 shrink-0 place-items-center rounded-md bg-emerald-500/10 text-emerald-600"
+                : isError
+                  ? "grid h-10 w-10 shrink-0 place-items-center rounded-md bg-destructive/10 text-destructive"
+                  : "grid h-10 w-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"
+            }
+          >
+            {isUploading ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : isSuccess ? (
+              <CheckCircle2 className="h-5 w-5" />
+            ) : isError ? (
+              <XCircle className="h-5 w-5" />
+            ) : (
+              <UploadCloud className="h-5 w-5" />
+            )}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-medium">{state.filename || text.chooseBackupFile}</p>
+            <p className={isError ? "mt-1 text-sm text-destructive" : "mt-1 text-sm text-muted-foreground"}>
+              {state.message || statusText}
+            </p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className={isError ? "h-full bg-destructive transition-all duration-500" : "h-full bg-primary transition-all duration-500"}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="text-right text-xs text-muted-foreground">{progress}%</p>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 function ScheduleSection({
   schedule,
   state,
@@ -273,42 +386,108 @@ function ScheduleSection({
   );
 }
 
-function UploadRestoreSection({
-  state,
-  action,
-  pending,
-  text
-}: {
-  state: BackupActionState;
-  action: (formData: FormData) => void;
-  pending: boolean;
-  text: BackupPanelText;
-}) {
+function UploadBackupSection({ text }: { text: BackupPanelText }) {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [restoreOpen, setRestoreOpen] = useState(false);
-  const [restoreAttempted, setRestoreAttempted] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadState, setUploadState] = useState<UploadState>(initialUploadState);
+  const isUploading = uploadState.status === "uploading";
 
   function openPicker() {
-    inputRef.current?.click();
+    if (!isUploading) {
+      inputRef.current?.click();
+    }
+  }
+
+  function clearSelectedFile() {
+    setSelectedFile(null);
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  }
+
+  function uploadSelectedFile() {
+    if (!selectedFile || isUploading) {
+      return;
+    }
+
+    const file = selectedFile;
+    const formData = new FormData();
+    formData.append("file", file);
+    setUploadOpen(true);
+    setUploadState({
+      status: "uploading",
+      progress: 0,
+      filename: file.name,
+      message: text.uploadProgressReady
+    });
+
+    const xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = (event) => {
+      const progress = event.lengthComputable && event.total > 0
+        ? Math.min(95, Math.round((event.loaded / event.total) * 100))
+        : 8;
+
+      setUploadState({
+        status: "uploading",
+        progress,
+        filename: file.name,
+        message: text.uploadProgressRunning
+      });
+    };
+
+    xhr.onload = () => {
+      let result: { ok?: boolean; message?: string } = {};
+      try {
+        result = JSON.parse(xhr.responseText || "{}") as { ok?: boolean; message?: string };
+      } catch {
+        result = { ok: false, message: text.uploadProgressFailed };
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300 && result.ok) {
+        setUploadState({
+          status: "success",
+          progress: 100,
+          filename: file.name,
+          message: result.message || text.uploadProgressSuccess
+        });
+        clearSelectedFile();
+        router.refresh();
+        return;
+      }
+
+      setUploadState({
+        status: "error",
+        progress: 100,
+        filename: file.name,
+        message: result.message || text.uploadProgressFailed
+      });
+    };
+
+    xhr.onerror = () => {
+      setUploadState({
+        status: "error",
+        progress: 100,
+        filename: file.name,
+        message: text.uploadProgressFailed
+      });
+    };
+
+    xhr.onabort = xhr.onerror;
+    xhr.open("POST", "/api/console/backups/upload");
+    xhr.send(formData);
   }
 
   return (
     <section className="rounded-lg border bg-card p-5">
-      <h2 className="text-xl font-semibold">{text.restoreFromUpload}</h2>
-      <p className="mt-1 text-sm text-muted-foreground">{text.restoreFromUploadDescription}</p>
-      <form
-        ref={formRef}
-        action={action}
-        className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]"
-      >
+      <h2 className="text-xl font-semibold">{text.uploadBackupFile}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{text.uploadBackupDescription}</p>
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]">
         <input
           ref={inputRef}
           className="sr-only"
-          name="backupFile"
           type="file"
-          required
           accept="application/gzip,application/x-gzip,application/json,.tar.gz,.tgz,.json"
           onChange={(event) => setSelectedFile(event.currentTarget.files?.[0] ?? null)}
         />
@@ -337,19 +516,13 @@ function UploadRestoreSection({
               className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
               onClick={(event) => {
                 event.stopPropagation();
-                setSelectedFile(null);
-                if (inputRef.current) {
-                  inputRef.current.value = "";
-                }
+                clearSelectedFile();
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   event.stopPropagation();
-                  setSelectedFile(null);
-                  if (inputRef.current) {
-                    inputRef.current.value = "";
-                  }
+                  clearSelectedFile();
                 }
               }}
             >
@@ -364,32 +537,17 @@ function UploadRestoreSection({
         </button>
         <Button
           type="button"
-          variant="danger"
-          disabled={pending || !selectedFile}
-          onClick={() => {
-            setRestoreAttempted(true);
-            setRestoreOpen(true);
-            window.setTimeout(() => formRef.current?.requestSubmit(), 0);
-          }}
+          disabled={isUploading || !selectedFile}
+          onClick={uploadSelectedFile}
         >
-          {pending ? text.restoring : text.restore}
+          {isUploading ? text.uploadingBackup : text.uploadBackup}
         </Button>
-      </form>
-      <div className="mt-3">
-        <StateMessage state={state} />
       </div>
-      <RestoreProgressDialog
-        open={restoreOpen}
-        title={text.confirmRestore}
-        description={text.restoreWarningBody}
-        itemLabel={`${text.restoreSelectedFile}: ${selectedFile?.name ?? text.chooseBackupFile}`}
-        state={restoreAttempted ? state : initialState}
-        pending={pending}
-        onOpenChange={setRestoreOpen}
-        onConfirm={() => {
-          setRestoreAttempted(true);
-          formRef.current?.requestSubmit();
-        }}
+      <BackupUploadDialog
+        open={uploadOpen}
+        state={uploadState}
+        onOpenChange={setUploadOpen}
+        onRetry={uploadSelectedFile}
         text={text}
       />
     </section>
@@ -552,10 +710,6 @@ export function BackupPanel({
     updateBackupScheduleAction,
     initialState
   );
-  const [restoreState, restoreAction, isRestoring] = useActionState<BackupActionState, FormData>(
-    restoreBackupAction,
-    initialState
-  );
   const [deleteState, deleteAction, isDeleting] = useActionState<BackupActionState, FormData>(
     deleteBackupAction,
     initialState
@@ -574,7 +728,7 @@ export function BackupPanel({
         pending={isSavingSchedule}
         text={text}
       />
-      <UploadRestoreSection state={restoreState} action={restoreAction} pending={isRestoring} text={text} />
+      <UploadBackupSection text={text} />
       <BackupListSection
         backups={backups}
         deleteState={deleteState}

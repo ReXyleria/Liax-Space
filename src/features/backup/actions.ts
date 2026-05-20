@@ -5,7 +5,6 @@ import { requireUser } from "@/lib/auth";
 import {
   createBackup,
   deleteBackup,
-  restoreBackup,
   restoreBackupFromId,
   updateBackupScheduleConfig
 } from "@/features/backup/service";
@@ -54,26 +53,6 @@ export async function deleteBackupAction(
     return ok("备份已删除。");
   } catch (error) {
     return fail(error, "删除备份失败。");
-  }
-}
-
-export async function restoreBackupAction(
-  _previousState: BackupActionState,
-  formData: FormData
-): Promise<BackupActionState> {
-  try {
-    const user = await requireUser();
-    const file = formData.get("backupFile");
-
-    if (!(file instanceof File) || file.size <= 0) {
-      throw new Error("请选择要还原的备份文件。");
-    }
-
-    await restoreBackup(user, Buffer.from(await file.arrayBuffer()));
-    revalidateBackupPages();
-    return ok("备份已还原。若当前会话被还原，请重新登录。");
-  } catch (error) {
-    return fail(error, "还原备份失败。");
   }
 }
 
