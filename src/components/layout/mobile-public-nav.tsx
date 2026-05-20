@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { Home, Menu, UserRound, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { cn } from "@/lib/utils";
@@ -33,16 +34,22 @@ export function MobilePublicNav({
   siteMark: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const openLabel = locale === "en" ? "Open navigation" : "打开导航";
   const closeLabel = locale === "en" ? "Close navigation" : "关闭导航";
   const navTitle = locale === "en" ? "Navigation" : "站点导航";
   const languageTitle = locale === "en" ? "Language" : "语言";
 
-  return (
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const mobileNav = (
     <>
       <button
         type="button"
-        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-4 z-[160] grid h-12 w-12 place-items-center rounded-full border border-white/95 bg-white text-foreground shadow-2xl shadow-slate-950/15 transition-all duration-500 ease-out hover:-translate-y-0.5 hover:border-primary/35 hover:text-primary active:scale-95 md:hidden"
+        data-testid="mobile-public-nav-trigger"
+        className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-4 z-[960] grid h-12 w-12 place-items-center rounded-full border border-white/95 bg-white text-foreground shadow-2xl shadow-slate-950/15 transition-all duration-500 ease-out hover:-translate-y-0.5 hover:border-primary/35 hover:text-primary active:scale-95 md:hidden"
         onClick={() => setOpen(true)}
         aria-label={openLabel}
         aria-expanded={open}
@@ -66,6 +73,7 @@ export function MobilePublicNav({
           onClick={() => setOpen(false)}
         />
         <aside
+          data-testid="mobile-public-nav-panel"
           className={cn(
             "absolute left-4 top-[max(4.75rem,calc(env(safe-area-inset-top)+4.75rem))] flex max-h-[min(34rem,calc(100dvh-7rem))] w-[min(21rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-slate-200/80 bg-white px-5 py-5 shadow-2xl shadow-slate-950/14 transition-all duration-700 ease-out",
             open ? "translate-y-0 opacity-100" : "-translate-y-3 opacity-0"
@@ -136,4 +144,6 @@ export function MobilePublicNav({
       </div>
     </>
   );
+
+  return mounted ? createPortal(mobileNav, document.body) : null;
 }

@@ -2,6 +2,7 @@
 
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 export type TocItem = {
@@ -45,6 +46,11 @@ function TocNav({
 export function ArticleToc({ items }: { items: TocItem[] }) {
   const [activeId, setActiveId] = useState(items[0]?.id ?? "");
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!items.length) {
@@ -91,20 +97,12 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
     }
   }
 
-  return (
+  const mobileToc = (
     <>
-      <aside className="sticky top-24 hidden max-h-[calc(100dvh-7rem)] min-h-0 flex-col rounded-lg border border-white/70 bg-white/88 p-4 shadow-soft backdrop-blur-xl xl:flex">
-        <div className="mb-3">
-          <p className="text-sm font-semibold">目录</p>
-        </div>
-        <TocNav items={items} activeId={activeId} onNavigate={(item) => navigateTo(item)} />
-      </aside>
-
       <button
         type="button"
-        className={cn(
-          "fixed right-0 top-1/2 z-[990] grid h-12 w-10 -translate-y-1/2 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white text-muted-foreground shadow-2xl shadow-slate-950/14 transition-all duration-500 ease-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 md:hidden"
-        )}
+        data-testid="mobile-article-toc-trigger"
+        className="fixed right-0 top-1/2 z-[990] grid h-12 w-10 -translate-y-1/2 place-items-center rounded-l-full border border-r-0 border-white/95 bg-white text-muted-foreground shadow-2xl shadow-slate-950/14 transition-all duration-500 ease-out hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 md:hidden"
         onClick={() => setOpen((value) => !value)}
         aria-label={open ? "关闭目录" : "打开目录"}
         aria-expanded={open}
@@ -113,9 +111,10 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
       </button>
 
       <aside
+        data-testid="mobile-article-toc-panel"
         className={cn(
           "fixed right-4 top-1/2 z-[980] flex max-h-[calc(100dvh-8rem)] w-[min(18rem,calc(100vw-4rem))] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/98 px-5 py-5 shadow-2xl shadow-slate-950/14 backdrop-blur-xl transition-all duration-500 ease-out md:hidden",
-          open ? "translate-x-0 opacity-100" : "translate-x-[120%] opacity-0 pointer-events-none"
+          open ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[120%] opacity-0"
         )}
       >
         <div className="flex items-center justify-between gap-3">
@@ -137,6 +136,19 @@ export function ArticleToc({ items }: { items: TocItem[] }) {
           <TocNav items={items} activeId={activeId} onNavigate={(item) => navigateTo(item, true)} />
         </div>
       </aside>
+    </>
+  );
+
+  return (
+    <>
+      <aside className="sticky top-24 hidden max-h-[calc(100dvh-7rem)] min-h-0 flex-col rounded-lg border border-white/70 bg-white/88 p-4 shadow-soft backdrop-blur-xl xl:flex">
+        <div className="mb-3">
+          <p className="text-sm font-semibold">目录</p>
+        </div>
+        <TocNav items={items} activeId={activeId} onNavigate={(item) => navigateTo(item)} />
+      </aside>
+
+      {mounted ? createPortal(mobileToc, document.body) : null}
     </>
   );
 }
