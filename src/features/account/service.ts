@@ -6,7 +6,7 @@ import { idSchema, passwordUpdateSchema, profileUpdateSchema } from "@/features/
 
 const passkeyRenameSchema = z.object({
   id: z.string().min(1),
-  deviceName: z.string().trim().min(1, "Device name is required.").max(80, "Device name is too long.")
+  deviceName: z.string().trim().min(1, "设备名称不能为空。").max(80, "设备名称不能超过 80 个字符。")
 });
 
 export async function getAccountData(user: CurrentUser) {
@@ -15,7 +15,7 @@ export async function getAccountData(user: CurrentUser) {
       sessions: [],
       passkeys: [],
       trustedDevices: [],
-      error: "DATABASE_URL is not configured. Account data cannot be loaded."
+      error: "DATABASE_URL 未配置，无法加载账号数据。"
     };
   }
 
@@ -59,12 +59,12 @@ export async function getAccountData(user: CurrentUser) {
     ]);
 
     return { sessions, passkeys, trustedDevices, error: null as string | null };
-  }, { sessions: [], passkeys: [], trustedDevices: [], error: "Failed to load account data." });
+  }, { sessions: [], passkeys: [], trustedDevices: [], error: "账号数据加载失败。" });
 }
 
 export async function updateProfile(user: CurrentUser, input: unknown) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const parsed = profileUpdateSchema.parse(input);
@@ -79,7 +79,7 @@ export async function updateProfile(user: CurrentUser, input: unknown) {
 
 export async function updatePassword(user: CurrentUser, input: unknown) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const parsed = passwordUpdateSchema.parse(input);
@@ -89,12 +89,12 @@ export async function updatePassword(user: CurrentUser, input: unknown) {
   });
 
   if (!record) {
-    throw new Error("User not found.");
+    throw new Error("用户不存在。");
   }
 
   const matches = await verifyPassword(parsed.currentPassword, record.passwordHash);
   if (!matches) {
-    throw new Error("Current password is incorrect.");
+    throw new Error("当前密码不正确。");
   }
 
   await db.user.update({
@@ -105,7 +105,7 @@ export async function updatePassword(user: CurrentUser, input: unknown) {
 
 export async function revokeSession(user: CurrentUser, input: unknown) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const parsed = idSchema.parse(input);
@@ -119,13 +119,13 @@ export async function revokeSession(user: CurrentUser, input: unknown) {
 
 export async function revokeTrustedDevice(user: CurrentUser, input: unknown) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const parsed = idSchema.parse(input);
   const trustedDevice = getTrustedDeviceDelegate();
   if (!trustedDevice) {
-    throw new Error("Trusted device storage is not available. Run Prisma generate and migrate first.");
+    throw new Error("可信设备数据表不可用，请先运行 Prisma generate 和数据库迁移。");
   }
 
   await trustedDevice.deleteMany({
@@ -138,7 +138,7 @@ export async function revokeTrustedDevice(user: CurrentUser, input: unknown) {
 
 export async function deletePasskey(user: CurrentUser, input: unknown) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const parsed = idSchema.parse(input);
@@ -152,7 +152,7 @@ export async function deletePasskey(user: CurrentUser, input: unknown) {
 
 export async function renamePasskey(user: CurrentUser, input: unknown) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const parsed = passkeyRenameSchema.parse(input);

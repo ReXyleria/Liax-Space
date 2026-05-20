@@ -44,7 +44,7 @@ function labels(locale: Locale) {
         emailVerified: "Email verified",
         emailUnverified: "Email not verified",
         securityStatus: "Security status",
-        hardened: "Hardened",
+        hardened: "Protected",
         incomplete: "Needs attention",
         activeSessions: "Login sessions",
         trustedDevices: "Trusted devices",
@@ -52,7 +52,7 @@ function labels(locale: Locale) {
         tabs: [
           { id: "profile" as const, label: "Profile", description: "Avatar, nickname, and email status", icon: UserRound },
           { id: "password" as const, label: "Password", description: "Update login password", icon: ShieldCheck },
-          { id: "totp" as const, label: "2FA", description: "TOTP verification codes", icon: KeyRound },
+          { id: "totp" as const, label: "2FA", description: "Authenticator and recovery codes", icon: KeyRound },
           { id: "passkeys" as const, label: "Passkeys", description: "Passwordless login keys", icon: Fingerprint },
           { id: "devices" as const, label: "Devices", description: "Sessions and trusted devices", icon: Laptop }
         ]
@@ -70,8 +70,8 @@ function labels(locale: Locale) {
         tabs: [
           { id: "profile" as const, label: "个人资料", description: "头像、昵称和邮箱状态", icon: UserRound },
           { id: "password" as const, label: "密码", description: "修改登录密码", icon: ShieldCheck },
-          { id: "totp" as const, label: "双因子", description: "TOTP 动态验证码", icon: KeyRound },
-          { id: "passkeys" as const, label: "通行密钥", description: "无密码登录密钥", icon: Fingerprint },
+          { id: "totp" as const, label: "双因素验证", description: "动态验证码和恢复码", icon: KeyRound },
+          { id: "passkeys" as const, label: "通行密钥", description: "免密码登录密钥", icon: Fingerprint },
           { id: "devices" as const, label: "设备", description: "会话和可信设备", icon: Laptop }
         ]
       };
@@ -183,15 +183,16 @@ export function AccountWorkspace({
             avatar={user.avatar}
             email={user.email}
             emailVerified={user.emailVerified}
+            locale={locale}
           />
         ) : null}
-        {activeTab === "password" ? <PasswordPanel /> : null}
-        {activeTab === "totp" ? <TotpPanel enabled={user.totpEnabled} /> : null}
-        {activeTab === "passkeys" ? <PasskeysPanel passkeys={passkeys} /> : null}
+        {activeTab === "password" ? <PasswordPanel locale={locale} /> : null}
+        {activeTab === "totp" ? <TotpPanel enabled={user.totpEnabled} locale={locale} /> : null}
+        {activeTab === "passkeys" ? <PasskeysPanel passkeys={passkeys} locale={locale} /> : null}
         {activeTab === "devices" ? (
           <div className="grid gap-5 xl:grid-cols-2">
-            <SessionsPanel sessions={sessions} />
-            <TrustedDevicesPanel devices={trustedDevices} />
+            <SessionsPanel sessions={sessions} locale={locale} />
+            <TrustedDevicesPanel devices={trustedDevices} locale={locale} />
           </div>
         ) : null}
       </section>

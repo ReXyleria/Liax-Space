@@ -16,6 +16,7 @@ export function ConfirmActionDialog({
   description,
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
+  closeLabel,
   pending = false,
   onConfirm,
   onOpenChange,
@@ -28,6 +29,7 @@ export function ConfirmActionDialog({
   description: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  closeLabel?: string;
   pending?: boolean;
   onConfirm?: () => void;
   onOpenChange: (open: boolean) => void;
@@ -52,6 +54,7 @@ export function ConfirmActionDialog({
     <Dialog
       open={open}
       title={title}
+      closeLabel={closeLabel}
       onOpenChange={(nextOpen) => {
         if (!pending) {
           onOpenChange(nextOpen);

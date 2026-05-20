@@ -141,6 +141,7 @@ async function exportData() {
       identities: await db.identity.findMany(),
       users: await db.user.findMany(),
       authSessions: await db.authSession.findMany(),
+      loginEvents: await db.loginEvent.findMany(),
       pendingAuths: await db.pendingAuth.findMany(),
       trustedDevices: await db.trustedDevice.findMany(),
       verificationCodes: await db.verificationCode.findMany(),
@@ -534,6 +535,7 @@ export async function restoreBackup(user: CurrentUser, bytes: Buffer) {
     await tx.totpRecoveryCode.deleteMany();
     await tx.webAuthnChallenge.deleteMany();
     await tx.authSession.deleteMany();
+    await tx.loginEvent.deleteMany();
     await tx.pendingAuth.deleteMany();
     await tx.trustedDevice.deleteMany();
     await tx.verificationCode.deleteMany();
@@ -544,6 +546,7 @@ export async function restoreBackup(user: CurrentUser, bytes: Buffer) {
     await insertRows(tx.identity, asRows(data, "identities"));
     await insertRows(tx.user, asRows(data, "users"));
     await insertRows(tx.authSession, asRows(data, "authSessions"));
+    await insertRows(tx.loginEvent, asRows(data, "loginEvents"));
     await insertRows(tx.pendingAuth, asRows(data, "pendingAuths"));
     await insertRows(tx.trustedDevice, asRows(data, "trustedDevices"));
     await insertRows(tx.verificationCode, asRows(data, "verificationCodes"));

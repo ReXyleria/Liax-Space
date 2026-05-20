@@ -1,10 +1,11 @@
-import { UserRole, UserStatus, VerificationCodeType } from "@prisma/client";
+import { LoginEventMethod, UserRole, UserStatus, VerificationCodeType } from "@prisma/client";
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import { clearSession, createSession, createTrustedDevice, resolveTrustedDevice } from "@/lib/auth";
 import { canAccessConsole } from "@/lib/permissions";
 import { sendLoginCodeMail, sendTemplatedMail, sendVerificationCodeMail } from "@/lib/mail";
 import { generateNumericCode, generateOpaqueToken, hashPassword, hashToken, verifyPassword } from "@/lib/security";
 import { revokeTotpAfterRecoveryLogin, verifyTotpOrRecovery } from "@/features/account/totp-service";
+import { recordLoginEvent } from "@/features/auth/login-events";
 import { emailSchema, loginSchema, loginSecondFactorSchema, registerSchema } from "@/features/auth/validators";
 import type { AuthResponse } from "@/features/auth/types";
 import { isHighPrivilegeIdentity } from "@/lib/permission-definitions";
@@ -182,7 +183,7 @@ async function finalizeLogin(
   user: { id: string; email: string; nickname: string; role: UserRole },
   meta: { deviceName?: string; loginIp?: string; cookieSecure?: boolean } | undefined,
   callbackUrl: string | undefined,
-  options?: { trustDevice?: boolean }
+  options?: { trustDevice?: boolean; method?: LoginEventMethod }
 ): Promise<AuthResponse> {
   const isNewDevice = meta?.deviceName
     ? !(await db.authSession.findFirst({
@@ -200,6 +201,7 @@ async function finalizeLogin(
   });
 
   await createSession(user.id, meta?.deviceName, { secure: meta?.cookieSecure });
+  await recordLoginEvent(user.id, options?.method ?? LoginEventMethod.PASSWORD, meta);
 
   if (options?.trustDevice) {
     await createTrustedDevice(user.id, meta?.deviceName, { secure: meta?.cookieSecure });
@@ -457,7 +459,9 @@ export async function loginUser(
       } catch (error) {
         if (!backupMethods.length) {
           await clearPendingLogin(pendingToken);
-          const result = await finalizeLogin(user, meta, parsed.data.callbackUrl);
+          const result = await finalizeLogin(user, meta, parsed.data.callbackUrl, {
+            method: LoginEventMethod.SMTP_FAIL_OPEN
+          });
           return {
             ...result,
             message: error instanceof Error
@@ -478,7 +482,7 @@ export async function loginUser(
       }
     }
 
-    return await finalizeLogin(user, meta, parsed.data.callbackUrl);
+    return await finalizeLogin(user, meta, parsed.data.callbackUrl, { method: LoginEventMethod.PASSWORD });
   } catch (error) {
     console.error("Failed to login", error);
     return { ok: false, message: "Login failed." };
@@ -535,7 +539,16 @@ export async function verifyLoginSecondFactor(
       void sendTotpRecoveryUsedNotificationSafely(user, meta);
     }
 
-    return await finalizeLogin(user, meta, parsed.data.callbackUrl, { trustDevice: parsed.data.trustDevice });
+    const method = totpResult.ok
+      ? totpResult.method === "recovery"
+        ? LoginEventMethod.RECOVERY
+        : LoginEventMethod.TOTP
+      : LoginEventMethod.EMAIL_CODE;
+
+    return await finalizeLogin(user, meta, parsed.data.callbackUrl, {
+      trustDevice: parsed.data.trustDevice,
+      method
+    });
   } catch (error) {
     console.error("Failed to verify second factor", error);
     return { ok: false, message: "Second-factor verification failed." };

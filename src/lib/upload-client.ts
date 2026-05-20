@@ -35,7 +35,7 @@ export function uploadImageFile(
       status: "uploading",
       progress: 0,
       filename: file.name,
-      message: "Preparing upload..."
+      message: "正在准备上传..."
     });
 
     xhr.upload.onprogress = (event) => {
@@ -47,16 +47,16 @@ export function uploadImageFile(
         status: "uploading",
         progress,
         filename: file.name,
-        message: progress ? `Uploading ${progress}%` : "Uploading..."
+        message: progress ? `正在上传 ${progress}%` : "正在上传..."
       });
     };
 
     xhr.onload = () => {
-      let result: UploadResponse = { ok: false, message: "Upload failed." };
+      let result: UploadResponse = { ok: false, message: "上传失败。" };
       try {
         result = JSON.parse(xhr.responseText || "{}") as UploadResponse;
       } catch {
-        result = { ok: false, message: "The server returned an invalid upload response." };
+        result = { ok: false, message: "服务端返回了无效的上传响应。" };
       }
 
       if (xhr.status >= 200 && xhr.status < 300 && result.ok && result.asset?.url) {
@@ -64,7 +64,7 @@ export function uploadImageFile(
           status: "success",
           progress: 100,
           filename: file.name,
-          message: "Upload complete."
+          message: "上传完成。"
         });
         resolve(result);
         return;
@@ -74,13 +74,13 @@ export function uploadImageFile(
         status: "error",
         progress: 100,
         filename: file.name,
-        message: result.message || "Upload failed."
+        message: result.message || "上传失败。"
       });
-      resolve({ ...result, ok: false, message: result.message || "Upload failed." });
+      resolve({ ...result, ok: false, message: result.message || "上传失败。" });
     };
 
     xhr.onerror = () => {
-      const result = { ok: false, message: "Network error while uploading." };
+      const result = { ok: false, message: "上传时发生网络错误。" };
       onProgress({
         status: "error",
         progress: 100,
@@ -91,7 +91,7 @@ export function uploadImageFile(
     };
 
     xhr.onabort = () => {
-      const result = { ok: false, message: "Upload cancelled." };
+      const result = { ok: false, message: "上传已取消。" };
       onProgress({
         status: "error",
         progress: 100,

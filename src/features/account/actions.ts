@@ -31,7 +31,7 @@ function errorState(error: unknown, fallback: string): AccountActionState {
   if (error instanceof ZodError) {
     return {
       ok: false,
-      message: "Please check the highlighted fields.",
+      message: "请检查标记的表单项。",
       fieldErrors: error.flatten().fieldErrors as Record<string, string[]>
     };
   }
@@ -55,9 +55,9 @@ export async function updateProfileAction(
     revalidatePath("/account");
     revalidatePath("/console/account");
     revalidatePath("/console");
-    return { ok: true, message: "Profile saved." };
+    return { ok: true, message: "资料已保存。" };
   } catch (error) {
-    return errorState(error, "Failed to save profile.");
+    return errorState(error, "保存资料失败。");
   }
 }
 
@@ -72,9 +72,9 @@ export async function updatePasswordAction(
       newPassword: formData.get("newPassword"),
       confirmPassword: formData.get("confirmPassword")
     });
-    return { ok: true, message: "Password updated." };
+    return { ok: true, message: "密码已更新。" };
   } catch (error) {
-    return errorState(error, "Failed to update password.");
+    return errorState(error, "更新密码失败。");
   }
 }
 
@@ -87,9 +87,9 @@ export async function revokeSessionAction(
     await revokeSession(user, { id: formData.get("id") });
     revalidatePath("/account");
     revalidatePath("/console/account");
-    return { ok: true, message: "Session revoked." };
+    return { ok: true, message: "登录会话已撤销。" };
   } catch (error) {
-    return errorState(error, "Failed to revoke session.");
+    return errorState(error, "撤销登录会话失败。");
   }
 }
 
@@ -102,9 +102,9 @@ export async function revokeTrustedDeviceAction(
     await revokeTrustedDevice(user, { id: formData.get("id") });
     revalidatePath("/account");
     revalidatePath("/console/account");
-    return { ok: true, message: "Trusted device revoked." };
+    return { ok: true, message: "可信设备已撤销。" };
   } catch (error) {
-    return errorState(error, "Failed to revoke trusted device.");
+    return errorState(error, "撤销可信设备失败。");
   }
 }
 
@@ -117,9 +117,9 @@ export async function deletePasskeyAction(
     await deletePasskey(user, { id: formData.get("id") });
     revalidatePath("/account");
     revalidatePath("/console/account");
-    return { ok: true, message: "Passkey deleted." };
+    return { ok: true, message: "通行密钥已删除。" };
   } catch (error) {
-    return errorState(error, "Failed to delete passkey.");
+    return errorState(error, "删除通行密钥失败。");
   }
 }
 
@@ -135,9 +135,9 @@ export async function renamePasskeyAction(
     });
     revalidatePath("/account");
     revalidatePath("/console/account");
-    return { ok: true, message: "Passkey renamed." };
+    return { ok: true, message: "通行密钥已重命名。" };
   } catch (error) {
-    return errorState(error, "Failed to rename passkey.");
+    return errorState(error, "重命名通行密钥失败。");
   }
 }
 
@@ -155,12 +155,12 @@ export async function beginTotpSetupAction(
     revalidatePath("/console/account");
     return {
       ok: true,
-      message: "Scan the QR code or enter the manual key, then verify a 6-digit code.",
+      message: "请扫描二维码或输入手动密钥，然后填写 6 位验证码。",
       secret: setup.secret,
       qrCodeDataUrl: setup.qrCodeDataUrl
     };
   } catch (error) {
-    return errorState(error, "Failed to start TOTP setup.");
+    return errorState(error, "开始设置 TOTP 失败。");
   }
 }
 
@@ -171,15 +171,13 @@ export async function confirmTotpSetupAction(
   try {
     const user = await requireUser();
     const recoveryCodes = await confirmTotpSetup(user, String(formData.get("code") ?? ""));
-    revalidatePath("/account");
-    revalidatePath("/console/account");
     return {
       ok: true,
-      message: "TOTP enabled. Save these recovery codes now; they will not be shown again.",
+      message: "TOTP 已启用。请立即保存恢复码，关闭后不会再次显示。",
       recoveryCodes
     };
   } catch (error) {
-    return errorState(error, "Failed to verify TOTP setup.");
+    return errorState(error, "验证 TOTP 设置失败。");
   }
 }
 
@@ -195,7 +193,7 @@ export async function sendTotpDisableEmailCodeAction(
     await sendTotpDisableEmailCode(user);
     return { ok: true, message: "TOTP 关闭验证码已发送到你的邮箱。" };
   } catch (error) {
-    return errorState(error, "Failed to send TOTP disable email code.");
+    return errorState(error, "发送 TOTP 关闭验证码失败。");
   }
 }
 
@@ -214,8 +212,8 @@ export async function disableTotpAction(
     });
     revalidatePath("/account");
     revalidatePath("/console/account");
-    return { ok: true, message: "TOTP disabled." };
+    return { ok: true, message: "TOTP 已关闭。" };
   } catch (error) {
-    return errorState(error, "Failed to disable TOTP.");
+    return errorState(error, "关闭 TOTP 失败。");
   }
 }

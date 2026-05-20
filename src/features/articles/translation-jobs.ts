@@ -1,5 +1,5 @@
 import { ArticleTranslationJobStatus } from "@prisma/client";
-import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
+import { db, getDatabaseTableReadiness, isDatabaseConfigured } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
 import { assertPermission, canManageArticles } from "@/lib/permissions";
 import { getTranslationConfig } from "@/features/settings/translation-settings";
@@ -10,6 +10,7 @@ const ACTIVE_STATUSES: ArticleTranslationJobStatus[] = [
   ArticleTranslationJobStatus.RUNNING
 ];
 
+const REQUIRED_TABLES = ["ArticleTranslation", "ArticleTranslationJob"];
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
 let workerRunning = false;
@@ -29,6 +30,37 @@ function normalizeArticleIds(value: unknown) {
   return Array.from(new Set(value.map((item) => String(item)).filter(Boolean)));
 }
 
+function missingTablesMessage(missing: string[]) {
+  return `数据库迁移未完成，缺少数据表：${missing.join(", ")}。请先安全应用 Prisma 迁移后再使用文章翻译队列。`;
+}
+
+export async function getArticleTranslationJobReadiness() {
+  if (!isDatabaseConfigured()) {
+    return { ready: false, message: "DATABASE_URL 未配置，无法使用文章翻译队列。", missing: REQUIRED_TABLES };
+  }
+
+  try {
+    const readiness = await getDatabaseTableReadiness(REQUIRED_TABLES);
+    if (!readiness.ready) {
+      return { ready: false, message: missingTablesMessage(readiness.missing), missing: readiness.missing };
+    }
+    return { ready: true, message: "", missing: [] };
+  } catch (error) {
+    return {
+      ready: false,
+      message: error instanceof Error ? `数据库表状态检查失败：${error.message}` : "数据库表状态检查失败。",
+      missing: REQUIRED_TABLES
+    };
+  }
+}
+
+async function assertArticleTranslationJobTablesReady() {
+  const readiness = await getArticleTranslationJobReadiness();
+  if (!readiness.ready) {
+    throw new Error(readiness.message);
+  }
+}
+
 export async function getDefaultTranslationTargetLocale() {
   const config = await getTranslationConfig().catch(() => null);
   return normalizeTranslationLocale(config?.targetLang ?? "en");
@@ -39,10 +71,7 @@ export async function enqueueArticleTranslationJobs(
   input: { articleIds: unknown; locale: unknown }
 ) {
   assertPermission(canManageArticles(user), "你没有权限翻译文章。");
-
-  if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL 未配置。");
-  }
+  await assertArticleTranslationJobTablesReady();
 
   const articleIds = normalizeArticleIds(input.articleIds);
   if (!articleIds.length) {
@@ -88,11 +117,12 @@ export async function enqueueArticleTranslationJobs(
 export async function listLatestArticleTranslationJobs(user: CurrentUser, articleIds: string[]) {
   assertPermission(canManageArticles(user), "你没有权限查看文章翻译任务。");
 
-  if (!isDatabaseConfigured()) {
+  const readiness = await getArticleTranslationJobReadiness();
+  if (!readiness.ready) {
     return [];
   }
 
-  const jobs = await withDatabase(() => db.articleTranslationJob.findMany({
+  const jobs = await db.articleTranslationJob.findMany({
     where: articleIds.length ? { articleId: { in: articleIds } } : undefined,
     orderBy: { createdAt: "desc" },
     take: 300,
@@ -111,7 +141,7 @@ export async function listLatestArticleTranslationJobs(user: CurrentUser, articl
       startedAt: true,
       completedAt: true
     }
-  }), []);
+  });
 
   const latest = new Map<string, (typeof jobs)[number]>();
   for (const job of jobs) {
@@ -126,10 +156,7 @@ export async function listLatestArticleTranslationJobs(user: CurrentUser, articl
 
 export async function retryArticleTranslationJob(user: CurrentUser, jobId: string) {
   assertPermission(canManageArticles(user), "你没有权限重试文章翻译任务。");
-
-  if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL 未配置。");
-  }
+  await assertArticleTranslationJobTablesReady();
 
   const job = await db.articleTranslationJob.findUnique({
     where: { id: jobId },
@@ -253,7 +280,9 @@ async function runJob(job: NonNullable<Awaited<ReturnType<typeof claimNextJob>>>
 }
 
 async function drainJobs() {
-  if (!isDatabaseConfigured()) {
+  const readiness = await getArticleTranslationJobReadiness();
+  if (!readiness.ready) {
+    console.warn(readiness.message);
     return;
   }
 

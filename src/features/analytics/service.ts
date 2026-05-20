@@ -1,5 +1,5 @@
 import { ArticleStatus } from "@prisma/client";
-import { db, isDatabaseConfigured } from "@/lib/db";
+import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import { assertPermission, canViewAnalytics } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
 import type { DashboardStats } from "@/features/analytics/types";
@@ -22,6 +22,11 @@ function buildDateKeys(startDate: Date, days: number) {
     date.setDate(date.getDate() + index);
     return getDateKey(date);
   });
+}
+
+function getBrowserName(deviceName: string | null | undefined) {
+  const device = deviceName || "Unknown";
+  return device.includes("·") ? device.split("·")[0].trim() : device;
 }
 
 export async function getDashboardStats(
@@ -51,7 +56,7 @@ export async function getDashboardStats(
       popularArticles,
       recentArticles,
       visitLogs,
-      loginSessions
+      loginEvents
     ] = await Promise.all([
       db.article.count({ where: { deletedAt: null } }),
       db.user.count(),
@@ -78,25 +83,23 @@ export async function getDashboardStats(
           searchEngine: true
         }
       }),
-      db.authSession.findMany({
+      withDatabase(() => db.loginEvent.findMany({
+        where: { createdAt: { gte: startDate } },
         select: { deviceName: true }
-      })
+      }), [] as Array<{ deviceName: string | null }>)
     ]);
 
     const dateKeys = buildDateKeys(startDate, rangeDays);
     const trendMap = new Map(dateKeys.map((date) => [date, 0]));
     const countryTotals = new Map<string, number>();
     const countryByDate = new Map<string, Map<string, number>>();
-    const searchEngineTotals = new Map<string, number>();
 
     for (const log of visitLogs) {
       const dateKey = getDateKey(log.createdAt);
       const countryCode = (log.countryCode || "Unknown").trim() || "Unknown";
-      const searchEngine = (log.searchEngine || "Direct").trim() || "Direct";
 
       trendMap.set(dateKey, (trendMap.get(dateKey) ?? 0) + 1);
       countryTotals.set(countryCode, (countryTotals.get(countryCode) ?? 0) + 1);
-      searchEngineTotals.set(searchEngine, (searchEngineTotals.get(searchEngine) ?? 0) + 1);
 
       const dailyCountries = countryByDate.get(dateKey) ?? new Map<string, number>();
       dailyCountries.set(countryCode, (dailyCountries.get(countryCode) ?? 0) + 1);
@@ -123,9 +126,8 @@ export async function getDashboardStats(
     });
 
     const deviceTotals = new Map<string, number>();
-    for (const session of loginSessions) {
-      const device = session.deviceName || "Unknown";
-      const browser = device.includes("·") ? device.split("·")[0].trim() : device;
+    for (const event of loginEvents) {
+      const browser = getBrowserName(event.deviceName);
       deviceTotals.set(browser, (deviceTotals.get(browser) ?? 0) + 1);
     }
     const deviceSources = Array.from(deviceTotals.entries())

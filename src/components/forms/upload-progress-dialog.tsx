@@ -35,8 +35,9 @@ export function UploadProgressDialog({
         }
         onOpenChange(nextOpen);
       }}
-      title="Upload image"
-      description={isUploading ? "Keep this page open while the image is uploading." : state.message}
+      title="上传图片"
+      description={isUploading ? "图片上传中，请保持当前页面打开。" : state.message}
+      closeLabel="关闭"
       className="max-w-md"
     >
       <div className="space-y-4">
@@ -51,7 +52,7 @@ export function UploadProgressDialog({
             )}
           </span>
           <div className="min-w-0">
-            <p className="truncate font-medium">{state.filename || "Image"}</p>
+            <p className="truncate font-medium">{state.filename || "图片"}</p>
             <p className="text-sm text-muted-foreground">{state.message}</p>
           </div>
         </div>

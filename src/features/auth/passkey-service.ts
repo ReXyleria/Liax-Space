@@ -1,4 +1,5 @@
 import {
+  LoginEventMethod,
   WebAuthnChallengeType,
   UserStatus
 } from "@prisma/client";
@@ -15,6 +16,7 @@ import { db, isDatabaseConfigured } from "@/lib/db";
 import { createSession, createTrustedDevice, type CurrentUser } from "@/lib/auth";
 import { canAccessConsole } from "@/lib/permissions";
 import { sendTemplatedMail } from "@/lib/mail";
+import { recordLoginEvent } from "@/features/auth/login-events";
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
@@ -329,6 +331,7 @@ export async function verifyPasskeyAuthentication(
   ]);
 
   await createSession(credential.userId, meta?.deviceName, { secure: meta?.cookieSecure });
+  await recordLoginEvent(credential.userId, LoginEventMethod.PASSKEY, meta);
   if (meta?.trustDevice) {
     await createTrustedDevice(credential.userId, meta?.deviceName, { secure: meta.cookieSecure });
   }

@@ -30,6 +30,58 @@ const activeStatuses = new Set<ArticleTranslationJobStatus>([
   ArticleTranslationJobStatus.RUNNING
 ]);
 
+function labels(locale: Locale) {
+  return locale === "en"
+    ? {
+        queued: "Queued",
+        running: "Translating",
+        succeeded: "Completed",
+        failed: "Failed",
+        canceled: "Canceled",
+        idle: "Idle",
+        retry: "Retry",
+        chinese: "Simplified Chinese",
+        english: "English",
+        responseInvalid: "Invalid response format.",
+        loadFailed: "Failed to load translation jobs.",
+        selectAtLeastOne: "Select at least one article.",
+        enqueueFailed: "Failed to enqueue translation jobs.",
+        enqueued: "Translation jobs were queued.",
+        retryFailed: "Failed to retry translation job.",
+        selectArticles: "Select articles",
+        selected: "selected",
+        translateSelected: "Translate selected",
+        queueing: "Queueing...",
+        translated: "Translated",
+        untranslated: "Not translated",
+        chooseArticle: "Select"
+      }
+    : {
+        queued: "队列中",
+        running: "翻译中",
+        succeeded: "已完成",
+        failed: "失败",
+        canceled: "已取消",
+        idle: "空闲",
+        retry: "重试",
+        chinese: "简体中文",
+        english: "英文",
+        responseInvalid: "响应格式无效。",
+        loadFailed: "翻译任务加载失败。",
+        selectAtLeastOne: "请至少选择一篇文章。",
+        enqueueFailed: "翻译任务加入队列失败。",
+        enqueued: "翻译任务已加入队列。",
+        retryFailed: "重试翻译任务失败。",
+        selectArticles: "选择文章",
+        selected: "已选择",
+        translateSelected: "翻译选中",
+        queueing: "排队中...",
+        translated: "已翻译",
+        untranslated: "未翻译",
+        chooseArticle: "选择"
+      };
+}
+
 const progressMessageLabels: Record<string, string> = {
   Queued: "队列中",
   "Queued for retry": "已重新排队",
@@ -40,27 +92,33 @@ const progressMessageLabels: Record<string, string> = {
   "Metadata translated": "元数据已翻译",
   "Sending translation request": "正在发送翻译请求",
   "Translation complete": "翻译完成",
-  "Translation already current": "译文已是最新"
+  "Translation already current": "译文已是最新",
+  队列中: "队列中",
+  已重新排队: "已重新排队",
+  已恢复停滞任务: "已恢复停滞任务",
+  开始翻译: "开始翻译",
+  翻译完成: "翻译完成"
 };
 
 function jobKey(articleId: string, locale: string) {
   return `${articleId}:${locale}`;
 }
 
-function statusLabel(status?: ArticleTranslationJobStatus) {
+function statusLabel(locale: Locale, status?: ArticleTranslationJobStatus) {
+  const text = labels(locale);
   switch (status) {
     case ArticleTranslationJobStatus.QUEUED:
-      return "队列中";
+      return text.queued;
     case ArticleTranslationJobStatus.RUNNING:
-      return "翻译中";
+      return text.running;
     case ArticleTranslationJobStatus.SUCCEEDED:
-      return "已完成";
+      return text.succeeded;
     case ArticleTranslationJobStatus.FAILED:
-      return "失败";
+      return text.failed;
     case ArticleTranslationJobStatus.CANCELED:
-      return "已取消";
+      return text.canceled;
     default:
-      return "空闲";
+      return text.idle;
   }
 }
 
@@ -79,9 +137,10 @@ function statusClass(status?: ArticleTranslationJobStatus) {
   }
 }
 
-function languageLabel(value: string) {
-  if (value === "zh-CN") return "简体中文";
-  if (value === "en") return "英文";
+function languageLabel(locale: Locale, value: string) {
+  const text = labels(locale);
+  if (value === "zh-CN") return text.chinese;
+  if (value === "en") return text.english;
   return value;
 }
 
@@ -95,8 +154,8 @@ function localizeProgressMessage(value: string | null | undefined) {
   return value;
 }
 
-async function readJson(response: Response) {
-  return response.json().catch(() => ({ ok: false, message: "响应格式无效。" }));
+async function readJson(response: Response, fallback: string) {
+  return response.json().catch(() => ({ ok: false, message: fallback }));
 }
 
 function SelectionControl({
@@ -149,6 +208,7 @@ export function ConsoleArticleTable({
   locale: Locale;
   defaultTargetLocale: string;
 }) {
+  const text = labels(locale);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [targetLocale, setTargetLocale] = useState(defaultTargetLocale || "en");
   const [jobsByKey, setJobsByKey] = useState<Record<string, TranslationJob>>({});
@@ -159,8 +219,8 @@ export function ConsoleArticleTable({
   const hasActiveJobs = Object.values(jobsByKey).some((job) => activeStatuses.has(job.status));
   const languageOptions = useMemo(() => {
     const values = Array.from(new Set([defaultTargetLocale || "en", "en", "zh-CN"]));
-    return values.map((value) => ({ value, label: languageLabel(value) }));
-  }, [defaultTargetLocale]);
+    return values.map((value) => ({ value, label: languageLabel(locale, value) }));
+  }, [defaultTargetLocale, locale]);
 
   const loadJobs = useCallback(async () => {
     if (!articleIds.length) {
@@ -170,9 +230,9 @@ export function ConsoleArticleTable({
     const response = await fetch(`/api/console/articles/translation-jobs?articleIds=${articleIds.join(",")}`, {
       cache: "no-store"
     });
-    const payload = await readJson(response);
+    const payload = await readJson(response, text.responseInvalid);
     if (!response.ok || !payload.ok) {
-      setMessage(payload.message ?? "翻译任务加载失败。");
+      setMessage(payload.message ?? text.loadFailed);
       return;
     }
 
@@ -181,7 +241,7 @@ export function ConsoleArticleTable({
       nextJobs[jobKey(job.articleId, job.locale)] = job;
     }
     setJobsByKey(nextJobs);
-  }, [articleIds]);
+  }, [articleIds, text.loadFailed, text.responseInvalid]);
 
   useEffect(() => {
     void loadJobs();
@@ -206,7 +266,7 @@ export function ConsoleArticleTable({
 
   async function enqueueSelected() {
     if (!selectedIds.length) {
-      setMessage("请至少选择一篇文章。");
+      setMessage(text.selectAtLeastOne);
       return;
     }
 
@@ -218,12 +278,12 @@ export function ConsoleArticleTable({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ articleIds: selectedIds, locale: targetLocale })
       });
-      const payload = await readJson(response);
+      const payload = await readJson(response, text.responseInvalid);
       if (!response.ok || !payload.ok) {
-        setMessage(payload.message ?? "翻译任务加入队列失败。");
+        setMessage(payload.message ?? text.enqueueFailed);
         return;
       }
-      setMessage("翻译任务已加入队列。");
+      setMessage(text.enqueued);
       await loadJobs();
     } finally {
       setBusy(false);
@@ -233,9 +293,9 @@ export function ConsoleArticleTable({
   async function retryJob(jobId: string) {
     setMessage("");
     const response = await fetch(`/api/console/articles/translation-jobs/${jobId}/retry`, { method: "POST" });
-    const payload = await readJson(response);
+    const payload = await readJson(response, text.responseInvalid);
     if (!response.ok || !payload.ok) {
-      setMessage(payload.message ?? "重试翻译任务失败。");
+      setMessage(payload.message ?? text.retryFailed);
       return;
     }
     await loadJobs();
@@ -247,7 +307,7 @@ export function ConsoleArticleTable({
         <SelectionControl
           checked={allSelected}
           onCheckedChange={(checked) => setSelectedIds(checked ? articleIds : [])}
-          label={selectedIds.length ? `已选择 ${selectedIds.length} 篇` : "选择文章"}
+          label={selectedIds.length ? `${text.selected} ${selectedIds.length} 篇` : text.selectArticles}
         />
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Select
@@ -259,7 +319,7 @@ export function ConsoleArticleTable({
           />
           <Button type="button" disabled={busy || !selectedIds.length} onClick={enqueueSelected}>
             <Languages className="mr-2 h-4 w-4" />
-            {busy ? "排队中..." : "翻译选中"}
+            {busy ? text.queueing : text.translateSelected}
           </Button>
         </div>
       </div>
@@ -277,7 +337,7 @@ export function ConsoleArticleTable({
               <SelectionControl
                 checked={selectedIds.includes(article.id)}
                 onCheckedChange={(checked) => toggleArticle(article.id, checked)}
-                label={`选择 ${article.title}`}
+                label={`${text.chooseArticle} ${article.title}`}
                 compact
               />
               <div>
@@ -291,12 +351,12 @@ export function ConsoleArticleTable({
                     }`}
                     title={
                       article.translationReady
-                        ? `已翻译：${article.translationTargetLocale}`
-                        : `未翻译：${article.translationTargetLocale}`
+                        ? `${text.translated}: ${article.translationTargetLocale}`
+                        : `${text.untranslated}: ${article.translationTargetLocale}`
                     }
                   />
                   <span className="text-xs text-muted-foreground">
-                    {article.translationReady ? "已翻译" : "未翻译"}
+                    {article.translationReady ? text.translated : text.untranslated}
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{article.slug}</p>
@@ -311,7 +371,7 @@ export function ConsoleArticleTable({
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(activeJob?.status)}`}>
-                    {statusLabel(activeJob?.status)}
+                    {statusLabel(locale, activeJob?.status)}
                   </span>
                   {activeJob?.status === ArticleTranslationJobStatus.FAILED ? (
                     <button
@@ -320,7 +380,7 @@ export function ConsoleArticleTable({
                       onClick={() => retryJob(activeJob.id)}
                     >
                       <RotateCcw className="h-3 w-3" />
-                      重试
+                      {text.retry}
                     </button>
                   ) : null}
                 </div>

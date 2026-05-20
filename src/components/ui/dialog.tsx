@@ -10,6 +10,7 @@ export function Dialog({
   description,
   children,
   footer,
+  closeLabel = "Close",
   confirmOnClose = false,
   onOpenChange,
   className
@@ -19,6 +20,7 @@ export function Dialog({
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  closeLabel?: string;
   confirmOnClose?: boolean;
   onOpenChange: (open: boolean) => void;
   className?: string;
@@ -89,7 +91,7 @@ export function Dialog({
             className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
             onClick={requestClose}
           >
-            Close
+            {closeLabel}
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>

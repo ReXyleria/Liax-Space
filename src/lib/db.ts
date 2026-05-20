@@ -125,8 +125,8 @@ export async function getDatabaseTableReadiness(tableNames: string[]): Promise<D
       AND TABLE_NAME IN (${Prisma.join(uniqueTableNames)})
   `;
   const existing = rows.map((row) => row.tableName);
-  const existingSet = new Set(existing);
-  const missing = uniqueTableNames.filter((tableName) => !existingSet.has(tableName));
+  const existingSet = new Set(existing.map((tableName) => tableName.toLowerCase()));
+  const missing = uniqueTableNames.filter((tableName) => !existingSet.has(tableName.toLowerCase()));
 
   return {
     ready: missing.length === 0,

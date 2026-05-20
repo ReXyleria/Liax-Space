@@ -59,6 +59,15 @@ enum WebAuthnChallengeType {
   AUTHENTICATION
 }
 
+enum LoginEventMethod {
+  PASSWORD
+  EMAIL_CODE
+  TOTP
+  RECOVERY
+  PASSKEY
+  SMTP_FAIL_OPEN
+}
+
 enum MailTemplateScene {
   MOMENT_COMMENT
   LOGIN_ALERT
@@ -188,6 +197,7 @@ model User {
   totpRecovery       TotpRecoveryCode[]
   webauthnChallenges WebAuthnChallenge[]
   sessions           AuthSession[]
+  loginEvents        LoginEvent[]
   pendingAuths       PendingAuth[]
   trustedDevices     TrustedDevice[]
   uploadedMedia      MediaAsset[]
@@ -228,6 +238,20 @@ model AuthSession {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model LoginEvent {
+  id         String           @id @default(cuid())
+  userId     String
+  method     LoginEventMethod
+  deviceName String?
+  ipHash     String?
+  createdAt  DateTime         @default(now())
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([method, createdAt])
+  @@index([createdAt])
 }
 
 model PendingAuth {

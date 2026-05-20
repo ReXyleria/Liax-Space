@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import {
   enqueueArticleTranslationJobs,
   ensureArticleTranslationJobWorker,
+  getArticleTranslationJobReadiness,
   listLatestArticleTranslationJobs
 } from "@/features/articles/translation-jobs";
 
@@ -20,6 +21,11 @@ export async function GET(request: NextRequest) {
   try {
     const user = await requireUser();
     const articleIds = parseArticleIds(request.nextUrl.searchParams.get("articleIds"));
+    const readiness = await getArticleTranslationJobReadiness();
+    if (!readiness.ready) {
+      return NextResponse.json({ ok: false, message: readiness.message, jobs: [] }, { status: 503 });
+    }
+
     ensureArticleTranslationJobWorker();
     const jobs = await listLatestArticleTranslationJobs(user, articleIds);
     return NextResponse.json({ ok: true, jobs });
@@ -37,6 +43,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const user = await requireUser();
+    const readiness = await getArticleTranslationJobReadiness();
+    if (!readiness.ready) {
+      return NextResponse.json({ ok: false, message: readiness.message, jobs: [] }, { status: 503 });
+    }
+
     const body = await request.json().catch(() => ({}));
     const jobs = await enqueueArticleTranslationJobs(user, {
       articleIds: body.articleIds,

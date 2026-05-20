@@ -37,7 +37,7 @@ async function createRecoveryCodes(userId: string) {
 
 export async function beginTotpSetup(user: CurrentUser) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const secret = generateSecret();
@@ -48,7 +48,7 @@ export async function beginTotpSetup(user: CurrentUser) {
       const setting = await db.setting.findUnique({ where: { key: "passkey.rpName" } });
       issuer = setting?.value || "";
     } catch {
-      // Ignore, use fallback
+      // Use the product fallback below when settings are unavailable.
     }
   }
 
@@ -78,7 +78,7 @@ export async function beginTotpSetup(user: CurrentUser) {
 
 export async function confirmTotpSetup(user: CurrentUser, code: string) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const record = await db.user.findUnique({
@@ -87,7 +87,7 @@ export async function confirmTotpSetup(user: CurrentUser, code: string) {
   });
 
   if (!record?.totpSecret) {
-    throw new Error("Start TOTP setup before verifying a code.");
+    throw new Error("请先开始 TOTP 设置，再验证动态验证码。");
   }
 
   const verified = await verify({
@@ -98,7 +98,7 @@ export async function confirmTotpSetup(user: CurrentUser, code: string) {
     epochTolerance: 30
   });
   if (!verified.valid) {
-    throw new Error("Invalid TOTP code.");
+    throw new Error("TOTP 验证码不正确。");
   }
 
   const recoveryCodes = await createRecoveryCodes(user.id);
@@ -177,7 +177,7 @@ export async function verifyTotpOrRecovery(
 
 export async function sendTotpDisableEmailCode(user: CurrentUser) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const record = await db.user.findUnique({
@@ -186,11 +186,11 @@ export async function sendTotpDisableEmailCode(user: CurrentUser) {
   });
 
   if (!record) {
-    throw new Error("User not found.");
+    throw new Error("用户不存在。");
   }
 
   if (!record.totpEnabled) {
-    throw new Error("TOTP is not enabled.");
+    throw new Error("当前账号未启用 TOTP。");
   }
 
   const code = generateNumericCode();
@@ -243,7 +243,7 @@ async function verifyTotpDisableEmailCode(email: string, code?: string | null) {
 
 export async function revokeTotpAfterRecoveryLogin(userId: string) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   await db.$transaction([
@@ -270,7 +270,7 @@ export async function disableTotp(
   }
 ) {
   if (!isDatabaseConfigured()) {
-    throw new Error("DATABASE_URL is not configured.");
+    throw new Error("DATABASE_URL 未配置。");
   }
 
   const record = await db.user.findUnique({
@@ -283,27 +283,27 @@ export async function disableTotp(
   });
 
   if (!record) {
-    throw new Error("User not found.");
+    throw new Error("用户不存在。");
   }
 
   if (!record.totpEnabled) {
-    throw new Error("TOTP is not enabled.");
+    throw new Error("当前账号未启用 TOTP。");
   }
 
   const passwordOk = await verifyPassword(input.currentPassword, record.passwordHash);
   if (!passwordOk) {
-    throw new Error("Current password is incorrect.");
+    throw new Error("当前密码不正确。");
   }
 
   if (input.method === "emailCode") {
     const emailCodeOk = await verifyTotpDisableEmailCode(record.email, input.emailCode);
     if (!emailCodeOk) {
-      throw new Error("Email verification code is invalid.");
+      throw new Error("邮箱验证码不正确或已过期。");
     }
   } else {
     const secondFactor = await verifyTotpOrRecovery(user.id, input.code, input.recoveryCode);
     if (!secondFactor.ok) {
-      throw new Error("TOTP or recovery code is invalid.");
+      throw new Error("动态验证码或恢复码不正确。");
     }
   }
 
