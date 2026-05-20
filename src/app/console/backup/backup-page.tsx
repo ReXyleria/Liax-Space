@@ -50,10 +50,18 @@ function backupText(locale: Awaited<ReturnType<typeof getConsoleLocale>>): Backu
     delete: t(locale, "delete"),
     deleting: t(locale, "deleting"),
     cancel: t(locale, "cancel"),
+    close: t(locale, "close"),
     restoreWarning: t(locale, "restoreWarning"),
     restoreWarningBody: t(locale, "restoreWarningBody"),
-    typeRestoreToConfirm: t(locale, "typeRestoreToConfirm"),
     confirmRestore: t(locale, "confirmRestore"),
+    restoreProgressReady: t(locale, "restoreProgressReady"),
+    restoreProgressRunning: t(locale, "restoreProgressRunning"),
+    restoreProgressSuccess: t(locale, "restoreProgressSuccess"),
+    restoreProgressFailed: t(locale, "restoreProgressFailed"),
+    restoreSelectedFile: t(locale, "restoreSelectedFile"),
+    restoreSelectedBackup: t(locale, "restoreSelectedBackup"),
+    retryRestore: t(locale, "retryRestore"),
+    deleteBackupDescription: t(locale, "deleteBackupDescription"),
     manual: t(locale, "manual")
   };
 }

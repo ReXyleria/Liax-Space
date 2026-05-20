@@ -1,11 +1,11 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
-import { FileArchive, UploadCloud, X } from "lucide-react";
+import { CheckCircle2, FileArchive, Loader2, UploadCloud, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
+import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
 import {
@@ -48,10 +48,18 @@ export type BackupPanelText = {
   delete: string;
   deleting: string;
   cancel: string;
+  close: string;
   restoreWarning: string;
   restoreWarningBody: string;
-  typeRestoreToConfirm: string;
   confirmRestore: string;
+  restoreProgressReady: string;
+  restoreProgressRunning: string;
+  restoreProgressSuccess: string;
+  restoreProgressFailed: string;
+  restoreSelectedFile: string;
+  restoreSelectedBackup: string;
+  retryRestore: string;
+  deleteBackupDescription: string;
   manual: string;
 };
 
@@ -89,6 +97,116 @@ function StateMessage({ state }: { state: BackupActionState }) {
   }
 
   return <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{state.message}</p>;
+}
+
+function interpolate(template: string, values: Record<string, string>) {
+  return Object.entries(values).reduce((current, [key, value]) => current.replaceAll(`{${key}}`, value), template);
+}
+
+function RestoreProgressDialog({
+  open,
+  title,
+  description,
+  itemLabel,
+  state,
+  pending,
+  onOpenChange,
+  onConfirm,
+  text
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  itemLabel: string;
+  state: BackupActionState;
+  pending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  text: BackupPanelText;
+}) {
+  const hasResult = Boolean(state.message);
+  const isSuccess = hasResult && state.ok;
+  const isError = hasResult && !state.ok;
+  const progress = pending ? 68 : isSuccess ? 100 : isError ? 100 : 14;
+  const statusText = pending
+    ? text.restoreProgressRunning
+    : isSuccess
+      ? text.restoreProgressSuccess
+      : isError
+        ? text.restoreProgressFailed
+        : text.restoreProgressReady;
+
+  return (
+    <Dialog
+      open={open}
+      title={title}
+      description={description}
+      closeLabel={text.close}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && pending) {
+          return;
+        }
+        onOpenChange(nextOpen);
+      }}
+      className="max-w-lg"
+      footer={
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" disabled={pending} onClick={() => onOpenChange(false)}>
+            {isSuccess ? text.close : text.cancel}
+          </Button>
+          {isError ? (
+            <Button type="button" variant="danger" disabled={pending} onClick={onConfirm}>
+              {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {pending ? text.restoring : text.retryRestore}
+            </Button>
+          ) : null}
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-lg border bg-background/70 p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{text.restoreWarning}</p>
+          <p className="mt-1 truncate text-sm font-medium">{itemLabel}</p>
+        </div>
+        <div className="flex items-start gap-3">
+          <span
+            className={
+              isSuccess
+                ? "grid h-10 w-10 shrink-0 place-items-center rounded-md bg-emerald-500/10 text-emerald-600"
+                : isError
+                  ? "grid h-10 w-10 shrink-0 place-items-center rounded-md bg-destructive/10 text-destructive"
+                  : "grid h-10 w-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"
+            }
+          >
+            {pending ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : isSuccess ? (
+              <CheckCircle2 className="h-5 w-5" />
+            ) : isError ? (
+              <XCircle className="h-5 w-5" />
+            ) : (
+              <FileArchive className="h-5 w-5" />
+            )}
+          </span>
+          <div className="min-w-0">
+            <p className="font-medium">{statusText}</p>
+            <p className={isError ? "mt-1 text-sm text-destructive" : "mt-1 text-sm text-muted-foreground"}>
+              {hasResult && !pending ? state.message : text.restoreWarningBody}
+            </p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className={isError ? "h-full bg-destructive transition-all duration-500" : "h-full bg-primary transition-all duration-500"}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="text-right text-xs text-muted-foreground">{progress}%</p>
+        </div>
+      </div>
+    </Dialog>
+  );
 }
 
 function ScheduleSection({
@@ -169,8 +287,8 @@ function UploadRestoreSection({
   const inputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoreAttempted, setRestoreAttempted] = useState(false);
 
   function openPicker() {
     inputRef.current?.click();
@@ -183,21 +301,14 @@ function UploadRestoreSection({
       <form
         ref={formRef}
         action={action}
-        className="mt-4 grid gap-3 lg:grid-cols-[1fr_180px_auto]"
-        onSubmit={(event) => {
-          if (confirmed) {
-            setConfirmed(false);
-            return;
-          }
-          event.preventDefault();
-          setConfirmOpen(true);
-        }}
+        className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]"
       >
         <input
           ref={inputRef}
           className="sr-only"
           name="backupFile"
           type="file"
+          required
           accept="application/gzip,application/x-gzip,application/json,.tar.gz,.tgz,.json"
           onChange={(event) => setSelectedFile(event.currentTarget.files?.[0] ?? null)}
         />
@@ -251,27 +362,35 @@ function UploadRestoreSection({
             </span>
           )}
         </button>
-        <Input name="confirm" placeholder="RESTORE" />
-        <Button type="submit" variant="danger" disabled={pending || !selectedFile}>
+        <Button
+          type="button"
+          variant="danger"
+          disabled={pending || !selectedFile}
+          onClick={() => {
+            setRestoreAttempted(true);
+            setRestoreOpen(true);
+            window.setTimeout(() => formRef.current?.requestSubmit(), 0);
+          }}
+        >
           {pending ? text.restoring : text.restore}
         </Button>
       </form>
       <div className="mt-3">
         <StateMessage state={state} />
       </div>
-      <ConfirmActionDialog
-        open={confirmOpen}
+      <RestoreProgressDialog
+        open={restoreOpen}
         title={text.confirmRestore}
         description={text.restoreWarningBody}
-        confirmLabel={text.confirmRestore}
-        cancelLabel={text.cancel}
+        itemLabel={`${text.restoreSelectedFile}: ${selectedFile?.name ?? text.chooseBackupFile}`}
+        state={restoreAttempted ? state : initialState}
         pending={pending}
-        onOpenChange={setConfirmOpen}
+        onOpenChange={setRestoreOpen}
         onConfirm={() => {
-          setConfirmed(true);
-          setConfirmOpen(false);
-          window.setTimeout(() => formRef.current?.requestSubmit(), 0);
+          setRestoreAttempted(true);
+          formRef.current?.requestSubmit();
         }}
+        text={text}
       />
     </section>
   );
@@ -279,36 +398,33 @@ function UploadRestoreSection({
 
 function BackupRow({
   backup,
-  confirming,
-  confirmText,
   deleteState,
   storedRestoreState,
   isDeleting,
   isStoredRestoring,
   deleteAction,
   storedRestoreAction,
-  onToggleRestore,
-  onConfirmTextChange,
   text
 }: {
   backup: BackupItem;
-  confirming: boolean;
-  confirmText: string;
   deleteState: BackupActionState;
   storedRestoreState: BackupActionState;
   isDeleting: boolean;
   isStoredRestoring: boolean;
   deleteAction: (formData: FormData) => void;
   storedRestoreAction: (formData: FormData) => void;
-  onToggleRestore: (id: string | null) => void;
-  onConfirmTextChange: (value: string) => void;
   text: BackupPanelText;
 }) {
+  const restoreFormRef = useRef<HTMLFormElement>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoreAttempted, setRestoreAttempted] = useState(false);
 
   return (
     <div>
+      <form ref={restoreFormRef} action={storedRestoreAction} className="hidden">
+        <input type="hidden" name="id" value={backup.id} />
+      </form>
       <div className="grid gap-4 border-b p-5 last:border-b-0 md:grid-cols-[1fr_auto] md:items-center">
         <div className="min-w-0">
           <p className="truncate font-medium">{backup.filename}</p>
@@ -331,65 +447,46 @@ function BackupRow({
           </a>
           <Button
             type="button"
-            variant={confirming ? "secondary" : "danger"}
+            variant="danger"
             disabled={isStoredRestoring}
-            onClick={() => onToggleRestore(confirming ? null : backup.id)}
+            onClick={() => {
+              setRestoreAttempted(true);
+              setRestoreOpen(true);
+              window.setTimeout(() => restoreFormRef.current?.requestSubmit(), 0);
+            }}
           >
-            {confirming ? text.cancel : text.restore}
+            {isStoredRestoring ? text.restoring : text.restore}
           </Button>
           <Button type="button" variant="secondary" disabled={isDeleting} onClick={() => setDeleteConfirmOpen(true)}>
             {isDeleting ? text.deleting : text.delete}
           </Button>
         </div>
       </div>
-      {confirming ? (
-        <div className="border-b bg-muted/30 px-5 pb-4 pt-3 last:border-b-0">
-          <p className="text-sm font-medium text-destructive">{text.restoreWarning}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{text.restoreWarningBody}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <input type="hidden" name="id" value={backup.id} />
-            <Input
-              name="confirm"
-              placeholder={text.typeRestoreToConfirm}
-              value={confirmText}
-              onChange={(event) => onConfirmTextChange(event.target.value)}
-              className="w-60"
-            />
-            <Button
-              type="button"
-              variant="danger"
-              disabled={confirmText !== "RESTORE" || isStoredRestoring}
-              onClick={() => setRestoreConfirmOpen(true)}
-            >
-              {isStoredRestoring ? text.restoring : text.confirmRestore}
-            </Button>
-          </div>
-        </div>
-      ) : null}
       <ConfirmActionDialog
         open={deleteConfirmOpen}
         title={text.delete}
-        description={`${backup.filename} will be permanently deleted from the backup list.`}
+        description={interpolate(text.deleteBackupDescription, { filename: backup.filename })}
         confirmLabel={text.delete}
         cancelLabel={text.cancel}
+        closeLabel={text.close}
         pending={isDeleting}
         onOpenChange={setDeleteConfirmOpen}
         action={deleteAction}
         hiddenFields={[{ name: "id", value: backup.id }]}
       />
-      <ConfirmActionDialog
-        open={restoreConfirmOpen}
+      <RestoreProgressDialog
+        open={restoreOpen}
         title={text.confirmRestore}
         description={text.restoreWarningBody}
-        confirmLabel={text.confirmRestore}
-        cancelLabel={text.cancel}
+        itemLabel={`${text.restoreSelectedBackup}: ${backup.filename}`}
+        state={restoreAttempted ? storedRestoreState : initialState}
         pending={isStoredRestoring}
-        onOpenChange={setRestoreConfirmOpen}
-        action={storedRestoreAction}
-        hiddenFields={[
-          { name: "id", value: backup.id },
-          { name: "confirm", value: "RESTORE" }
-        ]}
+        onOpenChange={setRestoreOpen}
+        onConfirm={() => {
+          setRestoreAttempted(true);
+          restoreFormRef.current?.requestSubmit();
+        }}
+        text={text}
       />
     </div>
   );
@@ -397,29 +494,21 @@ function BackupRow({
 
 function BackupListSection({
   backups,
-  confirmingRestoreId,
-  confirmText,
   deleteState,
   storedRestoreState,
   isDeleting,
   isStoredRestoring,
   deleteAction,
   storedRestoreAction,
-  onToggleRestore,
-  onConfirmTextChange,
   text
 }: {
   backups: BackupItem[];
-  confirmingRestoreId: string | null;
-  confirmText: string;
   deleteState: BackupActionState;
   storedRestoreState: BackupActionState;
   isDeleting: boolean;
   isStoredRestoring: boolean;
   deleteAction: (formData: FormData) => void;
   storedRestoreAction: (formData: FormData) => void;
-  onToggleRestore: (id: string | null) => void;
-  onConfirmTextChange: (value: string) => void;
   text: BackupPanelText;
 }) {
   return (
@@ -432,16 +521,12 @@ function BackupListSection({
           <BackupRow
             key={backup.id}
             backup={backup}
-            confirming={confirmingRestoreId === backup.id}
-            confirmText={confirmText}
             deleteState={deleteState}
             storedRestoreState={storedRestoreState}
             isDeleting={isDeleting}
             isStoredRestoring={isStoredRestoring}
             deleteAction={deleteAction}
             storedRestoreAction={storedRestoreAction}
-            onToggleRestore={onToggleRestore}
-            onConfirmTextChange={onConfirmTextChange}
             text={text}
           />
         ))
@@ -479,13 +564,6 @@ export function BackupPanel({
     restoreStoredBackupAction,
     initialState
   );
-  const [confirmingRestoreId, setConfirmingRestoreId] = useState<string | null>(null);
-  const [confirmText, setConfirmText] = useState("");
-
-  function toggleRestore(id: string | null) {
-    setConfirmingRestoreId(id);
-    setConfirmText("");
-  }
 
   return (
     <div className="space-y-6">
@@ -499,16 +577,12 @@ export function BackupPanel({
       <UploadRestoreSection state={restoreState} action={restoreAction} pending={isRestoring} text={text} />
       <BackupListSection
         backups={backups}
-        confirmingRestoreId={confirmingRestoreId}
-        confirmText={confirmText}
         deleteState={deleteState}
         storedRestoreState={storedRestoreState}
         isDeleting={isDeleting}
         isStoredRestoring={isStoredRestoring}
         deleteAction={deleteAction}
         storedRestoreAction={storedRestoreAction}
-        onToggleRestore={toggleRestore}
-        onConfirmTextChange={setConfirmText}
         text={text}
       />
     </div>

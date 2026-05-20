@@ -31,9 +31,9 @@ export async function createBackupAction(): Promise<BackupActionState> {
     const user = await requireUser();
     await createBackup(user, "manual");
     revalidateBackupPages();
-    return ok("Backup created.");
+    return ok("备份已创建。");
   } catch (error) {
-    return fail(error, "Failed to create backup.");
+    return fail(error, "创建备份失败。");
   }
 }
 
@@ -51,9 +51,9 @@ export async function deleteBackupAction(
     const user = await requireUser();
     await deleteBackup(user, String(formData.get("id") ?? ""));
     revalidateBackupPages();
-    return ok("Backup deleted.");
+    return ok("备份已删除。");
   } catch (error) {
-    return fail(error, "Failed to delete backup.");
+    return fail(error, "删除备份失败。");
   }
 }
 
@@ -63,22 +63,17 @@ export async function restoreBackupAction(
 ): Promise<BackupActionState> {
   try {
     const user = await requireUser();
-    const confirm = String(formData.get("confirm") ?? "");
     const file = formData.get("backupFile");
 
-    if (confirm !== "RESTORE") {
-      throw new Error("Type RESTORE to confirm.");
-    }
-
-    if (!(file instanceof File)) {
-      throw new Error("Select a backup file.");
+    if (!(file instanceof File) || file.size <= 0) {
+      throw new Error("请选择要还原的备份文件。");
     }
 
     await restoreBackup(user, Buffer.from(await file.arrayBuffer()));
     revalidateBackupPages();
-    return ok("Backup restored. Sign in again if your current session was restored.");
+    return ok("备份已还原。若当前会话被还原，请重新登录。");
   } catch (error) {
-    return fail(error, "Failed to restore backup.");
+    return fail(error, "还原备份失败。");
   }
 }
 
@@ -89,17 +84,16 @@ export async function restoreStoredBackupAction(
   try {
     const user = await requireUser();
     const id = String(formData.get("id") ?? "");
-    const confirm = String(formData.get("confirm") ?? "");
 
-    if (confirm !== "RESTORE") {
-      throw new Error("Type RESTORE to confirm the restore.");
+    if (!id) {
+      throw new Error("备份记录不存在。");
     }
 
     await restoreBackupFromId(user, id);
     revalidateBackupPages();
-    return ok("Backup restored. Sign in again if your current session was restored.");
+    return ok("备份已还原。若当前会话被还原，请重新登录。");
   } catch (error) {
-    return fail(error, "Failed to restore backup.");
+    return fail(error, "还原备份失败。");
   }
 }
 
@@ -111,8 +105,8 @@ export async function updateBackupScheduleAction(
     const user = await requireUser();
     await updateBackupScheduleConfig(user, formData);
     revalidateBackupPages();
-    return ok("Backup schedule saved.");
+    return ok("备份计划已保存。");
   } catch (error) {
-    return fail(error, "Failed to save backup schedule.");
+    return fail(error, "保存备份计划失败。");
   }
 }
