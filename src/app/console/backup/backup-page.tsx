@@ -51,6 +51,7 @@ function backupText(locale: Awaited<ReturnType<typeof getConsoleLocale>>): Backu
     restore: t(locale, "restore"),
     restoring: t(locale, "restoring"),
     backupList: t(locale, "backupList"),
+    refreshBackups: t(locale, "refreshBackups"),
     noBackups: t(locale, "noBackups"),
     noBackupsDescription: t(locale, "noBackupsDescription"),
     download: t(locale, "download"),

@@ -25,6 +25,30 @@ services:
       APP_STORAGE_DIR: /app/storage
       SETUP_CONFIG_DIR: /app/storage/config
       UPLOAD_DIR: /app/public/uploads
+      BACKGROUND_WORKER_MODE: external
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: liax_space
+      MYSQL_USER: liax_space
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - ${APP_PATH:?APP_PATH is required}/data/storage:/app/storage
+      - ${APP_PATH:?APP_PATH is required}/data/uploads:/app/public/uploads
+
+  worker:
+    image: rexyleria/liax-space:test
+    container_name: liax-space-worker
+    restart: unless-stopped
+    depends_on:
+      - mysql
+      - app
+    command: ["sh", "scripts/docker-entrypoint.sh", "worker"]
+    environment:
+      APP_STORAGE_DIR: /app/storage
+      SETUP_CONFIG_DIR: /app/storage/config
+      UPLOAD_DIR: /app/public/uploads
+      BACKGROUND_WORKER_MODE: external
+      BACKGROUND_WORKER_ROLE: worker
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       MYSQL_DATABASE: liax_space

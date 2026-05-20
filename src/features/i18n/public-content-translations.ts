@@ -8,6 +8,7 @@ import {
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
 import { assertPermission, canManageSettings } from "@/lib/permissions";
+import { shouldRunInProcessWorkers } from "@/lib/background-worker";
 import { getTranslationConfig, type TranslationConfig } from "@/features/settings/translation-settings";
 
 export type PublicTranslationFields = Record<string, string>;
@@ -498,7 +499,7 @@ async function runJob(job: NonNullable<Awaited<ReturnType<typeof claimNextJob>>>
   }
 }
 
-async function drainJobs() {
+export async function drainPublicContentTranslationJobs() {
   if (!isDatabaseConfigured()) {
     return;
   }
@@ -513,13 +514,13 @@ async function drainJobs() {
 }
 
 export function ensurePublicContentTranslationWorker() {
-  if (workerRunning || !isDatabaseConfigured()) {
+  if (workerRunning || !isDatabaseConfigured() || !shouldRunInProcessWorkers()) {
     return;
   }
 
   workerRunning = true;
   setTimeout(() => {
-    drainJobs()
+    drainPublicContentTranslationJobs()
       .catch((error) => console.error("Public content translation worker failed", error))
       .finally(() => {
         workerRunning = false;

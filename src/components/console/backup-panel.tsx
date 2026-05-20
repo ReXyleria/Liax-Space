@@ -2,7 +2,7 @@
 
 import { useActionState, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, FileArchive, Loader2, UploadCloud, X, XCircle } from "lucide-react";
+import { CheckCircle2, FileArchive, Loader2, RefreshCw, UploadCloud, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { Dialog } from "@/components/ui/dialog";
@@ -12,6 +12,7 @@ import { ThemedCheckbox } from "@/components/ui/themed-checkbox";
 import {
   deleteBackupAction,
   restoreStoredBackupAction,
+  syncBackupDirectoryAction,
   updateBackupScheduleAction,
   type BackupActionState
 } from "@/features/backup/actions";
@@ -49,6 +50,7 @@ export type BackupPanelText = {
   restore: string;
   restoring: string;
   backupList: string;
+  refreshBackups: string;
   noBackups: string;
   noBackupsDescription: string;
   download: string;
@@ -407,12 +409,11 @@ function UploadBackupSection({ text }: { text: BackupPanelText }) {
     }
   }
 
-  function uploadSelectedFile() {
-    if (!selectedFile || isUploading) {
+  function uploadBackupFile(file: File) {
+    if (isUploading) {
       return;
     }
 
-    const file = selectedFile;
     const formData = new FormData();
     formData.append("file", file);
     setUploadOpen(true);
@@ -479,17 +480,30 @@ function UploadBackupSection({ text }: { text: BackupPanelText }) {
     xhr.send(formData);
   }
 
+  function uploadSelectedFile() {
+    if (!selectedFile) {
+      return;
+    }
+    uploadBackupFile(selectedFile);
+  }
+
   return (
     <section className="rounded-lg border bg-card p-5">
       <h2 className="text-xl font-semibold">{text.uploadBackupFile}</h2>
       <p className="mt-1 text-sm text-muted-foreground">{text.uploadBackupDescription}</p>
-      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+      <div className="mt-4 grid gap-3">
         <input
           ref={inputRef}
           className="sr-only"
           type="file"
           accept="application/gzip,application/x-gzip,application/json,.tar.gz,.tgz,.json"
-          onChange={(event) => setSelectedFile(event.currentTarget.files?.[0] ?? null)}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0] ?? null;
+            setSelectedFile(file);
+            if (file) {
+              uploadBackupFile(file);
+            }
+          }}
         />
         <button
           type="button"
@@ -509,7 +523,7 @@ function UploadBackupSection({ text }: { text: BackupPanelText }) {
                 : text.backupFileSupport}
             </span>
           </span>
-          {selectedFile ? (
+          {selectedFile && !isUploading ? (
             <span
               role="button"
               tabIndex={0}
@@ -530,18 +544,11 @@ function UploadBackupSection({ text }: { text: BackupPanelText }) {
             </span>
           ) : (
             <span className="inline-flex h-10 items-center gap-2 rounded-md bg-muted px-3 text-sm font-medium text-foreground transition group-hover:bg-primary group-hover:text-primary-foreground">
-              <UploadCloud className="h-4 w-4" />
-              {text.browse}
+              {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+              {isUploading ? text.uploadingBackup : text.browse}
             </span>
           )}
         </button>
-        <Button
-          type="button"
-          disabled={isUploading || !selectedFile}
-          onClick={uploadSelectedFile}
-        >
-          {isUploading ? text.uploadingBackup : text.uploadBackup}
-        </Button>
       </div>
       <BackupUploadDialog
         open={uploadOpen}
@@ -562,6 +569,8 @@ function BackupRow({
   isStoredRestoring,
   deleteAction,
   storedRestoreAction,
+  onDeleteStart,
+  onRestoreStart,
   text
 }: {
   backup: BackupItem;
@@ -571,6 +580,8 @@ function BackupRow({
   isStoredRestoring: boolean;
   deleteAction: (formData: FormData) => void;
   storedRestoreAction: (formData: FormData) => void;
+  onDeleteStart: () => void;
+  onRestoreStart: () => void;
   text: BackupPanelText;
 }) {
   const restoreFormRef = useRef<HTMLFormElement>(null);
@@ -608,6 +619,7 @@ function BackupRow({
             variant="danger"
             disabled={isStoredRestoring}
             onClick={() => {
+              onRestoreStart();
               setRestoreAttempted(true);
               setRestoreOpen(true);
               window.setTimeout(() => restoreFormRef.current?.requestSubmit(), 0);
@@ -615,7 +627,15 @@ function BackupRow({
           >
             {isStoredRestoring ? text.restoring : text.restore}
           </Button>
-          <Button type="button" variant="secondary" disabled={isDeleting} onClick={() => setDeleteConfirmOpen(true)}>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={isDeleting}
+            onClick={() => {
+              onDeleteStart();
+              setDeleteConfirmOpen(true);
+            }}
+          >
             {isDeleting ? text.deleting : text.delete}
           </Button>
         </div>
@@ -641,6 +661,7 @@ function BackupRow({
         pending={isStoredRestoring}
         onOpenChange={setRestoreOpen}
         onConfirm={() => {
+          onRestoreStart();
           setRestoreAttempted(true);
           restoreFormRef.current?.requestSubmit();
         }}
@@ -656,8 +677,15 @@ function BackupListSection({
   storedRestoreState,
   isDeleting,
   isStoredRestoring,
+  syncState,
+  isSyncing,
   deleteAction,
   storedRestoreAction,
+  syncAction,
+  activeDeleteId,
+  activeRestoreId,
+  setActiveDeleteId,
+  setActiveRestoreId,
   text
 }: {
   backups: BackupItem[];
@@ -665,29 +693,52 @@ function BackupListSection({
   storedRestoreState: BackupActionState;
   isDeleting: boolean;
   isStoredRestoring: boolean;
+  syncState: BackupActionState;
+  isSyncing: boolean;
   deleteAction: (formData: FormData) => void;
   storedRestoreAction: (formData: FormData) => void;
+  syncAction: (formData: FormData) => void;
+  activeDeleteId: string | null;
+  activeRestoreId: string | null;
+  setActiveDeleteId: (id: string) => void;
+  setActiveRestoreId: (id: string) => void;
   text: BackupPanelText;
 }) {
   return (
     <section className="rounded-lg border bg-card">
-      <div className="border-b p-5">
-        <h2 className="text-xl font-semibold">{text.backupList}</h2>
+      <div className="flex flex-col gap-3 border-b p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">{text.backupList}</h2>
+          <StateMessage state={syncState} />
+        </div>
+        <form action={syncAction}>
+          <Button type="submit" variant="secondary" disabled={isSyncing}>
+            {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            {text.refreshBackups}
+          </Button>
+        </form>
       </div>
       {backups.length ? (
-        backups.map((backup) => (
-          <BackupRow
-            key={backup.id}
-            backup={backup}
-            deleteState={deleteState}
-            storedRestoreState={storedRestoreState}
-            isDeleting={isDeleting}
-            isStoredRestoring={isStoredRestoring}
-            deleteAction={deleteAction}
-            storedRestoreAction={storedRestoreAction}
-            text={text}
-          />
-        ))
+        backups.map((backup) => {
+          const rowDeleteState = deleteState.id === backup.id ? deleteState : initialState;
+          const rowRestoreState = storedRestoreState.id === backup.id ? storedRestoreState : initialState;
+
+          return (
+            <BackupRow
+              key={backup.id}
+              backup={backup}
+              deleteState={rowDeleteState}
+              storedRestoreState={rowRestoreState}
+              isDeleting={isDeleting && activeDeleteId === backup.id}
+              isStoredRestoring={isStoredRestoring && activeRestoreId === backup.id}
+              deleteAction={deleteAction}
+              storedRestoreAction={storedRestoreAction}
+              onDeleteStart={() => setActiveDeleteId(backup.id)}
+              onRestoreStart={() => setActiveRestoreId(backup.id)}
+              text={text}
+            />
+          );
+        })
       ) : (
         <div className="p-5">
           <EmptyState title={text.noBackups} description={text.noBackupsDescription} />
@@ -718,6 +769,12 @@ export function BackupPanel({
     restoreStoredBackupAction,
     initialState
   );
+  const [syncState, syncAction, isSyncing] = useActionState<BackupActionState, FormData>(
+    syncBackupDirectoryAction,
+    initialState
+  );
+  const [activeDeleteId, setActiveDeleteId] = useState<string | null>(null);
+  const [activeRestoreId, setActiveRestoreId] = useState<string | null>(null);
 
   return (
     <div className="space-y-6">
@@ -735,8 +792,15 @@ export function BackupPanel({
         storedRestoreState={storedRestoreState}
         isDeleting={isDeleting}
         isStoredRestoring={isStoredRestoring}
+        syncState={syncState}
+        isSyncing={isSyncing}
         deleteAction={deleteAction}
         storedRestoreAction={storedRestoreAction}
+        syncAction={syncAction}
+        activeDeleteId={activeDeleteId}
+        activeRestoreId={activeRestoreId}
+        setActiveDeleteId={setActiveDeleteId}
+        setActiveRestoreId={setActiveRestoreId}
         text={text}
       />
     </div>

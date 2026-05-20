@@ -8,6 +8,7 @@
     "dev:warm": "tsx scripts/prewarm-cache.ts",
     "dev:clean": "node scripts/clean-next.mjs && next dev",
     "start": "node .next/standalone/server.js",
+    "worker": "tsx scripts/worker.ts",
     "clean": "node scripts/clean-next.mjs",
     "backup:manual": "tsx scripts/create-backup.ts",
     "cache:prewarm": "tsx scripts/prewarm-cache.ts",

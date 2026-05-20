@@ -50,6 +50,23 @@ async function ensureBackupRoot() {
   await mkdir(backupRoot, { recursive: true });
 }
 
+async function ensureUploadRootForRestore() {
+  try {
+    await mkdir(uploadRoot, { recursive: true });
+    const uploadStat = await stat(uploadRoot);
+    if (!uploadStat.isDirectory()) {
+      throw new Error(`${uploadRoot} exists but is not a directory.`);
+    }
+
+    const probePath = path.join(uploadRoot, `.restore-write-test-${process.pid}-${Date.now()}`);
+    await writeFile(probePath, "");
+    await unlink(probePath).catch(() => undefined);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown upload directory error.";
+    throw new Error(`Unable to prepare upload directory for restore: ${uploadRoot}. ${message}`);
+  }
+}
+
 function safeFilenameSegment(value: string) {
   const slug = value
     .normalize("NFKD")
@@ -145,6 +162,18 @@ async function copyDirectory(source: string, target: string) {
   }));
 }
 
+async function clearDirectoryContents(target: string) {
+  await mkdir(target, { recursive: true });
+  const entries = await readdir(target, { withFileTypes: true });
+
+  await Promise.all(entries.map(async (entry) => {
+    if (entry.name === ".gitkeep") {
+      return;
+    }
+    await rm(path.join(target, entry.name), { recursive: true, force: true });
+  }));
+}
+
 async function exportData() {
   return {
     version: backupVersion,
@@ -224,10 +253,18 @@ function parseBackupPayload(bytes: Buffer): {
   };
 }
 
-async function writeUploadEntries(uploadEntries: BackupArchiveEntry[], hasUploadSnapshot: boolean) {
+type StagedUploadRestore = {
+  restoreRoot: string;
+  stagedUploads: string;
+};
+
+async function stageUploadEntries(uploadEntries: BackupArchiveEntry[], hasUploadSnapshot: boolean): Promise<StagedUploadRestore | null> {
   if (!hasUploadSnapshot) {
-    return;
+    return null;
   }
+
+  await ensureUploadRootForRestore();
+  await ensureBackupRoot();
 
   const restoreRoot = path.join(backupRoot, `.restore-${Date.now()}`);
   const stagedUploads = path.join(restoreRoot, "uploads");
@@ -250,12 +287,30 @@ async function writeUploadEntries(uploadEntries: BackupArchiveEntry[], hasUpload
       await writeFile(target, entry.data);
     }
 
-    await rm(uploadRoot, { recursive: true, force: true });
-    await mkdir(path.dirname(uploadRoot), { recursive: true });
-    await copyDirectory(stagedUploads, uploadRoot);
-  } finally {
+    return { restoreRoot, stagedUploads };
+  } catch (error) {
     await rm(restoreRoot, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
   }
+}
+
+async function writeStagedUploadEntries(stagedRestore: StagedUploadRestore | null) {
+  if (!stagedRestore) {
+    return;
+  }
+
+  try {
+    await ensureUploadRootForRestore();
+    await clearDirectoryContents(uploadRoot);
+    await copyDirectory(stagedRestore.stagedUploads, uploadRoot);
+  } finally {
+    await rm(stagedRestore.restoreRoot, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+function isSupportedBackupFilename(filename: string) {
+  const lower = filename.toLowerCase();
+  return lower.endsWith(".tar.gz") || lower.endsWith(".tgz") || lower.endsWith(".json");
 }
 
 export async function listBackups(user: CurrentUser) {
@@ -274,6 +329,61 @@ export async function listBackups(user: CurrentUser) {
     console.error("Failed to list backups", error);
     return { backups: [], error: "Failed to load backups." };
   }
+}
+
+export async function syncBackupDirectory(user: CurrentUser) {
+  assertPermission(canManageBackups(user), "You do not have permission to scan backups.");
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL is not configured.");
+  }
+
+  await ensureBackupRoot();
+  const existing = await db.backupRecord.findMany({ select: { filePath: true } });
+  const knownPaths = new Set(existing.map((record) => path.resolve(record.filePath)));
+  const entries = await readdir(backupRoot, { withFileTypes: true });
+  let imported = 0;
+  let skipped = 0;
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !isSupportedBackupFilename(entry.name)) {
+      continue;
+    }
+
+    const filePath = safeBackupPath(path.join(backupRoot, entry.name));
+    if (knownPaths.has(path.resolve(filePath))) {
+      continue;
+    }
+
+    try {
+      const bytes = await readFile(filePath);
+      const { payload } = parseBackupPayload(bytes);
+      if (![backupVersion, legacyJsonBackupVersion].includes(payload.version) || !payload.data) {
+        skipped += 1;
+        continue;
+      }
+
+      const fileStat = await stat(filePath);
+      await db.backupRecord.create({
+        data: {
+          filename: entry.name,
+          filePath,
+          sizeBytes: fileStat.size,
+          reason: "folder-scan",
+          createdById: user.id
+        }
+      });
+      knownPaths.add(path.resolve(filePath));
+      imported += 1;
+    } catch (error) {
+      console.warn("Skipped unsupported backup file during backup directory sync", {
+        file: entry.name,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      skipped += 1;
+    }
+  }
+
+  return { imported, skipped };
 }
 
 export async function getBackupScheduleConfig(user: CurrentUser) {
@@ -494,6 +604,24 @@ export async function getBackupFile(user: CurrentUser, id: string) {
   };
 }
 
+export async function getBackupFileDownload(user: CurrentUser, id: string) {
+  assertPermission(canManageBackups(user), "You do not have permission to download backups.");
+  const backup = await db.backupRecord.findUnique({ where: { id } });
+
+  if (!backup || backup.status !== BackupStatus.READY) {
+    throw new Error("Backup not found.");
+  }
+
+  const filePath = safeBackupPath(backup.filePath);
+  const fileStat = await stat(filePath);
+
+  return {
+    backup,
+    filePath,
+    sizeBytes: fileStat.size
+  };
+}
+
 export async function importBackupFile(user: CurrentUser, originalName: string, bytes: Buffer) {
   assertPermission(canManageBackups(user), "You do not have permission to upload backups.");
   if (!isDatabaseConfigured()) {
@@ -553,78 +681,86 @@ export async function restoreBackup(user: CurrentUser, bytes: Buffer) {
     throw new Error("Unsupported backup file.");
   }
 
-  await createBackup(user, "pre-restore");
-  const data = payload.data;
+  const stagedUploadRestore = await stageUploadEntries(uploadEntries, hasUploadSnapshot);
+  try {
+    await createBackup(user, "pre-restore");
+    const data = payload.data;
 
-  await db.$transaction(async (tx) => {
-    await tx.mediaReference.deleteMany();
-    await tx.visitLog.deleteMany();
-    await tx.momentComment.deleteMany();
-    await tx.momentLike.deleteMany();
-    await tx.comment.deleteMany();
-    await tx.articleAllowedIdentity.deleteMany();
-    await tx.articleTag.deleteMany();
-    await tx.articleTranslationJob.deleteMany();
-    await tx.articleTranslation.deleteMany();
-    await tx.publicContentTranslationJob.deleteMany();
-    await tx.publicContentTranslation.deleteMany();
-    await tx.articleVersion.deleteMany();
-    await tx.moment.deleteMany();
-    await tx.article.deleteMany();
-    await tx.tag.deleteMany();
-    await tx.guestbookLike.deleteMany();
-    await tx.guestbookComment.deleteMany();
-    await tx.guestbookMessage.deleteMany();
-    await tx.mailSendLog.deleteMany();
-    await tx.mailTemplate.deleteMany();
-    await tx.setting.deleteMany();
-    await tx.passkeyCredential.deleteMany();
-    await tx.totpRecoveryCode.deleteMany();
-    await tx.webAuthnChallenge.deleteMany();
-    await tx.authSession.deleteMany();
-    await tx.loginEvent.deleteMany();
-    await tx.pendingAuth.deleteMany();
-    await tx.trustedDevice.deleteMany();
-    await tx.verificationCode.deleteMany();
-    await tx.mediaAsset.deleteMany();
-    await tx.user.deleteMany();
-    await tx.identity.deleteMany();
+    await db.$transaction(async (tx) => {
+      await tx.mediaReference.deleteMany();
+      await tx.visitLog.deleteMany();
+      await tx.momentComment.deleteMany();
+      await tx.momentLike.deleteMany();
+      await tx.comment.deleteMany();
+      await tx.articleAllowedIdentity.deleteMany();
+      await tx.articleTag.deleteMany();
+      await tx.articleTranslationJob.deleteMany();
+      await tx.articleTranslation.deleteMany();
+      await tx.publicContentTranslationJob.deleteMany();
+      await tx.publicContentTranslation.deleteMany();
+      await tx.articleVersion.deleteMany();
+      await tx.moment.deleteMany();
+      await tx.article.deleteMany();
+      await tx.tag.deleteMany();
+      await tx.guestbookLike.deleteMany();
+      await tx.guestbookComment.deleteMany();
+      await tx.guestbookMessage.deleteMany();
+      await tx.mailSendLog.deleteMany();
+      await tx.mailTemplate.deleteMany();
+      await tx.setting.deleteMany();
+      await tx.passkeyCredential.deleteMany();
+      await tx.totpRecoveryCode.deleteMany();
+      await tx.webAuthnChallenge.deleteMany();
+      await tx.authSession.deleteMany();
+      await tx.loginEvent.deleteMany();
+      await tx.pendingAuth.deleteMany();
+      await tx.trustedDevice.deleteMany();
+      await tx.verificationCode.deleteMany();
+      await tx.mediaAsset.deleteMany();
+      await tx.user.deleteMany();
+      await tx.identity.deleteMany();
 
-    await insertRows(tx.identity, asRows(data, "identities"));
-    await insertRows(tx.user, asRows(data, "users"));
-    await insertRows(tx.authSession, asRows(data, "authSessions"));
-    await insertRows(tx.loginEvent, asRows(data, "loginEvents"));
-    await insertRows(tx.pendingAuth, asRows(data, "pendingAuths"));
-    await insertRows(tx.trustedDevice, asRows(data, "trustedDevices"));
-    await insertRows(tx.verificationCode, asRows(data, "verificationCodes"));
-    await insertRows(tx.passkeyCredential, asRows(data, "passkeyCredentials"));
-    await insertRows(tx.totpRecoveryCode, asRows(data, "totpRecoveryCodes"));
-    await insertRows(tx.webAuthnChallenge, asRows(data, "webauthnChallenges"));
-    await insertRows(tx.setting, asRows(data, "settings"));
-    await insertRows(tx.mailTemplate, asRows(data, "mailTemplates"));
-    await insertRows(tx.mailSendLog, asRows(data, "mailSendLogs"));
-    await insertRows(tx.tag, asRows(data, "tags"));
-    await insertRows(tx.article, asRows(data, "articles"));
-    await insertRows(tx.articleAllowedIdentity, asRows(data, "articleAllowedIdentities"));
-    await insertRows(tx.articleTag, asRows(data, "articleTags"));
-    await insertRows(tx.articleVersion, asRows(data, "articleVersions"));
-    await insertRows(tx.articleTranslation, asRows(data, "articleTranslations"));
-    await insertRows(tx.articleTranslationJob, asRows(data, "articleTranslationJobs"));
-    await insertRows(tx.publicContentTranslation, asRows(data, "publicContentTranslations"));
-    await insertRows(tx.publicContentTranslationJob, asRows(data, "publicContentTranslationJobs"));
-    await insertRows(tx.comment, asRows(data, "comments"));
-    await insertRows(tx.moment, asRows(data, "moments"));
-    await insertRows(tx.momentLike, asRows(data, "momentLikes"));
-    await insertRows(tx.momentComment, asRows(data, "momentComments"));
-    await insertRows(tx.guestbookMessage, asRows(data, "guestbookMessages"));
-    await insertRows(tx.guestbookComment, asRows(data, "guestbookComments"));
-    await insertRows(tx.guestbookLike, asRows(data, "guestbookLikes"));
-    await insertRows(tx.visitLog, asRows(data, "visitLogs"));
-    await insertRows(tx.mediaAsset, asRows(data, "mediaAssets"));
-    await insertRows(tx.mediaReference, asRows(data, "mediaReferences"));
-  }, { timeout: 60_000 });
+      await insertRows(tx.identity, asRows(data, "identities"));
+      await insertRows(tx.user, asRows(data, "users"));
+      await insertRows(tx.authSession, asRows(data, "authSessions"));
+      await insertRows(tx.loginEvent, asRows(data, "loginEvents"));
+      await insertRows(tx.pendingAuth, asRows(data, "pendingAuths"));
+      await insertRows(tx.trustedDevice, asRows(data, "trustedDevices"));
+      await insertRows(tx.verificationCode, asRows(data, "verificationCodes"));
+      await insertRows(tx.passkeyCredential, asRows(data, "passkeyCredentials"));
+      await insertRows(tx.totpRecoveryCode, asRows(data, "totpRecoveryCodes"));
+      await insertRows(tx.webAuthnChallenge, asRows(data, "webauthnChallenges"));
+      await insertRows(tx.setting, asRows(data, "settings"));
+      await insertRows(tx.mailTemplate, asRows(data, "mailTemplates"));
+      await insertRows(tx.mailSendLog, asRows(data, "mailSendLogs"));
+      await insertRows(tx.tag, asRows(data, "tags"));
+      await insertRows(tx.article, asRows(data, "articles"));
+      await insertRows(tx.articleAllowedIdentity, asRows(data, "articleAllowedIdentities"));
+      await insertRows(tx.articleTag, asRows(data, "articleTags"));
+      await insertRows(tx.articleVersion, asRows(data, "articleVersions"));
+      await insertRows(tx.articleTranslation, asRows(data, "articleTranslations"));
+      await insertRows(tx.articleTranslationJob, asRows(data, "articleTranslationJobs"));
+      await insertRows(tx.publicContentTranslation, asRows(data, "publicContentTranslations"));
+      await insertRows(tx.publicContentTranslationJob, asRows(data, "publicContentTranslationJobs"));
+      await insertRows(tx.comment, asRows(data, "comments"));
+      await insertRows(tx.moment, asRows(data, "moments"));
+      await insertRows(tx.momentLike, asRows(data, "momentLikes"));
+      await insertRows(tx.momentComment, asRows(data, "momentComments"));
+      await insertRows(tx.guestbookMessage, asRows(data, "guestbookMessages"));
+      await insertRows(tx.guestbookComment, asRows(data, "guestbookComments"));
+      await insertRows(tx.guestbookLike, asRows(data, "guestbookLikes"));
+      await insertRows(tx.visitLog, asRows(data, "visitLogs"));
+      await insertRows(tx.mediaAsset, asRows(data, "mediaAssets"));
+      await insertRows(tx.mediaReference, asRows(data, "mediaReferences"));
+    }, { timeout: 60_000 });
 
-  await writeUploadEntries(uploadEntries, hasUploadSnapshot);
+    await writeStagedUploadEntries(stagedUploadRestore);
+  } catch (error) {
+    if (stagedUploadRestore) {
+      await rm(stagedUploadRestore.restoreRoot, { recursive: true, force: true }).catch(() => undefined);
+    }
+    throw error;
+  }
 }
 
 export async function restoreBackupFromId(user: CurrentUser, id: string) {

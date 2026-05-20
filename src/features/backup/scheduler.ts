@@ -1,6 +1,7 @@
 import { SettingType, UserRole } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
+import { shouldRunInProcessWorkers } from "@/lib/background-worker";
 import {
   backupScheduleSettingKeys,
   createBackup,
@@ -181,7 +182,12 @@ export async function runDueScheduledBackup(now = new Date()) {
 }
 
 export function ensureScheduledBackupWorker() {
-  if (workerStarted || process.env.NEXT_PHASE === "phase-production-build" || !isDatabaseConfigured()) {
+  if (
+    workerStarted ||
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    !isDatabaseConfigured() ||
+    !shouldRunInProcessWorkers()
+  ) {
     return;
   }
 

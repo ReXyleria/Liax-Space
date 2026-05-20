@@ -2,6 +2,7 @@ import { ArticleTranslationJobStatus } from "@prisma/client";
 import { db, getDatabaseTableReadiness, isDatabaseConfigured } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
 import { assertPermission, canManageArticles } from "@/lib/permissions";
+import { shouldRunInProcessWorkers } from "@/lib/background-worker";
 import { getTranslationConfig } from "@/features/settings/translation-settings";
 import { executeArticleTranslation, normalizeTranslationLocale } from "@/features/articles/translation-service";
 
@@ -279,7 +280,7 @@ async function runJob(job: NonNullable<Awaited<ReturnType<typeof claimNextJob>>>
   }
 }
 
-async function drainJobs() {
+export async function drainArticleTranslationJobs() {
   const readiness = await getArticleTranslationJobReadiness();
   if (!readiness.ready) {
     console.warn(readiness.message);
@@ -296,13 +297,13 @@ async function drainJobs() {
 }
 
 export function ensureArticleTranslationJobWorker() {
-  if (workerRunning || !isDatabaseConfigured()) {
+  if (workerRunning || !isDatabaseConfigured() || !shouldRunInProcessWorkers()) {
     return;
   }
 
   workerRunning = true;
   setTimeout(() => {
-    drainJobs()
+    drainArticleTranslationJobs()
       .catch((error) => console.error("Article translation job worker failed", error))
       .finally(() => {
         workerRunning = false;

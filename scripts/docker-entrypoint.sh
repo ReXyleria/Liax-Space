@@ -9,6 +9,7 @@ CACHE_DIR="${CACHE_DIR:-$STORAGE_DIR/cache}"
 TOKEN_FILE="$CONFIG_DIR/setup-token"
 STATUS_FILE="$CONFIG_DIR/setup-status.json"
 PRISMA_BIN="${PRISMA_BIN:-./node_modules/.bin/prisma}"
+WORKER_TSX_BIN="${WORKER_TSX_BIN:-./node_modules/.bin/tsx}"
 RUNTIME_USER="nextjs"
 RUNTIME_GROUP="nodejs"
 RUNTIME_UID="1001"
@@ -18,6 +19,16 @@ DATABASE_BOOTSTRAP_INTERVAL_SECONDS="${DATABASE_BOOTSTRAP_INTERVAL_SECONDS:-2}"
 
 prepare_runtime_dirs() {
   mkdir -p "$STORAGE_DIR" "$CONFIG_DIR" "$BACKUP_DIR" "$CACHE_DIR" "$UPLOAD_DIR"
+}
+
+start_runtime() {
+  if [ "${1:-server}" = "worker" ]; then
+    export BACKGROUND_WORKER_ROLE="${BACKGROUND_WORKER_ROLE:-worker}"
+    echo "[setup] Starting background worker."
+    exec "$WORKER_TSX_BIN" scripts/worker.ts
+  fi
+
+  exec node server.js
 }
 
 check_database_connection() {
@@ -212,7 +223,7 @@ if [ -z "${DATABASE_URL:-}" ]; then
   echo "[setup] DATABASE_URL is not configured. Starting setup-safe web server."
   echo "[setup] Open /setup and use SETUP_TOKEN from env, $TOKEN_FILE, or the log above."
   export SETUP_REQUIRED=true
-  exec node server.js
+  start_runtime "$@"
 fi
 
 # MySQL may still be starting when the app container comes up, so wait briefly
@@ -221,7 +232,7 @@ if ! wait_for_database_connection; then
   echo "[setup] Database did not become ready during startup. Starting setup-safe web server."
   write_status "migration-failed" "Database was not reachable during startup."
   export SETUP_REQUIRED=true
-  exec node server.js
+  start_runtime "$@"
 fi
 
 echo "[setup] DATABASE_URL detected. Running production migrations."
@@ -232,7 +243,7 @@ else
   if check_installation_exists; then
     echo "[setup] Existing installation detected. Skipping db push and starting normal web server."
     rm -f "$TOKEN_FILE" "$STATUS_FILE" 2>/dev/null || true
-    exec node server.js
+    start_runtime "$@"
   fi
   if "$PRISMA_BIN" db push --accept-data-loss; then
     echo "[setup] Prisma db push completed successfully."
@@ -240,7 +251,7 @@ else
     echo "[setup] Prisma db push also failed. Starting setup-safe web server."
     write_status "migration-failed" "Database migration and schema push both failed. Check database permissions, connection settings, and logs."
     export SETUP_REQUIRED=true
-    exec node server.js
+    start_runtime "$@"
   fi
 fi
 
@@ -254,11 +265,11 @@ fi
 if check_installation_exists; then
   echo "[setup] System is already installed (SystemInstallation record or Administer user found)."
   rm -f "$TOKEN_FILE" "$STATUS_FILE" 2>/dev/null || true
-  exec node server.js
+  start_runtime "$@"
 fi
 
 generate_setup_token
 echo "[setup] Database migrated but no installation record found. Starting setup wizard."
 echo "[setup] Open /setup and use SETUP_TOKEN from env, $TOKEN_FILE, or the log above."
 export SETUP_REQUIRED=true
-exec node server.js
+start_runtime "$@"
