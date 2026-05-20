@@ -19,7 +19,7 @@ export async function setLocaleAction(formData: FormData) {
     maxAge: 60 * 60 * 24 * 365
   });
   revalidatePath("/", "layout");
-  revalidatePath("/admin", "layout");
+  revalidatePath("/console", "layout");
   if (currentPath.startsWith("/zh-CN") || currentPath.startsWith("/en-US") || currentPath === "/") {
     redirect(localizedPath(nextLocale, `${currentPath || "/"}${currentSearch}`));
   }

@@ -103,7 +103,7 @@ export function canViewContent(user: UserLike, visibility: ContentVisibility) {
   return false;
 }
 
-export function canAccessAdmin(user: UserLike) {
+export function canAccessConsole(user: UserLike) {
   return getRoleRank(getUserRole(user)) >= getRoleRank(UserRole.USER);
 }
 

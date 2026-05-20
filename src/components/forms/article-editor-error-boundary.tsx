@@ -18,7 +18,7 @@ export class ArticleEditorErrorBoundary extends Component<{ children: ReactNode 
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[article-editor] client render failed", error, info.componentStack);
-    void fetch("/api/admin/client-error", {
+    void fetch("/api/console/client-error", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

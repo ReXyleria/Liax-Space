@@ -12,8 +12,8 @@ export type MediaActionState = {
 export async function rescanMediaAction(): Promise<void> {
   const user = await requireUser();
   await rescanMediaReferences(user);
-  revalidatePath("/admin/media");
-  revalidatePath("/admin/data/media");
+  revalidatePath("/console/media");
+  revalidatePath("/console/data/media");
 }
 
 export async function deleteUnusedMediaAction(
@@ -28,8 +28,8 @@ export async function deleteUnusedMediaAction(
     }
     const ids = formData.getAll("assetId").map(String);
     const count = await deleteUnusedMedia(user, ids);
-    revalidatePath("/admin/media");
-    revalidatePath("/admin/data/media");
+    revalidatePath("/console/media");
+    revalidatePath("/console/data/media");
     return { ok: true, message: `Deleted ${count} unused assets.` };
   } catch (error) {
     return {
@@ -50,8 +50,8 @@ export async function deleteMediaAssetsAction(
       return { ok: false, message: "请选择要删除的附件。" };
     }
     const count = await deleteMediaAssets(user, ids);
-    revalidatePath("/admin/media");
-    revalidatePath("/admin/data/media");
+    revalidatePath("/console/media");
+    revalidatePath("/console/data/media");
     return { ok: true, message: `已删除 ${count} 个附件。` };
   } catch (error) {
     if (error instanceof Error) {

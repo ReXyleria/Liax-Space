@@ -122,7 +122,7 @@ export async function getOwnerProfile() {
       return { profile: owner, error: null as string | null };
     }
 
-    const admin = await db.user.findFirst({
+    const console = await db.user.findFirst({
       where: {
         role: UserRole.Administer,
         status: UserStatus.ACTIVE
@@ -137,7 +137,7 @@ export async function getOwnerProfile() {
       }
     });
 
-    return { profile: admin ?? null, error: null as string | null };
+    return { profile: console ?? null, error: null as string | null };
   } catch (error) {
     if (isMissingDatabaseError(error)) {
       return { profile: null, error: null as string | null };

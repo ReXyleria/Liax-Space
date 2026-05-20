@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { ZodError } from "zod";
 import { requireUser } from "@/lib/auth";
 import type { Locale } from "@/lib/i18n";
-import { getAdminLocale } from "@/lib/i18n-server";
+import { getConsoleLocale } from "@/lib/i18n-server";
 import { sendMailTemplateTest, updateMailTemplate } from "@/features/mail/service";
 
 export type MailTemplateActionState = {
@@ -60,13 +60,13 @@ export async function updateMailTemplateAction(
   formData: FormData
 ): Promise<MailTemplateActionState> {
   try {
-    const locale = await getAdminLocale();
+    const locale = await getConsoleLocale();
     const user = await requireUser();
     await updateMailTemplate(user, readInput(formData));
-    revalidatePath("/admin/settings");
+    revalidatePath("/console/settings");
     return { ok: true, message: text(locale).saved };
   } catch (error) {
-    const locale = await getAdminLocale().catch(() => "zh-CN" as Locale);
+    const locale = await getConsoleLocale().catch(() => "zh-CN" as Locale);
     return errorStateWithLocale(error, text(locale).saveFailed, locale);
   }
 }
@@ -76,13 +76,13 @@ export async function testMailTemplateAction(
   formData: FormData
 ): Promise<MailTemplateActionState> {
   try {
-    const locale = await getAdminLocale();
+    const locale = await getConsoleLocale();
     const user = await requireUser();
     await sendMailTemplateTest(user, readInput(formData));
-    revalidatePath("/admin/settings");
+    revalidatePath("/console/settings");
     return { ok: true, message: text(locale).testSent };
   } catch (error) {
-    const locale = await getAdminLocale().catch(() => "zh-CN" as Locale);
+    const locale = await getConsoleLocale().catch(() => "zh-CN" as Locale);
     return errorStateWithLocale(error, text(locale).testFailed, locale);
   }
 }

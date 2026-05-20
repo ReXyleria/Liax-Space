@@ -15,7 +15,7 @@ function pageText(locale: "zh-CN" | "en") {
   return locale === "en"
     ? {
         title: "Contact",
-        description: "Public contact methods configured in the admin footer settings appear here.",
+        description: "Public contact methods configured in the console footer settings appear here.",
         empty: "No contact methods configured yet."
       }
     : {

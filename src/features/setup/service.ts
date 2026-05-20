@@ -546,6 +546,6 @@ export async function submitSetup(input: unknown, request: Request) {
     ok: true,
     message: "系统安装完成！请刷新页面进入站点。",
     restart: false,
-    redirectTo: "/login?callbackUrl=/admin"
+    redirectTo: "/login?callbackUrl=/console"
   };
 }

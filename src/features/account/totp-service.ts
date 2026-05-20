@@ -1,11 +1,18 @@
 import { randomBytes } from "crypto";
+import { VerificationCodeType } from "@prisma/client";
 import { generateSecret, generateURI, verify } from "otplib";
 import QRCode from "qrcode";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
-import { hashPassword, verifyPassword } from "@/lib/security";
+import { sendTotpDisableCodeMail } from "@/lib/mail";
+import { generateNumericCode, hashPassword, verifyPassword } from "@/lib/security";
 
 const RECOVERY_CODE_COUNT = 10;
+const TOTP_DISABLE_CODE_TTL_MINUTES = 10;
+
+export type TotpVerificationResult =
+  | { ok: true; method: "totp" | "recovery" }
+  | { ok: false };
 
 function normalizeCode(code: string | null | undefined) {
   return (code ?? "").replace(/\s+/g, "").trim();
@@ -106,9 +113,13 @@ export async function confirmTotpSetup(user: CurrentUser, code: string) {
   return recoveryCodes;
 }
 
-export async function verifyTotpOrRecovery(userId: string, code?: string | null, recoveryCode?: string | null) {
+export async function verifyTotpOrRecovery(
+  userId: string,
+  code?: string | null,
+  recoveryCode?: string | null
+): Promise<TotpVerificationResult> {
   if (!isDatabaseConfigured()) {
-    return false;
+    return { ok: false };
   }
 
   const normalizedCode = normalizeCode(code);
@@ -119,7 +130,7 @@ export async function verifyTotpOrRecovery(userId: string, code?: string | null,
   });
 
   if (!record?.totpEnabled || !record.totpSecret) {
-    return true;
+    return { ok: false };
   }
 
   if (normalizedCode) {
@@ -132,12 +143,12 @@ export async function verifyTotpOrRecovery(userId: string, code?: string | null,
     });
 
     if (result.valid) {
-      return true;
+      return { ok: true, method: "totp" };
     }
   }
 
   if (!normalizedRecovery) {
-    return false;
+    return { ok: false };
   }
 
   const recoveryCodes = await db.totpRecoveryCode.findMany({
@@ -157,14 +168,107 @@ export async function verifyTotpOrRecovery(userId: string, code?: string | null,
         where: { id: recovery.id },
         data: { usedAt: new Date() }
       });
-      return true;
+      return { ok: true, method: "recovery" };
     }
   }
 
-  return false;
+  return { ok: false };
 }
 
-export async function disableTotp(user: CurrentUser, input: { currentPassword: string; code?: string; recoveryCode?: string }) {
+export async function sendTotpDisableEmailCode(user: CurrentUser) {
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL is not configured.");
+  }
+
+  const record = await db.user.findUnique({
+    where: { id: user.id },
+    select: { email: true, totpEnabled: true }
+  });
+
+  if (!record) {
+    throw new Error("User not found.");
+  }
+
+  if (!record.totpEnabled) {
+    throw new Error("TOTP is not enabled.");
+  }
+
+  const code = generateNumericCode();
+  await db.verificationCode.create({
+    data: {
+      email: record.email.toLowerCase(),
+      codeHash: await hashPassword(code),
+      type: VerificationCodeType.TOTP_DISABLE,
+      expiresAt: new Date(Date.now() + TOTP_DISABLE_CODE_TTL_MINUTES * 60 * 1000)
+    }
+  });
+
+  const mailResult = await sendTotpDisableCodeMail(record.email, code);
+  if (!mailResult.ok) {
+    throw new Error(mailResult.message);
+  }
+}
+
+async function verifyTotpDisableEmailCode(email: string, code?: string | null) {
+  const normalizedCode = normalizeCode(code);
+  if (!normalizedCode) {
+    return false;
+  }
+
+  const verificationCode = await db.verificationCode.findFirst({
+    where: {
+      email: email.toLowerCase(),
+      type: VerificationCodeType.TOTP_DISABLE,
+      usedAt: null
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  if (!verificationCode || verificationCode.expiresAt <= new Date()) {
+    return false;
+  }
+
+  const matches = await verifyPassword(normalizedCode, verificationCode.codeHash);
+  if (!matches) {
+    return false;
+  }
+
+  await db.verificationCode.update({
+    where: { id: verificationCode.id },
+    data: { usedAt: new Date() }
+  });
+
+  return true;
+}
+
+export async function revokeTotpAfterRecoveryLogin(userId: string) {
+  if (!isDatabaseConfigured()) {
+    throw new Error("DATABASE_URL is not configured.");
+  }
+
+  await db.$transaction([
+    db.totpRecoveryCode.deleteMany({ where: { userId } }),
+    db.user.update({
+      where: { id: userId },
+      data: {
+        totpEnabled: false,
+        totpConfirmedAt: null,
+        totpSecret: null
+      }
+    })
+  ]);
+}
+
+export async function disableTotp(
+  user: CurrentUser,
+  input: {
+    method: "totpOrRecovery" | "emailCode";
+    currentPassword: string;
+    code?: string;
+    recoveryCode?: string;
+    emailCode?: string;
+  }
+) {
   if (!isDatabaseConfigured()) {
     throw new Error("DATABASE_URL is not configured.");
   }
@@ -172,6 +276,7 @@ export async function disableTotp(user: CurrentUser, input: { currentPassword: s
   const record = await db.user.findUnique({
     where: { id: user.id },
     select: {
+      email: true,
       passwordHash: true,
       totpEnabled: true
     }
@@ -190,9 +295,16 @@ export async function disableTotp(user: CurrentUser, input: { currentPassword: s
     throw new Error("Current password is incorrect.");
   }
 
-  const secondFactorOk = await verifyTotpOrRecovery(user.id, input.code, input.recoveryCode);
-  if (!secondFactorOk) {
-    throw new Error("TOTP or recovery code is invalid.");
+  if (input.method === "emailCode") {
+    const emailCodeOk = await verifyTotpDisableEmailCode(record.email, input.emailCode);
+    if (!emailCodeOk) {
+      throw new Error("Email verification code is invalid.");
+    }
+  } else {
+    const secondFactor = await verifyTotpOrRecovery(user.id, input.code, input.recoveryCode);
+    if (!secondFactor.ok) {
+      throw new Error("TOTP or recovery code is invalid.");
+    }
   }
 
   await db.$transaction([

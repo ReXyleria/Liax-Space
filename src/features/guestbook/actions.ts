@@ -44,8 +44,8 @@ function revalidateGuestbookPaths() {
   for (const locale of urlLocales) {
     revalidatePath(localizedPath(locale, "/guestbook"));
   }
-  revalidatePath("/admin/guestbook");
-  revalidatePath("/admin/settings/translation");
+  revalidatePath("/console/guestbook");
+  revalidatePath("/console/settings/translation");
 }
 
 export async function createGuestbookMessageAction(

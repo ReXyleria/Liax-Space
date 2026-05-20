@@ -83,7 +83,7 @@ export async function listPublicMoments(user: CurrentUser | null, locale?: strin
   }, { moments: [], error: "加载瞬间失败。" });
 }
 
-export async function listAdminMoments(user: CurrentUser) {
+export async function listConsoleMoments(user: CurrentUser) {
   assertPermission(canManageMoments(user), "你没有权限管理瞬间。");
 
   if (!isDatabaseConfigured()) {

@@ -7,8 +7,8 @@ export default async function AccountPage() {
   const user = await getCurrentUser();
 
   if (!user) {
-    redirect("/login?callbackUrl=/admin/account");
+    redirect("/login?callbackUrl=/console/account");
   }
 
-  redirect("/admin/account?section=profile");
+  redirect("/console/account?section=profile");
 }

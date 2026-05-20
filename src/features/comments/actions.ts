@@ -19,7 +19,7 @@ export async function updateCommentStatusAction(
       id: formData.get("id"),
       status: formData.get("status")
     });
-    revalidatePath("/admin/comments");
+    revalidatePath("/console/comments");
     return { ok: true, message: "评论状态已更新。" };
   } catch (error) {
     return {
@@ -36,7 +36,7 @@ export async function setCommentStatusAction(formData: FormData) {
       id: formData.get("id"),
       status: formData.get("status")
     });
-    revalidatePath("/admin/comments");
+    revalidatePath("/console/comments");
   } catch (error) {
     console.error("Failed to update comment status", error);
   }
@@ -52,8 +52,8 @@ export async function muteUserAction(
     const targetUserId = String(formData.get("userId") ?? "");
 
     const mutedUntil = await muteUser(user, { userId: targetUserId, duration });
-    revalidatePath("/admin/comments");
-    revalidatePath("/admin/users");
+    revalidatePath("/console/comments");
+    revalidatePath("/console/users");
 
     const durationLabels: Record<string, string> = {
       "1h": "1 小时",
@@ -85,8 +85,8 @@ export async function unmuteUserAction(
     const targetUserId = String(formData.get("userId") ?? "");
 
     await unmuteUser(user, { userId: targetUserId });
-    revalidatePath("/admin/comments");
-    revalidatePath("/admin/users");
+    revalidatePath("/console/comments");
+    revalidatePath("/console/users");
 
     return {
       ok: true,
@@ -105,7 +105,7 @@ export async function toggleCommentPinnedAction(formData: FormData) {
     const user = await requireUser();
     const id = String(formData.get("id") ?? "");
     await toggleCommentPin(user, id);
-    revalidatePath("/admin/comments");
+    revalidatePath("/console/comments");
   } catch (error) {
     console.error("Failed to toggle comment pin", error);
   }

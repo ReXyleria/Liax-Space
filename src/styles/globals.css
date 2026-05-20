@@ -134,7 +134,7 @@ select:active {
   }
 }
 
-@keyframes route-enter-admin {
+@keyframes route-enter-console {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -162,8 +162,8 @@ select:active {
   animation: route-enter-public 400ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
-.route-transition-admin {
-  animation: route-enter-admin 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+.route-transition-console {
+  animation: route-enter-console 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 .motion-page-enter,
@@ -185,7 +185,7 @@ select:active {
 
 @media (prefers-reduced-motion: reduce) {
   .route-transition-public,
-  .route-transition-admin,
+  .route-transition-console,
   .motion-page-enter,
   .motion-list-enter,
   .motion-item-enter {

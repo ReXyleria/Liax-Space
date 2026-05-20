@@ -50,7 +50,7 @@ export async function updateUserAction(
       identityId: formData.get("identityId") || null,
       status: formData.get("status")
     });
-    revalidatePath("/admin/users");
+    revalidatePath("/console/users");
     return { ok: true, message: "用户设置已保存。" };
   } catch (error) {
     return {
@@ -84,7 +84,7 @@ export async function createUserAction(
   try {
     const user = await requireUser();
     await createManagedUser(user, parsed.data);
-    revalidatePath("/admin/users");
+    revalidatePath("/console/users");
     return { ok: true, message: "用户已创建。", fieldErrors: {}, values: {} };
   } catch (error) {
     return {
@@ -103,8 +103,8 @@ export async function deleteUserAction(
   try {
     const user = await requireUser();
     await deleteManagedUser(user, String(formData.get("id") ?? ""));
-    revalidatePath("/admin/users");
-    revalidatePath("/admin/devices");
+    revalidatePath("/console/users");
+    revalidatePath("/console/devices");
     return { ok: true, message: "用户及其数据已删除。" };
   } catch (error) {
     return {
@@ -122,7 +122,7 @@ export async function revokeUserSessionAction(
   try {
     const user = await requireUser();
     await revokeManagedSession(user, { id: formData.get("id") });
-    revalidatePath("/admin/users");
+    revalidatePath("/console/users");
     return { ok: true, message: "会话已撤销。" };
   } catch (error) {
     return {
@@ -143,7 +143,7 @@ export async function revokeTrustedDeviceAction(
   try {
     const user = await requireUser();
     await revokeManagedTrustedDevice(user, { id: formData.get("id") });
-    revalidatePath("/admin/devices");
+    revalidatePath("/console/devices");
     return { ok: true, message: "可信设备已撤销。" };
   } catch (error) {
     return {

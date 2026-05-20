@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { ZodError, z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { getAdminLocale } from "@/lib/i18n-server";
+import { getConsoleLocale } from "@/lib/i18n-server";
 import { localizedPath, urlLocales } from "@/lib/locale-url";
 import { enqueueArticleTranslationJobs } from "@/features/articles/translation-jobs";
 import { upsertManualArticleTranslation } from "@/features/articles/translation-service";
@@ -49,7 +49,7 @@ function revalidateLocalizedArticleDetail(slug: string) {
   }
 }
 
-function translationActionText(locale: Awaited<ReturnType<typeof getAdminLocale>>) {
+function translationActionText(locale: Awaited<ReturnType<typeof getConsoleLocale>>) {
   return locale === "en"
     ? {
         queued: "Translation job queued.",
@@ -71,13 +71,13 @@ export async function translateArticleAction(
   _previousState: ArticleTranslationActionState,
   formData: FormData
 ): Promise<ArticleTranslationActionState> {
-  const text = translationActionText(await getAdminLocale());
+  const text = translationActionText(await getConsoleLocale());
   try {
     const user = await requireUser();
     const articleId = String(formData.get("articleId") ?? "");
     const locale = String(formData.get("locale") ?? "en");
     await enqueueArticleTranslationJobs(user, { articleIds: [articleId], locale });
-    revalidatePath(`/admin/articles/${articleId}/edit`);
+    revalidatePath(`/console/articles/${articleId}/edit`);
     revalidateLocalizedArticleIndex();
     return { ok: true, message: text.queued };
   } catch (error) {
@@ -92,7 +92,7 @@ export async function updateArticleTranslationAction(
   _previousState: ArticleTranslationActionState,
   formData: FormData
 ): Promise<ArticleTranslationActionState> {
-  const text = translationActionText(await getAdminLocale());
+  const text = translationActionText(await getConsoleLocale());
   const parsed = translationEditSchema.safeParse({
     articleId: formData.get("articleId"),
     locale: formData.get("locale") ?? "en",
@@ -118,7 +118,7 @@ export async function updateArticleTranslationAction(
       ...parsed.data,
       contentJson: parsed.data.contentJson ?? { type: "doc", content: [] }
     });
-    revalidatePath(`/admin/articles/${parsed.data.articleId}/edit`);
+    revalidatePath(`/console/articles/${parsed.data.articleId}/edit`);
     revalidateLocalizedArticleIndex();
     revalidateLocalizedArticleDetail(result.articleSlug);
     return { ok: true, message: text.saved };

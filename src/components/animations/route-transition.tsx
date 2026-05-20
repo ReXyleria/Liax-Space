@@ -26,7 +26,7 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
   const [navigating, setNavigating] = useState(false);
   const [phase, setPhase] = useState<"idle" | "exit" | "enter">("idle");
   const prevPathname = useRef(pathname);
-  const isAdmin = pathname.startsWith("/admin");
+  const isConsole = pathname.startsWith("/console");
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -87,8 +87,8 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
       />
 
       {/* Page content with smooth crossfade */}
-      {/* Admin routes skip key-based animation so the sidebar layout stays mounted */}
-      {isAdmin ? (
+      {/* Console routes skip key-based animation so the sidebar layout stays mounted */}
+      {isConsole ? (
         <>{children}</>
       ) : (
         <div key={pathname} className="route-transition-public">

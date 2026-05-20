@@ -23,19 +23,16 @@ const allPermissionKeys = [
 ];
 
 const defaultRolePermissions = {
-  VISITOR: [],
   USER: [],
-  FRIEND: [],
-  VIP: [],
-  EDITOR: ["articles.manage", "moments.manage", "tags.manage"],
-  ADMIN: allPermissionKeys.filter((key) => key !== "codeInjection.manage"),
+  SVIP: [],
+  SSVIP: [],
   Administer: allPermissionKeys
 };
 
 const publicIdentityTiers = [
   { key: "user", name: "user", description: "Default reader identity.", builtInRole: UserRole.USER },
-  { key: "svip", name: "svip", description: "Standard VIP reader identity.", builtInRole: UserRole.FRIEND },
-  { key: "ssvip", name: "ssvip", description: "Top visible reader identity.", builtInRole: UserRole.VIP }
+  { key: "svip", name: "svip", description: "Standard VIP reader identity.", builtInRole: UserRole.SVIP },
+  { key: "ssvip", name: "ssvip", description: "Top visible reader identity.", builtInRole: UserRole.SSVIP }
 ];
 
 const defaultSettings = [

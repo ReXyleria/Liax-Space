@@ -26,6 +26,6 @@ export function getCurrentLocale() {
   return resolveRequestLocale();
 }
 
-export function getAdminLocale() {
+export function getConsoleLocale() {
   return resolveRequestLocale();
 }

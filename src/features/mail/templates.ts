@@ -114,6 +114,34 @@ export const mailTemplateDefinitions: MailTemplateDefinition[] = [
     `)
   },
   {
+    scene: MailTemplateScene.TOTP_DISABLE_CODE,
+    key: "totpDisableCode",
+    category: "Security",
+    name: "Disable TOTP verification code",
+    description: "Sent when a user wants to disable TOTP using email verification.",
+    subject: "Disable TOTP verification code - ${site.title}",
+    bodyHtml: html(`
+      <p>Hello \${nickname},</p>
+      <p>Your verification code for disabling TOTP is:</p>
+      <p style="font-size:28px;letter-spacing:4px;font-weight:700">\${code}</p>
+      <p>If this was not you, change your password and review login devices immediately.</p>
+    `)
+  },
+  {
+    scene: MailTemplateScene.TOTP_RECOVERY_USED,
+    key: "totpRecoveryUsed",
+    category: "Security",
+    name: "TOTP recovery code used",
+    description: "Sent when a recovery code is used to sign in and TOTP is disabled.",
+    subject: "Recovery code used and TOTP disabled - ${site.title}",
+    bodyHtml: html(`
+      <p>Hello \${nickname},</p>
+      <p>A TOTP recovery code was used to sign in to your account at <strong>\${loginTime}</strong>.</p>
+      <p>Device: <strong>\${deviceName}</strong><br />IP: <strong>\${loginIp}</strong></p>
+      <p>TOTP has been disabled and all old recovery codes have been revoked. Set up TOTP again if this was you.</p>
+    `)
+  },
+  {
     scene: MailTemplateScene.PASSWORD_RESET,
     key: "passwordReset",
     category: "Auth",

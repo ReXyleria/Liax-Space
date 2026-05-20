@@ -86,7 +86,7 @@ export function ArticleLanguageWorkspace({
     let cancelled = false;
     async function loadProgress() {
       try {
-        const response = await fetch(`/api/admin/articles/${article.id}/translation-progress?locale=en`, {
+        const response = await fetch(`/api/console/articles/${article.id}/translation-progress?locale=en`, {
           cache: "no-store"
         });
         const payload = await response.json();

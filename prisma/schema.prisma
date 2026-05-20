@@ -51,6 +51,7 @@ enum VerificationCodeType {
   REGISTER
   LOGIN
   RESET_PASSWORD
+  TOTP_DISABLE
 }
 
 enum WebAuthnChallengeType {
@@ -62,6 +63,8 @@ enum MailTemplateScene {
   MOMENT_COMMENT
   LOGIN_ALERT
   LOGIN_CODE
+  TOTP_DISABLE_CODE
+  TOTP_RECOVERY_USED
   COMMENT_REPLY
   EMAIL_VERIFY
   PASSWORD_RESET

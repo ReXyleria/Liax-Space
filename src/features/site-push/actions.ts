@@ -45,7 +45,7 @@ export async function saveSitePushSettingsAction(
     const user = await requireUser();
     await saveSitePushSettings(user, formData);
     revalidateTag("settings");
-    revalidatePath("/admin/site-push");
+    revalidatePath("/console/site-push");
     return { ok: true, message: text.saved };
   } catch (error) {
     if (error instanceof SitePushValidationError) {
@@ -63,7 +63,7 @@ export async function pushManualUrlAction(
   try {
     const user = await requireUser();
     await pushManualUrl(user, formData);
-    revalidatePath("/admin/site-push");
+    revalidatePath("/console/site-push");
     return { ok: true, message: text.manualSubmitted };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : text.error };
@@ -79,7 +79,7 @@ export async function pushPublishedArticlesAction(
   try {
     const user = await requireUser();
     await pushPublishedArticles(user);
-    revalidatePath("/admin/site-push");
+    revalidatePath("/console/site-push");
     return { ok: true, message: text.batchSubmitted };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : text.error };

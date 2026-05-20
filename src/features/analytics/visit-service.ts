@@ -90,7 +90,7 @@ export async function recordVisit(request: Request, input: unknown) {
 
   const body = typeof input === "object" && input ? input as Record<string, unknown> : {};
   const path = normalizePath(body.path);
-  if (path.startsWith("/admin") || path.startsWith("/api")) {
+  if (path.startsWith("/console") || path.startsWith("/api")) {
     return;
   }
 

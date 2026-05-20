@@ -13,7 +13,7 @@ import {
 import type { AuthenticatorTransportFuture } from "@simplewebauthn/server";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { createSession, createTrustedDevice, type CurrentUser } from "@/lib/auth";
-import { canAccessAdmin } from "@/lib/permissions";
+import { canAccessConsole } from "@/lib/permissions";
 import { sendTemplatedMail } from "@/lib/mail";
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -113,14 +113,18 @@ async function consumeChallenge(userId: string | null, type: WebAuthnChallengeTy
 }
 
 function resolveSafeRedirect(callbackUrl: string | undefined, user: { role: CurrentUser["role"] }) {
-  const fallback = canAccessAdmin(user) ? "/admin" : "/";
+  const fallback = canAccessConsole(user) ? "/console" : "/";
 
   if (!callbackUrl || !callbackUrl.startsWith("/") || callbackUrl.startsWith("//")) {
     return fallback;
   }
 
-  if (callbackUrl.startsWith("/admin") && !canAccessAdmin(user)) {
+  if ((callbackUrl.startsWith("/console") || callbackUrl.startsWith("/admin")) && !canAccessConsole(user)) {
     return "/";
+  }
+
+  if (callbackUrl === "/admin" || callbackUrl.startsWith("/admin/")) {
+    return callbackUrl.replace(/^\/admin/, "/console");
   }
 
   return callbackUrl;

@@ -138,7 +138,7 @@ async function postJson(path: string, body: unknown) {
   return (await response.json()) as ApiState;
 }
 
-export function LoginForm({ callbackUrl = "/admin", locale = "zh-CN" }: { callbackUrl?: string; locale?: Locale }) {
+export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { callbackUrl?: string; locale?: Locale }) {
   const text = useMemo(() => authText[locale] ?? authText["zh-CN"], [locale]);
   const [state, setState] = useState<ApiState>({});
   const [account, setAccount] = useState("");

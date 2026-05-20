@@ -11,7 +11,12 @@ import {
   updatePassword,
   updateProfile
 } from "@/features/account/service";
-import { beginTotpSetup, confirmTotpSetup, disableTotp } from "@/features/account/totp-service";
+import {
+  beginTotpSetup,
+  confirmTotpSetup,
+  disableTotp,
+  sendTotpDisableEmailCode
+} from "@/features/account/totp-service";
 
 export type AccountActionState = {
   ok: boolean;
@@ -48,8 +53,8 @@ export async function updateProfileAction(
       avatar: formData.get("avatar") ?? ""
     });
     revalidatePath("/account");
-    revalidatePath("/admin/account");
-    revalidatePath("/admin");
+    revalidatePath("/console/account");
+    revalidatePath("/console");
     return { ok: true, message: "Profile saved." };
   } catch (error) {
     return errorState(error, "Failed to save profile.");
@@ -81,7 +86,7 @@ export async function revokeSessionAction(
     const user = await requireUser();
     await revokeSession(user, { id: formData.get("id") });
     revalidatePath("/account");
-    revalidatePath("/admin/account");
+    revalidatePath("/console/account");
     return { ok: true, message: "Session revoked." };
   } catch (error) {
     return errorState(error, "Failed to revoke session.");
@@ -96,7 +101,7 @@ export async function revokeTrustedDeviceAction(
     const user = await requireUser();
     await revokeTrustedDevice(user, { id: formData.get("id") });
     revalidatePath("/account");
-    revalidatePath("/admin/account");
+    revalidatePath("/console/account");
     return { ok: true, message: "Trusted device revoked." };
   } catch (error) {
     return errorState(error, "Failed to revoke trusted device.");
@@ -111,7 +116,7 @@ export async function deletePasskeyAction(
     const user = await requireUser();
     await deletePasskey(user, { id: formData.get("id") });
     revalidatePath("/account");
-    revalidatePath("/admin/account");
+    revalidatePath("/console/account");
     return { ok: true, message: "Passkey deleted." };
   } catch (error) {
     return errorState(error, "Failed to delete passkey.");
@@ -129,7 +134,7 @@ export async function renamePasskeyAction(
       deviceName: formData.get("deviceName")
     });
     revalidatePath("/account");
-    revalidatePath("/admin/account");
+    revalidatePath("/console/account");
     return { ok: true, message: "Passkey renamed." };
   } catch (error) {
     return errorState(error, "Failed to rename passkey.");
@@ -147,7 +152,7 @@ export async function beginTotpSetupAction(
     const user = await requireUser();
     const setup = await beginTotpSetup(user);
     revalidatePath("/account");
-    revalidatePath("/admin/account");
+    revalidatePath("/console/account");
     return {
       ok: true,
       message: "Scan the QR code or enter the manual key, then verify a 6-digit code.",
@@ -167,7 +172,7 @@ export async function confirmTotpSetupAction(
     const user = await requireUser();
     const recoveryCodes = await confirmTotpSetup(user, String(formData.get("code") ?? ""));
     revalidatePath("/account");
-    revalidatePath("/admin/account");
+    revalidatePath("/console/account");
     return {
       ok: true,
       message: "TOTP enabled. Save these recovery codes now; they will not be shown again.",
@@ -178,6 +183,22 @@ export async function confirmTotpSetupAction(
   }
 }
 
+export async function sendTotpDisableEmailCodeAction(
+  _previousState: AccountActionState,
+  _formData: FormData
+): Promise<AccountActionState> {
+  void _previousState;
+  void _formData;
+
+  try {
+    const user = await requireUser();
+    await sendTotpDisableEmailCode(user);
+    return { ok: true, message: "TOTP 关闭验证码已发送到你的邮箱。" };
+  } catch (error) {
+    return errorState(error, "Failed to send TOTP disable email code.");
+  }
+}
+
 export async function disableTotpAction(
   _previousState: AccountActionState,
   formData: FormData
@@ -185,12 +206,14 @@ export async function disableTotpAction(
   try {
     const user = await requireUser();
     await disableTotp(user, {
+      method: formData.get("method") === "emailCode" ? "emailCode" : "totpOrRecovery",
       currentPassword: String(formData.get("currentPassword") ?? ""),
       code: String(formData.get("code") ?? ""),
-      recoveryCode: String(formData.get("recoveryCode") ?? "")
+      recoveryCode: String(formData.get("recoveryCode") ?? ""),
+      emailCode: String(formData.get("emailCode") ?? "")
     });
     revalidatePath("/account");
-    revalidatePath("/admin/account");
+    revalidatePath("/console/account");
     return { ok: true, message: "TOTP disabled." };
   } catch (error) {
     return errorState(error, "Failed to disable TOTP.");

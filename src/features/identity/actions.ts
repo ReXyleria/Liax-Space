@@ -42,8 +42,8 @@ export async function createIdentityAction(
       description: formData.get("description") || undefined,
       permissions: collectPermissions(formData)
     });
-    revalidatePath("/admin/identity");
-    revalidatePath("/admin/users");
+    revalidatePath("/console/identity");
+    revalidatePath("/console/users");
     return { ok: true, message: "身份已创建。" };
   } catch (error) {
     return errorState(error, "创建身份失败。");
@@ -64,8 +64,8 @@ export async function updateIdentityAction(
       description: formData.get("description") || undefined,
       permissions: collectPermissions(formData)
     });
-    revalidatePath("/admin/identity");
-    revalidatePath("/admin/users");
+    revalidatePath("/console/identity");
+    revalidatePath("/console/users");
     return { ok: true, message: "身份已保存。" };
   } catch (error) {
     return errorState(error, "保存身份失败。");
@@ -84,8 +84,8 @@ export async function deleteIdentityAction(
       confirmUsed,
       migrationTargetIdentityId: String(formData.get("migrationTargetIdentityId") ?? "") || null
     });
-    revalidatePath("/admin/identity");
-    revalidatePath("/admin/users");
+    revalidatePath("/console/identity");
+    revalidatePath("/console/users");
     return { ok: true, message: "身份已删除。" };
   } catch (error) {
     return errorState(error, "删除身份失败。");

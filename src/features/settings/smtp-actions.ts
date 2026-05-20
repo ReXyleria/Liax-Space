@@ -43,8 +43,8 @@ function readSmtpInput(formData: FormData) {
 
 function revalidateSmtpPages() {
   revalidateTag("settings");
-  revalidatePath("/admin/mail/smtp");
-  revalidatePath("/admin", "layout");
+  revalidatePath("/console/mail/smtp");
+  revalidatePath("/console", "layout");
 }
 
 async function requireSettingsUser() {
@@ -77,17 +77,17 @@ async function getStoredPassword() {
   return existing?.value ?? "";
 }
 
-async function firstAdminEmail(fallback: string) {
+async function firstConsoleEmail(fallback: string) {
   if (!isDatabaseConfigured()) {
     return fallback;
   }
 
-  const admin = await db.user.findFirst({
+  const console = await db.user.findFirst({
     where: { role: UserRole.Administer, emailVerified: true },
     orderBy: { createdAt: "asc" },
     select: { email: true }
   });
-  return admin?.email || fallback;
+  return console?.email || fallback;
 }
 
 export async function saveSmtpSettingsAction(
@@ -200,7 +200,7 @@ export async function testSmtpSettingsAction(
         fieldErrors: { pass: ["密码不能为空。"] }
       };
     }
-    const to = await firstAdminEmail(user.email);
+    const to = await firstConsoleEmail(user.email);
     const result = await sendSmtpTestMail(to, {
       "smtp.host": parsed.data.host,
       "smtp.port": String(parsed.data.port),

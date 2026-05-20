@@ -27,8 +27,8 @@ export async function updateCodeInjectionAction(
       revalidatePath(localizedPath(locale));
       revalidatePath(localizedPath(locale, "/articles"));
     }
-    revalidatePath("/admin/code-injection");
-    revalidatePath("/admin/settings");
+    revalidatePath("/console/code-injection");
+    revalidatePath("/console/settings");
     return { ok: true, message: "代码注入设置已保存。" };
   } catch (error) {
     return {

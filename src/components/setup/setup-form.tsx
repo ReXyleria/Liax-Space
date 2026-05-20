@@ -71,7 +71,7 @@ export function SetupForm({ initialSiteUrl }: SetupFormProps) {
       if (result.ok) {
         window.setTimeout(() => {
           router.refresh();
-          window.location.assign(result.redirectTo ?? "/login?callbackUrl=/admin");
+          window.location.assign(result.redirectTo ?? "/login?callbackUrl=/console");
         }, 900);
       }
     } catch {

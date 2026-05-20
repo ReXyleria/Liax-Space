@@ -22,8 +22,8 @@ const fail = (error: unknown, fallback: string): BackupActionState => ({
 });
 
 function revalidateBackupPages() {
-  revalidatePath("/admin/backup");
-  revalidatePath("/admin/data/backups");
+  revalidatePath("/console/backup");
+  revalidatePath("/console/data/backups");
 }
 
 export async function createBackupAction(): Promise<BackupActionState> {

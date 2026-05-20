@@ -27,8 +27,8 @@ function revalidateTagPaths() {
     revalidatePath(localizedPath(locale, "/tags"));
     revalidatePath(localizedPath(locale, "/articles"));
   }
-  revalidatePath("/admin/tags");
-  revalidatePath("/admin/articles");
+  revalidatePath("/console/tags");
+  revalidatePath("/console/articles");
 }
 
 export async function createTagAction(

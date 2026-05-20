@@ -21,7 +21,7 @@ function copy(locale: Locale) {
         email: "Email",
         content: "What would you like to say?",
         notifyOnly: "Send only to the owner",
-        notifyOnlyDescription: "This message will not be shown publicly and will be sent directly to the admin mailbox.",
+        notifyOnlyDescription: "This message will not be shown publicly and will be sent directly to the console mailbox.",
         submitting: "Submitting...",
         submit: "Submit message"
       }

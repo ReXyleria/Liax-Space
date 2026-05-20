@@ -15,6 +15,8 @@ export type MailResult =
 export type MailTemplateScene =
   | "registerCode"
   | "loginCode"
+  | "totpDisableCode"
+  | "totpRecoveryUsed"
   | "commentReply"
   | "momentComment"
   | "guestbookReply"
@@ -53,6 +55,8 @@ const smtpKeys = [
 const legacySceneMap: Partial<Record<MailTemplateScene, DbMailTemplateScene>> = {
   registerCode: DbMailTemplateScene.REGISTER_CODE,
   loginCode: DbMailTemplateScene.LOGIN_CODE,
+  totpDisableCode: DbMailTemplateScene.TOTP_DISABLE_CODE,
+  totpRecoveryUsed: DbMailTemplateScene.TOTP_RECOVERY_USED,
   commentReply: DbMailTemplateScene.COMMENT_REPLY,
   momentComment: DbMailTemplateScene.MOMENT_COMMENT,
   guestbookReply: DbMailTemplateScene.GUESTBOOK_REPLY,
@@ -317,6 +321,18 @@ export async function sendLoginCodeMail(email: string, code: string): Promise<Ma
   return sendTemplatedMail({
     to: email,
     scene: "loginCode",
+    variables: {
+      nickname: email,
+      code
+    },
+    respectNotificationToggle: false
+  });
+}
+
+export async function sendTotpDisableCodeMail(email: string, code: string): Promise<MailResult> {
+  return sendTemplatedMail({
+    to: email,
+    scene: "totpDisableCode",
     variables: {
       nickname: email,
       code

@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { ZodError } from "zod";
 import { requireUser } from "@/lib/auth";
 import type { Locale } from "@/lib/i18n";
-import { getAdminLocale } from "@/lib/i18n-server";
+import { getConsoleLocale } from "@/lib/i18n-server";
 import { assertPermission, canManageArticles } from "@/lib/permissions";
 import { localizedPath, urlLocales } from "@/lib/locale-url";
 import {
@@ -177,7 +177,7 @@ export async function createArticleAction(
   _previousState: ArticleActionState,
   formData: FormData
 ): Promise<ArticleActionState> {
-  const locale = await getAdminLocale();
+  const locale = await getConsoleLocale();
   const input = parseArticleForm(formData, { defaultAllowComments: true });
   const parsed = articleMutationSchema.safeParse(input);
 
@@ -194,12 +194,12 @@ export async function createArticleAction(
     const article = await createArticle(user, parsed.data);
     const shouldReturnToList = formData.get("returnToList") === "1" || parsed.data.status === ArticleStatus.PUBLISHED;
     revalidatePublicArticleIndex();
-    revalidatePath("/admin/articles");
+    revalidatePath("/console/articles");
     return {
       ok: true,
       message: actionText(locale).articleSaved,
       fieldErrors: {},
-      redirectTo: shouldReturnToList ? "/admin/articles" : `/admin/articles/${article.id}/edit`
+      redirectTo: shouldReturnToList ? "/console/articles" : `/console/articles/${article.id}/edit`
     };
   } catch (error) {
     return actionErrorState(error, locale);
@@ -211,7 +211,7 @@ export async function updateArticleAction(
   _previousState: ArticleActionState,
   formData: FormData
 ): Promise<ArticleActionState> {
-  const locale = await getAdminLocale();
+  const locale = await getConsoleLocale();
   const input = parseArticleForm(formData);
   const parsed = articleMutationSchema.safeParse(input);
 
@@ -230,12 +230,12 @@ export async function updateArticleAction(
     const shouldReturnToList = formData.get("returnToList") === "1" || parsed.data.status === ArticleStatus.PUBLISHED;
     revalidatePublicArticleIndex();
     revalidatePublicArticle(article.slug);
-    revalidatePath("/admin/articles");
+    revalidatePath("/console/articles");
     return {
       ok: true,
       message: actionText(locale).articleSaved,
       fieldErrors: {},
-      redirectTo: shouldReturnToList ? "/admin/articles" : undefined
+      redirectTo: shouldReturnToList ? "/console/articles" : undefined
     };
   } catch (error) {
     return actionErrorState(error, locale);
@@ -247,9 +247,9 @@ export async function restoreArticleVersionAction(articleId: string, versionId: 
   const article = await restoreArticleVersion(user, articleId, versionId);
   revalidatePublicArticleIndex();
   revalidatePublicArticle(article.slug);
-  revalidatePath("/admin/articles");
-  revalidatePath(`/admin/articles/${article.id}/edit`);
-  redirect(`/admin/articles/${article.id}/edit`);
+  revalidatePath("/console/articles");
+  revalidatePath(`/console/articles/${article.id}/edit`);
+  redirect(`/console/articles/${article.id}/edit`);
 }
 
 export async function generateArticleSeoAction(formData: FormData): Promise<ArticleSeoActionState> {
@@ -285,7 +285,7 @@ export async function publishArticleAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get("id") ?? "");
   const article = await setArticleStatus(user, id, ArticleStatus.PUBLISHED);
-  revalidatePath("/admin/articles");
+  revalidatePath("/console/articles");
   revalidatePublicArticleIndex();
   revalidatePublicArticle(article.slug);
 }
@@ -294,7 +294,7 @@ export async function unpublishArticleAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get("id") ?? "");
   const article = await setArticleStatus(user, id, ArticleStatus.DRAFT);
-  revalidatePath("/admin/articles");
+  revalidatePath("/console/articles");
   revalidatePublicArticleIndex();
   revalidatePublicArticle(article.slug);
 }
@@ -303,7 +303,7 @@ export async function deleteArticleAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get("id") ?? "");
   const article = await deleteArticle(user, id);
-  revalidatePath("/admin/articles");
+  revalidatePath("/console/articles");
   revalidatePublicArticleIndex();
   revalidatePublicArticle(article.slug);
 }
@@ -313,7 +313,7 @@ export async function updateArticleSettingsAction(
   _previousState: ArticleActionState,
   formData: FormData
 ): Promise<ArticleActionState> {
-  const locale = await getAdminLocale();
+  const locale = await getConsoleLocale();
   const input = {
     slug: formData.get("slug"),
     summary: formData.get("summary") ?? "",
@@ -346,14 +346,14 @@ export async function updateArticleSettingsAction(
     const user = await requireUser();
     const article = await updateArticleMeta(user, id, parsed.data);
     await syncArticleTranslationSeo(user, id, formData);
-    revalidatePath("/admin/articles");
+    revalidatePath("/console/articles");
     revalidatePublicArticleIndex();
     revalidatePublicArticle(article.slug);
     return {
       ok: true,
       message: actionText(locale).articleSaved,
       fieldErrors: {},
-      redirectTo: "/admin/articles"
+      redirectTo: "/console/articles"
     };
   } catch (error) {
     return actionErrorState(error, locale);

@@ -1,10 +1,10 @@
 import { UserRole, UserStatus, VerificationCodeType } from "@prisma/client";
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
 import { clearSession, createSession, createTrustedDevice, resolveTrustedDevice } from "@/lib/auth";
-import { canAccessAdmin } from "@/lib/permissions";
+import { canAccessConsole } from "@/lib/permissions";
 import { sendLoginCodeMail, sendTemplatedMail, sendVerificationCodeMail } from "@/lib/mail";
 import { generateNumericCode, generateOpaqueToken, hashPassword, hashToken, verifyPassword } from "@/lib/security";
-import { verifyTotpOrRecovery } from "@/features/account/totp-service";
+import { revokeTotpAfterRecoveryLogin, verifyTotpOrRecovery } from "@/features/account/totp-service";
 import { emailSchema, loginSchema, loginSecondFactorSchema, registerSchema } from "@/features/auth/validators";
 import type { AuthResponse } from "@/features/auth/types";
 import { isHighPrivilegeIdentity } from "@/lib/permission-definitions";
@@ -22,14 +22,18 @@ function parsePublicRole(value: string | undefined | null): UserRole {
 }
 
 function resolveSafeRedirect(callbackUrl: string | undefined, user: { role: UserRole }) {
-  const fallback = canAccessAdmin(user) ? "/admin" : "/";
+  const fallback = canAccessConsole(user) ? "/console" : "/";
 
   if (!callbackUrl || !callbackUrl.startsWith("/") || callbackUrl.startsWith("//")) {
     return fallback;
   }
 
-  if (callbackUrl.startsWith("/admin") && !canAccessAdmin(user)) {
+  if ((callbackUrl.startsWith("/console") || callbackUrl.startsWith("/admin")) && !canAccessConsole(user)) {
     return "/";
+  }
+
+  if (callbackUrl === "/admin" || callbackUrl.startsWith("/admin/")) {
+    return callbackUrl.replace(/^\/admin/, "/console");
   }
 
   return callbackUrl;
@@ -237,6 +241,31 @@ async function sendLoginNotificationSafely(
   }
 }
 
+async function sendTotpRecoveryUsedNotificationSafely(
+  user: { email: string; nickname: string },
+  meta: { deviceName?: string; loginIp?: string } | undefined
+) {
+  try {
+    const mailResult = await sendTemplatedMail({
+      to: user.email,
+      scene: "totpRecoveryUsed",
+      variables: {
+        nickname: user.nickname,
+        loginTime: new Date().toLocaleString("zh-CN"),
+        loginIp: meta?.loginIp ?? "unknown",
+        deviceName: meta?.deviceName ?? "Unknown device"
+      },
+      respectNotificationToggle: false
+    });
+
+    if (!mailResult.ok) {
+      console.warn("Skipped TOTP recovery-used notification", mailResult.message);
+    }
+  } catch (error) {
+    console.warn("Skipped TOTP recovery-used notification", error);
+  }
+}
+
 export async function sendRegisterCode(input: unknown): Promise<AuthResponse> {
   const parsed = emailSchema.safeParse(input);
   if (!parsed.success) {
@@ -377,7 +406,7 @@ export async function loginUser(
 ): Promise<AuthResponse> {
   const parsed = loginSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, message: "用户名、邮箱或密码不正确。" };
+    return { ok: false, message: "Username, email, or password is incorrect." };
   }
 
   const account = parsed.data.account.toLowerCase();
@@ -393,7 +422,7 @@ export async function loginUser(
         passkeys: { select: { id: true } }
       }
     });
-    const genericFailure = { ok: false, message: "用户名、邮箱或密码不正确。" };
+    const genericFailure = { ok: false, message: "Username, email, or password is incorrect." };
 
     if (!user) {
       return genericFailure;
@@ -411,6 +440,7 @@ export async function loginUser(
     if (!user.emailVerified) {
       return { ok: false, message: "Email is not verified yet." };
     }
+
     const trustedDevice = await resolveTrustedDevice(user.id);
     if (!trustedDevice) {
       const backupMethods = buildBackupSecondFactorMethods(user);
@@ -422,24 +452,28 @@ export async function loginUser(
           requiresSecondFactor: true,
           pendingToken,
           secondFactors: ["email", ...backupMethods],
-          message: "当前设备需要二次验证，邮箱验证码已发送。"
+          message: "This device requires second-factor verification. An email code was sent."
         };
       } catch (error) {
         if (!backupMethods.length) {
           await clearPendingLogin(pendingToken);
+          const result = await finalizeLogin(user, meta, parsed.data.callbackUrl);
           return {
-            ok: false,
-            message: error instanceof Error ? error.message : "邮箱验证码发送失败，无法完成二次验证。"
+            ...result,
+            message: error instanceof Error
+              ? `SMTP is unavailable, so email second-factor verification was skipped and sign-in completed: ${error.message}`
+              : "SMTP is unavailable, so email second-factor verification was skipped and sign-in completed."
           };
         }
+
         return {
           ok: false,
           requiresSecondFactor: true,
           pendingToken,
           secondFactors: backupMethods,
           message: error instanceof Error
-            ? `邮箱验证码发送失败，可使用备用方式验证：${error.message}`
-            : "邮箱验证码发送失败，可使用备用方式验证。"
+            ? `Email verification code failed. Use a backup verification method: ${error.message}`
+            : "Email verification code failed. Use a backup verification method."
         };
       }
     }
@@ -457,7 +491,7 @@ export async function verifyLoginSecondFactor(
 ): Promise<AuthResponse> {
   const parsed = loginSecondFactorSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? "二次验证数据无效。" };
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Second-factor data is invalid." };
   }
 
   if (!isDatabaseConfigured()) {
@@ -467,7 +501,7 @@ export async function verifyLoginSecondFactor(
   try {
     const pending = await getPendingLogin(parsed.data.pendingToken);
     if (!pending) {
-      return { ok: false, message: "二次验证已过期，请重新登录。" };
+      return { ok: false, message: "Second-factor verification expired. Sign in again." };
     }
 
     const { user } = pending;
@@ -481,25 +515,30 @@ export async function verifyLoginSecondFactor(
     }
 
     const emailOk = await verifyLoginCode(user.email, parsed.data.emailCode);
-    const totpOk = user.totpEnabled
+    const totpResult = user.totpEnabled
       ? await verifyTotpOrRecovery(user.id, parsed.data.totpCode, parsed.data.recoveryCode)
-      : false;
-    const secondFactorOk = emailOk || totpOk;
+      : { ok: false as const };
+    const secondFactorOk = emailOk || totpResult.ok;
 
     if (!secondFactorOk) {
       return {
         ok: false,
         message: parsed.data.emailCode || parsed.data.totpCode || parsed.data.recoveryCode
-          ? "二次验证码错误。"
-          : "需要输入邮箱验证码、TOTP 验证码或恢复码。"
+          ? "Second-factor code is incorrect."
+          : "Enter an email code, TOTP code, or recovery code."
       };
     }
 
     await clearPendingLogin(parsed.data.pendingToken);
+    if (totpResult.ok && totpResult.method === "recovery") {
+      await revokeTotpAfterRecoveryLogin(user.id);
+      void sendTotpRecoveryUsedNotificationSafely(user, meta);
+    }
+
     return await finalizeLogin(user, meta, parsed.data.callbackUrl, { trustDevice: parsed.data.trustDevice });
   } catch (error) {
     console.error("Failed to verify second factor", error);
-    return { ok: false, message: "二次验证失败。" };
+    return { ok: false, message: "Second-factor verification failed." };
   }
 }
 

@@ -56,8 +56,8 @@ function revalidateMomentPaths() {
   for (const locale of urlLocales) {
     revalidatePath(localizedPath(locale, "/moments"));
   }
-  revalidatePath("/admin/moments");
-  revalidatePath("/admin/settings/translation");
+  revalidatePath("/console/moments");
+  revalidatePath("/console/settings/translation");
 }
 
 export async function createMomentAction(

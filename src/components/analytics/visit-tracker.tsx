@@ -7,7 +7,7 @@ export function VisitTracker() {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!pathname || pathname.startsWith("/admin") || pathname.startsWith("/api")) {
+    if (!pathname || pathname.startsWith("/console") || pathname.startsWith("/api")) {
       return;
     }
 

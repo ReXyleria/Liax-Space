@@ -78,7 +78,7 @@ export default async function SetupPage() {
                     返回首页
                   </Link>
                   <Link
-                    href="/admin"
+                    href="/console"
                     className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
                   >
                     进入后台

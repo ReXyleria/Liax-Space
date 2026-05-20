@@ -6,7 +6,7 @@ export function getRoleLabel(locale: string, role: UserRole) {
     USER: "user",
     SVIP: "svip",
     SSVIP: "ssvip",
-    Administer: "admin"
+    Administer: "Administer"
   };
   return t(locale === "en" ? "en" : "zh-CN" as "zh-CN" | "en", keys[role]) || keys[role];
 }
@@ -23,7 +23,7 @@ export const roleLabels: Record<UserRole, string> = {
   USER: "user",
   SVIP: "svip",
   SSVIP: "ssvip",
-  Administer: "admin"
+  Administer: "Administer"
 };
 
 export const statusLabels: Record<UserStatus, string> = {

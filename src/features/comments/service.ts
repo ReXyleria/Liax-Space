@@ -116,7 +116,7 @@ export async function createComment(user: CurrentUser, input: unknown) {
   return comment;
 }
 
-export async function listAdminComments(user: CurrentUser) {
+export async function listConsoleComments(user: CurrentUser) {
   assertPermission(canManageComments(user), "你没有权限管理评论。");
 
   if (!isDatabaseConfigured()) {

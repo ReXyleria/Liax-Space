@@ -388,11 +388,11 @@ export async function getPublishedArticleBySlug(slug: string, user: CurrentUser 
   }, { article: null, canView: false, error: "Failed to load article." });
 }
 
-export async function listAdminArticles(user: CurrentUser) {
+export async function listConsoleArticles(user: CurrentUser) {
   assertPermission(canManageArticles(user), "You do not have permission to manage articles.");
 
   if (!isDatabaseConfigured()) {
-    return { articles: [], error: "DATABASE_URL is not configured; admin articles cannot be loaded." };
+    return { articles: [], error: "DATABASE_URL is not configured; console articles cannot be loaded." };
   }
 
   return withDatabase(async () => {
@@ -409,10 +409,10 @@ export async function listAdminArticles(user: CurrentUser) {
       articles: articles.map((article) => mapArticle(article, null, translationTargetLocale)),
       error: null as string | null
     };
-  }, { articles: [], error: "Failed to load admin articles." });
+  }, { articles: [], error: "Failed to load console articles." });
 }
 
-export async function getAdminArticle(user: CurrentUser, id: string) {
+export async function getConsoleArticle(user: CurrentUser, id: string) {
   assertPermission(canManageArticles(user), "You do not have permission to manage articles.");
 
   if (!isDatabaseConfigured()) {

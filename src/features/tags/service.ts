@@ -40,7 +40,7 @@ function scheduleTagTranslation(tag: { id: string; name: string; updatedAt: Date
   });
 }
 
-export async function listAdminTags(user: CurrentUser) {
+export async function listConsoleTags(user: CurrentUser) {
   assertPermission(canManageArticles(user), "你没有权限管理标签。");
 
   if (!isDatabaseConfigured()) {

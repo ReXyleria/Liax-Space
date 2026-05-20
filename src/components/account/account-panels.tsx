@@ -18,6 +18,7 @@ import {
   renamePasskeyAction,
   revokeSessionAction,
   revokeTrustedDeviceAction,
+  sendTotpDisableEmailCodeAction,
   updatePasswordAction,
   updateProfileAction,
   type AccountActionState
@@ -414,6 +415,7 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
   const disableFormRef = useRef<HTMLFormElement>(null);
   const [disableConfirmOpen, setDisableConfirmOpen] = useState(false);
   const [disableConfirmed, setDisableConfirmed] = useState(false);
+  const [disableMethod, setDisableMethod] = useState<"totpOrRecovery" | "emailCode">("totpOrRecovery");
   const [setupState, setupAction, isStarting] = useActionState<AccountActionState, FormData>(
     beginTotpSetupAction,
     initialState
@@ -424,6 +426,10 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
   );
   const [disableState, disableAction, isDisabling] = useActionState<AccountActionState, FormData>(
     disableTotpAction,
+    initialState
+  );
+  const [emailCodeState, emailCodeAction, isSendingEmailCode] = useActionState<AccountActionState, FormData>(
+    sendTotpDisableEmailCodeAction,
     initialState
   );
   const [recoveryCopyMessage, setRecoveryCopyMessage] = useState("");
@@ -446,20 +452,20 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
     const text = recoveryText();
     if (!text) return;
     await navigator.clipboard.writeText(text);
-    setRecoveryCopyMessage("恢复码已复制。");
+    setRecoveryCopyMessage("Recovery codes copied.");
   }
 
   function downloadRecoveryCodes() {
     const text = recoveryText();
     if (!text) return;
-    const blob = new Blob([`${text}\n`], { type: "text/plain;charset=utf-8" });
+    const blob = new Blob([text + "\n"], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
     link.download = "liax-space-totp-recovery-codes.txt";
     link.click();
     URL.revokeObjectURL(url);
-    setRecoveryCopyMessage("恢复码文件已生成。");
+    setRecoveryCopyMessage("Recovery code text file generated.");
   }
 
   function closeRecoveryModal() {
@@ -471,11 +477,49 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
   return (
     <PanelShell
       icon={<ShieldCheck className="h-5 w-5" />}
-      title="双因素验证"
-      description="使用 6 位动态验证码和一次性恢复码保护密码登录。"
+      title="Two-factor authentication"
+      description="Protect password sign-in with a 6-digit authenticator code and one-time recovery codes."
     >
       {enabled ? (
         <>
+          <div className="rounded-md border bg-emerald-50 p-3 text-sm text-emerald-700">
+            TOTP is enabled for this account.
+          </div>
+          <div className="grid gap-2 rounded-md border bg-muted/25 p-1 text-sm sm:grid-cols-2">
+            <button
+              type="button"
+              className={
+                disableMethod === "totpOrRecovery"
+                  ? "rounded px-3 py-2 text-left transition bg-background text-foreground shadow-sm"
+                  : "rounded px-3 py-2 text-left transition text-muted-foreground hover:bg-background/60"
+              }
+              onClick={() => setDisableMethod("totpOrRecovery")}
+            >
+              Password + TOTP/recovery code
+            </button>
+            <button
+              type="button"
+              className={
+                disableMethod === "emailCode"
+                  ? "rounded px-3 py-2 text-left transition bg-background text-foreground shadow-sm"
+                  : "rounded px-3 py-2 text-left transition text-muted-foreground hover:bg-background/60"
+              }
+              onClick={() => setDisableMethod("emailCode")}
+            >
+              Password + email code
+            </button>
+          </div>
+          {disableMethod === "emailCode" ? (
+            <form action={emailCodeAction} className="space-y-3 rounded-md border bg-muted/20 p-3">
+              <p className="text-sm text-muted-foreground">
+                Send a one-time email code before disabling TOTP with this method.
+              </p>
+              <Button type="submit" variant="secondary" disabled={isSendingEmailCode}>
+                {isSendingEmailCode ? "Sending..." : "Send email code"}
+              </Button>
+              <ActionMessage state={emailCodeState} />
+            </form>
+          ) : null}
           <form
             ref={disableFormRef}
             action={disableAction}
@@ -489,23 +533,27 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
               setDisableConfirmOpen(true);
             }}
           >
-            <div className="rounded-md border bg-emerald-50 p-3 text-sm text-emerald-700">
-              当前账号已启用 TOTP。
-            </div>
-            <Input name="currentPassword" type="password" placeholder="当前密码" autoComplete="current-password" required />
-            <Input name="code" inputMode="numeric" placeholder="6 位动态验证码" maxLength={6} />
-            <Input name="recoveryCode" placeholder="或恢复码" />
+            <input type="hidden" name="method" value={disableMethod} />
+            <Input name="currentPassword" type="password" placeholder="Current password" autoComplete="current-password" required />
+            {disableMethod === "totpOrRecovery" ? (
+              <>
+                <Input name="code" inputMode="numeric" placeholder="6-digit authenticator code" maxLength={6} />
+                <Input name="recoveryCode" placeholder="Or recovery code" />
+              </>
+            ) : (
+              <Input name="emailCode" inputMode="numeric" placeholder="Email verification code" maxLength={8} required />
+            )}
             <ActionMessage state={disableState} />
             <Button type="submit" variant="secondary" disabled={isDisabling}>
-              {isDisabling ? "关闭中..." : "关闭 TOTP"}
+              {isDisabling ? "Disabling..." : "Disable TOTP"}
             </Button>
           </form>
           <ConfirmActionDialog
             open={disableConfirmOpen}
-            title="确认关闭 TOTP"
-            description="关闭后账号会失去动态验证码保护。"
-            confirmLabel="关闭 TOTP"
-            cancelLabel="取消"
+            title="Disable TOTP"
+            description="This account will lose authenticator-code protection. Continue only after verifying the selected method."
+            confirmLabel="Disable TOTP"
+            cancelLabel="Cancel"
             pending={isDisabling}
             onOpenChange={setDisableConfirmOpen}
             onConfirm={() => {
@@ -519,7 +567,7 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
         <div className="space-y-4">
           <form action={setupAction}>
             <Button type="submit" variant="secondary" disabled={isStarting}>
-              {isStarting ? "准备中..." : "开始设置 TOTP"}
+              {isStarting ? "Preparing..." : "Start TOTP setup"}
             </Button>
           </form>
 
@@ -534,13 +582,13 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
                 className="rounded-md bg-white p-2"
               />
               <div className="rounded-md border bg-background p-3 text-sm">
-                <p className="font-medium">手动密钥</p>
+                <p className="font-medium">Manual key</p>
                 <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{setupState.secret}</p>
               </div>
               <form action={confirmAction} className="flex flex-col gap-3 sm:flex-row">
-                <Input name="code" inputMode="numeric" placeholder="6 位验证码" maxLength={6} required />
+                <Input name="code" inputMode="numeric" placeholder="6-digit code" maxLength={6} required />
                 <Button type="submit" disabled={isConfirming}>
-                  {isConfirming ? "验证中..." : "验证并启用"}
+                  {isConfirming ? "Verifying..." : "Verify and enable"}
                 </Button>
               </form>
             </div>
@@ -551,7 +599,7 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
           <Dialog
             open={recoveryModalOpen}
             title="TOTP recovery codes"
-            description="Save these one-time recovery codes now. They will not be shown again after this dialog is closed."
+            description="Save these 10 one-time recovery codes now. Each code can be used once and will not be shown again."
             onOpenChange={(nextOpen) => {
               if (!nextOpen) {
                 closeRecoveryModal();
@@ -565,7 +613,7 @@ export function TotpPanel({ enabled }: { enabled: boolean }) {
                 </Button>
                 <Button type="button" variant="secondary" onClick={downloadRecoveryCodes}>
                   <Download className="mr-2 h-4 w-4" />
-                  Download codes
+                  Download txt
                 </Button>
                 <Button type="button" onClick={closeRecoveryModal}>
                   I have saved them

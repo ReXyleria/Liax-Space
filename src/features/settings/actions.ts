@@ -21,11 +21,11 @@ function revalidateSettingsPaths() {
     revalidatePath(localizedPath(locale), "layout");
     revalidatePath(localizedPath(locale, "/contact"));
   }
-  revalidatePath("/admin", "layout");
-  revalidatePath("/admin/settings/basic");
-  revalidatePath("/admin/settings/homepage");
-  revalidatePath("/admin/settings/footer");
-  revalidatePath("/admin/settings/translation");
+  revalidatePath("/console", "layout");
+  revalidatePath("/console/settings/basic");
+  revalidatePath("/console/settings/homepage");
+  revalidatePath("/console/settings/footer");
+  revalidatePath("/console/settings/translation");
 }
 
 function scheduleSettingTranslation(key: string, value: string) {
@@ -145,8 +145,8 @@ export async function updateIdentitySettingsAction(formData: FormData): Promise<
     const defaultIdentityId = formData.get("defaultIdentityId");
     await updateIdentitySettings(user, typeof defaultIdentityId === "string" ? defaultIdentityId : "");
     revalidateTag("settings");
-    revalidatePath("/admin/identity");
-    revalidatePath("/admin", "layout");
+    revalidatePath("/console/identity");
+    revalidatePath("/console", "layout");
     return { ok: true, message: "默认身份已保存。" };
   } catch (error) {
     return {

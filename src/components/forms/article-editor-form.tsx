@@ -462,7 +462,7 @@ export function ArticleEditorForm({
     setSeoError("");
     setSeoMessage("");
     startSeoTransition(() => {
-      void fetch("/api/admin/articles/translation-jobs", {
+      void fetch("/api/console/articles/translation-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ articleIds: [article.id], locale: "en" })

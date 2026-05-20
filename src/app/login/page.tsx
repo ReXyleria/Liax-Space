@@ -16,11 +16,11 @@ export default async function LoginPage({
   const callbackUrl =
     params.callbackUrl && params.callbackUrl.startsWith("/") && !params.callbackUrl.startsWith("//")
       ? params.callbackUrl
-      : "/admin";
+      : "/console";
   const [locale, { settings }, user] = await Promise.all([getCurrentLocale(), getSettingsMap(), getCurrentUser()]);
 
   if (user) {
-    redirect(callbackUrl === "/login" ? "/admin" : callbackUrl);
+    redirect(callbackUrl === "/login" ? "/console" : callbackUrl);
   }
 
   return (

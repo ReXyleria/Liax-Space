@@ -15,7 +15,7 @@ import {
   guestbookModerationSchema
 } from "@/features/guestbook/validators";
 
-async function getAdminEmail() {
+async function getConsoleEmail() {
   return db.user.findFirst({
     where: { role: UserRole.Administer, emailVerified: true },
     orderBy: { createdAt: "asc" },
@@ -32,18 +32,18 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#039;");
 }
 
-async function notifyAdmin(message: { nickname: string; email: string; content: string }) {
-  const admin = await getAdminEmail();
-  if (!admin?.email) {
+async function notifyConsole(message: { nickname: string; email: string; content: string }) {
+  const console = await getConsoleEmail();
+  if (!console?.email) {
     throw new Error("未找到可接收留言通知的管理员邮箱。");
   }
 
   const mailResult = await sendTemplatedMail({
-    to: admin.email,
+    to: console.email,
     scene: "guestbookReply",
     variables: {
-      nickname: admin.nickname,
-      "subscriber.displayName": admin.nickname,
+      nickname: console.nickname,
+      "subscriber.displayName": console.nickname,
       commenter: message.nickname,
       content: `${message.content}\n\nFrom: ${message.nickname} <${message.email}>`
     },
@@ -166,13 +166,13 @@ export async function createGuestbookMessage(input: unknown, user?: CurrentUser 
   if (!parsed.notifyOnly) {
     scheduleMessageTranslation(message);
   } else {
-    await notifyAdmin(parsed);
+    await notifyConsole(parsed);
   }
 
   return message;
 }
 
-export async function listAdminGuestbookMessages(user: CurrentUser) {
+export async function listConsoleGuestbookMessages(user: CurrentUser) {
   assertPermission(canManageGuestbook(user), "你没有权限管理留言板。");
 
   if (!isDatabaseConfigured()) {

@@ -24,10 +24,10 @@ function getProfileHref(user: Awaited<ReturnType<typeof getCurrentUser>>) {
   }
 
   if (user.role === UserRole.Administer) {
-    return "/admin";
+    return "/console";
   }
 
-  return "/admin/account";
+  return "/console/account";
 }
 
 function FilingLink({

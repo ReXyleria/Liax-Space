@@ -61,7 +61,7 @@ export async function updateTranslationSettingsAction(
     const user = await requireUser();
     const input = parseFormData(formData);
     await updateTranslationSettings(user, input);
-    revalidatePath("/admin/settings/translation");
+    revalidatePath("/console/settings/translation");
     return { ok: true, message: "翻译设置已保存。" };
   } catch (error) {
     return {
@@ -112,5 +112,5 @@ export async function testTranslationSampleAction(formData: FormData): Promise<T
 export async function retryPublicContentTranslationJobAction(formData: FormData) {
   const user = await requireUser();
   await retryPublicContentTranslationJob(user, String(formData.get("jobId") ?? ""));
-  revalidatePath("/admin/settings/translation");
+  revalidatePath("/console/settings/translation");
 }

@@ -24,6 +24,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(setupUrl);
   }
 
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    const consoleUrl = request.nextUrl.clone();
+    consoleUrl.pathname = pathname.replace(/^\/admin/, "/console");
+    return NextResponse.redirect(consoleUrl, 308);
+  }
+
+  if (pathname === "/api/admin" || pathname.startsWith("/api/admin/")) {
+    const consoleApiUrl = request.nextUrl.clone();
+    consoleApiUrl.pathname = pathname.replace(/^\/api\/admin/, "/api/console");
+    return NextResponse.rewrite(consoleApiUrl);
+  }
+
   if (pathname === "/") {
     const url = request.nextUrl.clone();
     const appLocale = resolvePreferredAppLocale(request);
@@ -41,7 +53,7 @@ export async function middleware(request: NextRequest) {
     return new NextResponse(null, { status: 404 });
   }
 
-  if (pathname.startsWith("/admin") && !request.cookies.has(SESSION_COOKIE_NAME)) {
+  if (pathname.startsWith("/console") && !request.cookies.has(SESSION_COOKIE_NAME)) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", `${pathname}${search}`);
     return NextResponse.redirect(loginUrl);
