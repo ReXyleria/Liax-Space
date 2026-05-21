@@ -3,7 +3,6 @@
 import { useActionState, useEffect, useState } from "react";
 import type { TranslationStatus } from "@prisma/client";
 import { ArticleEditorForm } from "@/components/forms/article-editor-form";
-import { ArticleTranslationEditorForm } from "@/components/forms/article-translation-editor-form";
 import type { PreviewSiteSettings } from "@/components/forms/article-preview-overlay";
 import { Button } from "@/components/ui/button";
 import { translateArticleAction, type ArticleTranslationActionState } from "@/features/articles/translation-actions";
@@ -39,16 +38,18 @@ function labels(locale: Locale) {
   return locale === "en"
     ? {
         sourceLanguage: "Source language",
-        sourceLanguageNote: "The selected language is saved in Article. The other language is saved in ArticleTranslation.",
-        manualTranslate: "Rebuild translation",
+        sourceLanguageNote: "Choose the language used by the current editor content.",
+        translateToChinese: "Translate to Chinese",
+        translateToEnglish: "Translate to English",
         manualTranslateHint: "Run translation for the other language now.",
         translating: "Translating...",
         progressFallback: "Preparing translation..."
       }
     : {
         sourceLanguage: "原文语言",
-        sourceLanguageNote: "选择的语言保存到 Article，另一种语言保存到 ArticleTranslation。",
-        manualTranslate: "重新生成翻译",
+        sourceLanguageNote: "选择当前编辑器正文使用的语言。",
+        translateToChinese: "翻译为中文",
+        translateToEnglish: "翻译为英文",
         manualTranslateHint: "立即为另一种语言重新执行翻译。",
         translating: "翻译中...",
         progressFallback: "正在准备翻译..."
@@ -83,10 +84,8 @@ export function ArticleLanguageWorkspace({
   const text = labels(locale);
   const initialSourceLocale = normalizeArticleLanguage(article.sourceLocale);
   const [sourceLocale, setSourceLocale] = useState<ArticleLanguage>(initialSourceLocale);
-  const [language, setLanguage] = useState<ArticleLanguage>(initialSourceLocale);
   const translationTarget = otherLanguage(sourceLocale);
   const counterpartTranslation = translations.find((translation) => normalizeArticleLanguage(translation.locale) === translationTarget) ?? null;
-  const activeTranslation = translations.find((translation) => normalizeArticleLanguage(translation.locale) === language) ?? null;
   const [translateState, translateFormAction, isTranslating] = useActionState<ArticleTranslationActionState, FormData>(
     translateArticleAction,
     { ok: false, message: "" }
@@ -138,7 +137,10 @@ export function ArticleLanguageWorkspace({
 
   function changeSourceLocale(nextLocale: ArticleLanguage) {
     setSourceLocale(nextLocale);
-    setLanguage(nextLocale);
+  }
+
+  function translateButtonLabel(targetLocale: ArticleLanguage) {
+    return targetLocale === "zh-CN" ? text.translateToChinese : text.translateToEnglish;
   }
 
   return (
@@ -166,22 +168,10 @@ export function ArticleLanguageWorkspace({
               <input type="hidden" name="articleId" value={article.id} />
               <input type="hidden" name="locale" value={translationTarget} />
               <Button type="submit" variant="secondary" title={text.manualTranslateHint}>
-                {isTranslating ? text.translating : `${text.manualTranslate} ${languageLabel(translationTarget)}`}
+                {isTranslating ? text.translating : translateButtonLabel(translationTarget)}
               </Button>
             </form>
           </div>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {(["zh-CN", "en"] as const).map((item) => (
-            <Button
-              key={item}
-              type="button"
-              variant={language === item ? "primary" : "ghost"}
-              onClick={() => setLanguage(item)}
-            >
-              {languageLabel(item)}
-            </Button>
-          ))}
         </div>
       </div>
 
@@ -212,25 +202,16 @@ export function ArticleLanguageWorkspace({
         </div>
       ) : null}
 
-      {language === sourceLocale ? (
-        <ArticleEditorForm
-          locale={locale}
-          article={{ ...article, sourceLocale }}
-          counterpartTranslation={counterpartTranslation}
-          sourceLocale={sourceLocale}
-          onSourceLocaleChange={changeSourceLocale}
-          showSourceLocaleControl={false}
-          tagOptions={tagOptions}
-          site={site}
-        />
-      ) : (
-        <ArticleTranslationEditorForm
-          article={{ ...article, sourceLocale }}
-          targetLocale={language}
-          translation={activeTranslation}
-          locale={locale}
-        />
-      )}
+      <ArticleEditorForm
+        locale={locale}
+        article={{ ...article, sourceLocale }}
+        counterpartTranslation={counterpartTranslation}
+        sourceLocale={sourceLocale}
+        onSourceLocaleChange={changeSourceLocale}
+        showSourceLocaleControl={false}
+        tagOptions={tagOptions}
+        site={site}
+      />
     </div>
   );
 }

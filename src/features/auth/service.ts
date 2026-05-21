@@ -94,6 +94,37 @@ async function sendLoginCode(user: { email: string; nickname: string }) {
   }
 }
 
+export async function sendPendingLoginEmailCode(pendingToken: string): Promise<AuthResponse> {
+  if (!isDatabaseConfigured()) {
+    return { ok: false, message: "DATABASE_URL is not configured." };
+  }
+
+  try {
+    const pending = await getPendingLogin(pendingToken);
+    if (!pending) {
+      return { ok: false, message: "Second-factor verification expired. Sign in again." };
+    }
+
+    const { user } = pending;
+    if (user.status !== UserStatus.ACTIVE) {
+      return { ok: false, message: "This account is disabled." };
+    }
+
+    if (!user.emailVerified) {
+      return { ok: false, message: "Email is not verified yet." };
+    }
+
+    await sendLoginCode(user);
+    return { ok: true, message: "Verification code sent." };
+  } catch (error) {
+    console.error("Failed to send login recovery email code", error);
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to send verification code."
+    };
+  }
+}
+
 async function verifyLoginCode(email: string, code?: string | null) {
   const normalizedCode = code?.trim();
   if (!normalizedCode) {
@@ -448,6 +479,16 @@ export async function loginUser(
       const backupMethods = buildBackupSecondFactorMethods(user);
       const hasTotp = backupMethods.includes("totp");
       const pendingToken = await createPendingLogin(user.id);
+      if (hasTotp) {
+        return {
+          ok: false,
+          requiresSecondFactor: true,
+          pendingToken,
+          secondFactors: ["email", ...backupMethods],
+          message: "Enter your authenticator code to continue. If you lost your authenticator, use email verification or a recovery code."
+        };
+      }
+
       try {
         await sendLoginCode(user);
         return {

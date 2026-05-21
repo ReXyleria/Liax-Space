@@ -4,6 +4,7 @@ import type { CurrentUser } from "@/lib/auth";
 import { assertPermission, canManageMailTemplates } from "@/lib/permissions";
 import { sendTemplatedMail } from "@/lib/mail";
 import {
+  legacyMailTemplateDefaults,
   mailDbSceneToDefinition,
   mailTemplateDefinitions,
   sampleVariables
@@ -16,8 +17,8 @@ export async function ensureMailTemplates() {
   }
 
   await Promise.all(
-    mailTemplateDefinitions.map((definition) =>
-      db.mailTemplate.upsert({
+    mailTemplateDefinitions.map(async (definition) => {
+      await db.mailTemplate.upsert({
         where: { scene: definition.scene },
         update: {},
         create: {
@@ -25,8 +26,29 @@ export async function ensureMailTemplates() {
           subject: definition.subject,
           bodyHtml: definition.bodyHtml
         }
-      })
-    )
+      });
+
+      const legacy = legacyMailTemplateDefaults.get(definition.scene);
+      if (legacy?.subjects?.length) {
+        await db.mailTemplate.updateMany({
+          where: {
+            scene: definition.scene,
+            subject: { in: legacy.subjects }
+          },
+          data: { subject: definition.subject }
+        });
+      }
+
+      if (legacy?.bodyHtmls?.length) {
+        await db.mailTemplate.updateMany({
+          where: {
+            scene: definition.scene,
+            bodyHtml: { in: legacy.bodyHtmls }
+          },
+          data: { bodyHtml: definition.bodyHtml }
+        });
+      }
+    })
   );
 }
 

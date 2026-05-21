@@ -16,7 +16,7 @@ const CACHE_DIR = process.env.CACHE_DIR || path.join(STORAGE_DIR, "cache");
 const TOKEN_FILE = path.join(CONFIG_DIR, "setup-token");
 const STATUS_FILE = path.join(CONFIG_DIR, "setup-status.json");
 const PRISMA_BIN = process.env.PRISMA_BIN || "/opt/prisma-cli/node_modules/prisma/build/index.js";
-const WORKER_TSX_BIN = process.env.WORKER_TSX_BIN || "/opt/prisma-cli/node_modules/tsx/dist/cli.mjs";
+const WORKER_BUNDLE = process.env.WORKER_BUNDLE || ".next/worker/worker.mjs";
 const DATABASE_BOOTSTRAP_ATTEMPTS = Number.parseInt(process.env.DATABASE_BOOTSTRAP_ATTEMPTS || "45", 10);
 const DATABASE_BOOTSTRAP_INTERVAL_SECONDS = Number.parseInt(process.env.DATABASE_BOOTSTRAP_INTERVAL_SECONDS || "2", 10);
 const RUNTIME_UID = "1001";
@@ -191,7 +191,7 @@ function startRuntime(args) {
   if (args[0] === "worker") {
     process.env.BACKGROUND_WORKER_ROLE ||= "worker";
     console.log("[setup] Starting background worker.");
-    execRuntime(process.execPath, [cliEntry(WORKER_TSX_BIN), "scripts/worker.ts"]);
+    execRuntime(process.execPath, [WORKER_BUNDLE]);
     return;
   }
 

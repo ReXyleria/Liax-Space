@@ -191,6 +191,7 @@ export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { call
   const [trustDevice, setTrustDevice] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [isPasskeyPending, startPasskeyTransition] = useTransition();
+  const [isEmailCodePending, startEmailCodeTransition] = useTransition();
 
   const requiresSecondFactor = Boolean(pendingToken);
   const allowEmail = secondFactors.includes("email");
@@ -225,6 +226,20 @@ export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { call
       setSecondFactors(methods);
       setSecondFactorStep(getInitialSecondFactorStep(methods));
     }
+  }
+
+  async function requestSecondFactorEmailCode() {
+    if (!pendingToken || isEmailCodePending) {
+      return;
+    }
+
+    startEmailCodeTransition(async () => {
+      const result = await postJson("/api/auth/login/email-code", { pendingToken });
+      setState(result);
+      if (result.ok) {
+        setSecondFactorStep("email");
+      }
+    });
   }
 
   async function runPasskeyLogin() {
@@ -355,10 +370,13 @@ export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { call
                     type="button"
                     variant="secondary"
                     className="h-auto justify-start whitespace-normal px-3 py-2 text-left"
-                    onClick={() => setSecondFactorStep("email")}
+                    disabled={isEmailCodePending}
+                    onClick={requestSecondFactorEmailCode}
                   >
                     <span>
-                      <span className="block text-sm font-medium">{text.emailCodeOption}</span>
+                      <span className="block text-sm font-medium">
+                        {isEmailCodePending ? text.sending : text.emailCodeOption}
+                      </span>
                       <span className="block text-xs font-normal text-muted-foreground">{text.emailCodeOptionHint}</span>
                     </span>
                   </Button>

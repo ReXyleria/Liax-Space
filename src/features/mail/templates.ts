@@ -10,6 +10,11 @@ export type MailTemplateDefinition = {
   bodyHtml: string;
 };
 
+type LegacyMailTemplateDefaults = {
+  subjects?: string[];
+  bodyHtmls?: string[];
+};
+
 const shellStart = `
 <div style="font-family:Inter,Arial,sans-serif;background:#f8fafc;padding:24px;color:#0f172a">
   <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
@@ -105,7 +110,7 @@ export const mailTemplateDefinitions: MailTemplateDefinition[] = [
     category: "Auth",
     name: "Login verification code",
     description: "Sent when a new or untrusted device needs email second-factor verification.",
-    subject: "Login verification code 路 ${site.title}",
+    subject: "Login verification code · ${site.title}",
     bodyHtml: html(`
       <p>Hello \${nickname},</p>
       <p>Your login verification code is:</p>
@@ -194,6 +199,18 @@ export const mailTemplateDefinitions: MailTemplateDefinition[] = [
     `)
   }
 ];
+
+export const legacyMailTemplateDefaults = new Map<MailTemplateScene, LegacyMailTemplateDefaults>([
+  [
+    MailTemplateScene.LOGIN_CODE,
+    {
+      subjects: [
+        `Login verification code ${"\u8def"} \${site.title}`,
+        `Login verification code ${"\u74ba"}?\${site.title}`
+      ]
+    }
+  ]
+]);
 
 export const mailSceneKeyToDbScene = Object.fromEntries(
   mailTemplateDefinitions.map((definition) => [definition.key, definition.scene])
