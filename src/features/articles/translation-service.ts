@@ -31,10 +31,18 @@ export function normalizeTranslationLocale(value: string) {
   return value || "en";
 }
 
+export const articleLanguageLocales = ["zh-CN", "en"] as const;
+export type ArticleLanguageLocale = typeof articleLanguageLocales[number];
+
+export function normalizeArticleLanguageLocale(value: unknown): ArticleLanguageLocale {
+  return normalizeTranslationLocale(String(value ?? "zh-CN")) === "en" ? "en" : "zh-CN";
+}
+
 export type ArticleTranslationDisplaySource = {
   title: string;
   summary: string | null;
   contentHtml: string;
+  sourceLocale?: string | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
   translations: Array<{
@@ -56,6 +64,7 @@ type ArticleTranslationSource = {
   summary: string | null;
   contentHtml: string;
   contentJson?: unknown;
+  sourceLocale?: string | null;
   updatedAt: Date;
 };
 
@@ -64,13 +73,14 @@ export function resolveArticleDisplayTranslation(
   locale?: string | null
 ) {
   const normalizedLocale = locale ? normalizeTranslationLocale(locale) : null;
+  const sourceLocale = normalizeArticleLanguageLocale(article.sourceLocale);
   const sourceHash = hashArticleSource({
     title: article.title,
     summary: article.summary,
     contentHtml: article.contentHtml
   });
 
-  if (!normalizedLocale || normalizedLocale === "zh-CN") {
+  if (!normalizedLocale || normalizedLocale === sourceLocale) {
     return {
       title: article.title,
       summary: article.summary,
@@ -178,6 +188,10 @@ async function markTranslationInProgress(
 ) {
   const completedUnits = progress.completedUnits ?? 0;
   const totalUnits = progress.totalUnits ?? 0;
+  if (normalizeArticleLanguageLocale(article.sourceLocale) === normalizeArticleLanguageLocale(locale)) {
+    return;
+  }
+
   await db.articleTranslation.upsert({
     where: { articleId_locale: { articleId: article.id, locale } },
     update: {
@@ -259,6 +273,7 @@ export async function executeArticleTranslation(
       summary: true,
       contentHtml: true,
       contentJson: true,
+      sourceLocale: true,
       updatedAt: true
     }
   });
@@ -268,6 +283,11 @@ export async function executeArticleTranslation(
   }
 
   const contentHash = hashArticleSource(article);
+  if (normalizeArticleLanguageLocale(article.sourceLocale) === normalizeArticleLanguageLocale(locale)) {
+    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "Source language already available" });
+    return { articleSlug: article.slug };
+  }
+
   const existing = await db.articleTranslation.findUnique({
     where: { articleId_locale: { articleId, locale } }
   });
@@ -363,6 +383,7 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
   }
 
   const contentHash = hashArticleSource(article);
+  const sourceLocale = normalizeArticleLanguageLocale(article.sourceLocale);
   const existingTranslations = await db.articleTranslation.findMany({
     where: { articleId: article.id },
     select: {
@@ -372,7 +393,7 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
     }
   });
   const staleLocales = existingTranslations
-    .filter((translation) => translation.contentHash !== contentHash)
+    .filter((translation) => translation.locale !== sourceLocale && translation.contentHash !== contentHash)
     .map((translation) => translation.locale);
 
   if (staleLocales.length) {
@@ -409,7 +430,7 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
   }
 
   const locale = normalizeTranslationLocale(config.targetLang);
-  if (normalizeTranslationLocale(config.sourceLang) === locale) {
+  if (normalizeTranslationLocale(config.sourceLang) === locale || normalizeArticleLanguageLocale(locale) === sourceLocale) {
     return;
   }
 
@@ -491,6 +512,7 @@ export async function upsertManualArticleTranslation(
       title: true,
       summary: true,
       contentHtml: true,
+      sourceLocale: true,
       updatedAt: true
     }
   });
@@ -500,6 +522,10 @@ export async function upsertManualArticleTranslation(
   }
 
   const locale = normalizeTranslationLocale(input.locale);
+  if (normalizeArticleLanguageLocale(article.sourceLocale) === normalizeArticleLanguageLocale(locale)) {
+    throw new Error("Selected language is the article source. Use the main article editor for this language.");
+  }
+
   const contentHash = hashArticleSource(article);
   const sanitizedHtml = sanitizeArticleHtml(input.contentHtml);
 

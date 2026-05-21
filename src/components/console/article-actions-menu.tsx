@@ -29,16 +29,39 @@ export type ArticleRowData = {
   featured: boolean;
   seoTitle: string | null;
   seoDescription: string | null;
+  sourceLocale: "zh-CN" | "en";
   targetTranslationTitle?: string | null;
   targetTranslationSummary?: string | null;
   targetTranslationContentHtml?: string | null;
   targetTranslationSeoTitle?: string | null;
   targetTranslationSeoDescription?: string | null;
+  counterpartLocale?: "zh-CN" | "en";
+  counterpartTranslationTitle?: string | null;
+  counterpartTranslationSummary?: string | null;
+  counterpartTranslationContentHtml?: string | null;
+  counterpartTranslationSeoTitle?: string | null;
+  counterpartTranslationSeoDescription?: string | null;
   publishedAt: string | null;
   createdAt: Date | string;
   translationReady?: boolean;
   translationTargetLocale?: string;
   targetTranslationStatus?: string | null;
+  languageStatuses?: {
+    "zh-CN": {
+      locale: "zh-CN" | "en";
+      isSource: boolean;
+      ready: boolean;
+      status: string | null;
+      error: string | null;
+    };
+    en: {
+      locale: "zh-CN" | "en";
+      isSource: boolean;
+      ready: boolean;
+      status: string | null;
+      error: string | null;
+    };
+  };
   tags: Array<{ name: string }>;
 };
 

@@ -15,6 +15,7 @@ export type ArticlePreviewDraft = {
   contentHtml: string;
   contentJson: string;
   status: string;
+  sourceLocale: string;
   visibility: string;
   tagNames: string;
   seoTitle: string;

@@ -14,6 +14,7 @@ import type { CurrentUser } from "@/lib/auth";
 import { articleMutationSchema, articleMetaSchema, articleQuerySchema } from "@/features/articles/validators";
 import {
   hashArticleSource,
+  normalizeArticleLanguageLocale,
   normalizeTranslationLocale,
   resolveArticleDisplayTranslation,
   scheduleArticleTranslationSync
@@ -120,6 +121,40 @@ function normalizeDisplayLocale(locale?: string | null) {
   return locale;
 }
 
+function languageStatus(
+  article: ArticleWithRelations,
+  translations: ArticleWithRelations["translations"],
+  contentHash: string,
+  locale: "zh-CN" | "en",
+  sourceLocale: "zh-CN" | "en"
+) {
+  if (locale === sourceLocale) {
+    return {
+      locale,
+      isSource: true,
+      ready: true,
+      status: "SOURCE" as const,
+      error: null as string | null
+    };
+  }
+
+  const translation = translations.find((item) => item.locale === locale);
+  const ready = Boolean(
+    translation &&
+    translation.status === TranslationStatus.TRANSLATED &&
+    translation.contentHash === contentHash &&
+    translation.contentHtml.trim()
+  );
+
+  return {
+    locale,
+    isSource: false,
+    ready,
+    status: translation?.status ?? null,
+    error: translation?.error ?? null
+  };
+}
+
 function mapArticle(article: ArticleWithRelations, locale?: string | null, translationTargetLocale = "en") {
   const display = resolveArticleDisplayTranslation(article, locale);
   const { tags, translations, ...rest } = article;
@@ -129,15 +164,28 @@ function mapArticle(article: ArticleWithRelations, locale?: string | null, trans
     summary: article.summary,
     contentHtml: article.contentHtml
   });
+  const sourceLocale = normalizeArticleLanguageLocale(article.sourceLocale);
   const normalizedTargetLocale = normalizeTranslationLocale(translationTargetLocale);
-  const targetTranslation = translations.find((translation) => translation.locale === normalizedTargetLocale);
+  const counterpartLocale: "zh-CN" | "en" = sourceLocale === "zh-CN" ? "en" : "zh-CN";
+  const targetTranslation = normalizedTargetLocale === sourceLocale
+    ? null
+    : translations.find((translation) => translation.locale === normalizedTargetLocale);
+  const counterpartTranslation = translations.find((translation) => translation.locale === counterpartLocale);
   const translationReady =
-    Boolean(targetTranslation) &&
-    targetTranslation?.status === TranslationStatus.TRANSLATED &&
-    targetTranslation.contentHash === contentHash;
+    normalizedTargetLocale === sourceLocale ||
+    (
+      Boolean(targetTranslation) &&
+      targetTranslation?.status === TranslationStatus.TRANSLATED &&
+      targetTranslation.contentHash === contentHash
+    );
+  const languageStatuses = {
+    "zh-CN": languageStatus(article, translations, contentHash, "zh-CN", sourceLocale),
+    en: languageStatus(article, translations, contentHash, "en", sourceLocale)
+  };
 
   return {
     ...rest,
+    sourceLocale,
     title: display.title,
     summary: display.summary,
     contentHtml: display.contentHtml,
@@ -146,12 +194,19 @@ function mapArticle(article: ArticleWithRelations, locale?: string | null, trans
     translationError: display.error,
     translationTargetLocale: normalizedTargetLocale,
     translationReady,
+    languageStatuses,
+    counterpartLocale,
+    counterpartTranslationTitle: counterpartTranslation?.title ?? null,
+    counterpartTranslationSummary: counterpartTranslation?.summary ?? null,
+    counterpartTranslationContentHtml: counterpartTranslation?.contentHtml ?? null,
+    counterpartTranslationSeoTitle: counterpartTranslation?.seoTitle ?? null,
+    counterpartTranslationSeoDescription: counterpartTranslation?.seoDescription ?? null,
     targetTranslationStatus: targetTranslation?.status ?? null,
-    targetTranslationTitle: targetTranslation?.title ?? null,
-    targetTranslationSummary: targetTranslation?.summary ?? null,
-    targetTranslationContentHtml: targetTranslation?.contentHtml ?? null,
-    targetTranslationSeoTitle: targetTranslation?.seoTitle ?? null,
-    targetTranslationSeoDescription: targetTranslation?.seoDescription ?? null,
+    targetTranslationTitle: normalizedTargetLocale === sourceLocale ? article.title : targetTranslation?.title ?? null,
+    targetTranslationSummary: normalizedTargetLocale === sourceLocale ? article.summary : targetTranslation?.summary ?? null,
+    targetTranslationContentHtml: normalizedTargetLocale === sourceLocale ? article.contentHtml : targetTranslation?.contentHtml ?? null,
+    targetTranslationSeoTitle: normalizedTargetLocale === sourceLocale ? article.seoTitle : targetTranslation?.seoTitle ?? null,
+    targetTranslationSeoDescription: normalizedTargetLocale === sourceLocale ? article.seoDescription : targetTranslation?.seoDescription ?? null,
     publishedAt: rest.publishedAt?.toISOString() ?? null,
     tags: tags.map((item) => item.tag).filter(isDefined)
   };
@@ -216,6 +271,7 @@ async function recordArticleVersion(
     | "featured"
     | "seoTitle"
     | "seoDescription"
+    | "sourceLocale"
   >,
   tagNames: string[],
   userId: string
@@ -237,6 +293,7 @@ async function recordArticleVersion(
       featured: article.featured,
       seoTitle: article.seoTitle,
       seoDescription: article.seoDescription,
+      sourceLocale: article.sourceLocale,
       allowedIdentityIds: [],
       tagNames,
       createdById: userId
@@ -540,6 +597,7 @@ export async function createArticle(user: CurrentUser, input: unknown) {
       featured: parsed.featured,
       seoTitle: parsed.seoTitle,
       seoDescription: parsed.seoDescription,
+      sourceLocale: parsed.sourceLocale,
       authorId: user.id,
       publishedAt: parsed.status === ArticleStatus.PUBLISHED ? (parsed.publishedAt ?? new Date()) : (parsed.publishedAt ?? null)
     }
@@ -588,6 +646,7 @@ export async function updateArticle(user: CurrentUser, id: string, input: unknow
       featured: parsed.featured,
       seoTitle: parsed.seoTitle,
       seoDescription: parsed.seoDescription,
+      sourceLocale: parsed.sourceLocale,
       publishedAt:
         parsed.status === ArticleStatus.PUBLISHED
           ? (parsed.publishedAt ?? existing.publishedAt ?? new Date())
@@ -658,6 +717,7 @@ export async function restoreArticleVersion(user: CurrentUser, articleId: string
       featured: version.featured,
       seoTitle: version.seoTitle,
       seoDescription: version.seoDescription,
+      sourceLocale: version.sourceLocale,
       publishedAt: version.status === ArticleStatus.PUBLISHED ? new Date() : null
     }
   });

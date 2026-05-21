@@ -2,6 +2,7 @@ import { ArticleStatus, ContentVisibility } from "@prisma/client";
 import { z } from "zod";
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const articleLocaleSchema = z.enum(["zh-CN", "en"]).default("zh-CN");
 
 export const articleMutationSchema = z.object({
   title: z.string().trim().min(2, "Title must be at least 2 characters.").max(120, "Title cannot exceed 120 characters."),
@@ -23,6 +24,7 @@ export const articleMutationSchema = z.object({
   featured: z.boolean().default(false),
   seoTitle: z.string().max(120, "SEO title cannot exceed 120 characters.").optional().default(""),
   seoDescription: z.string().max(300, "SEO description cannot exceed 300 characters.").optional().default(""),
+  sourceLocale: articleLocaleSchema,
   tagNames: z.array(z.string().trim().min(1).max(30, "Tag cannot exceed 30 characters.")).max(12, "At most 12 tags are allowed.").default([]),
   publishedAt: z.preprocess(
     (value) => {

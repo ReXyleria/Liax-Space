@@ -47,6 +47,7 @@ export default async function EditArticlePage({
     featured: article.featured,
     seoTitle: article.seoTitle,
     seoDescription: article.seoDescription,
+    sourceLocale: article.sourceLocale,
     tags: article.tags.flatMap((tag) => (tag?.name ? [{ name: tag.name }] : []))
   };
 

@@ -45,11 +45,13 @@ type ArticleFormValue = {
   featured: boolean;
   seoTitle: string | null;
   seoDescription: string | null;
+  sourceLocale: "zh-CN" | "en";
   publishedAt: string | null;
   tags: Array<{ name: string }>;
 };
 
 type ArticleTranslationFormValue = {
+  locale: string;
   title: string;
   summary: string | null;
   contentHtml: string;
@@ -110,8 +112,8 @@ function labels(locale: Locale) {
         seoDescriptionLabel: "SEO description",
         generateSeo: "Generate SEO with AI",
         generatingSeo: "Generating...",
-        englishSeoNeedsTranslation: "No English translation is available yet. The article translation has been queued first.",
-        englishSeoUnavailableForNew: "Save the article first, then generate English SEO from its translation.",
+        englishSeoNeedsTranslation: "No target-language translation is available yet. The article translation has been queued first.",
+        englishSeoUnavailableForNew: "Save the article first, then generate SEO from its target-language translation.",
         allowCommentsLabel: "Allow comments",
         pinnedLabel: "Pinned",
         featuredLabel: "Featured",
@@ -170,8 +172,8 @@ function labels(locale: Locale) {
         seoDescriptionLabel: "SEO 描述",
         generateSeo: "AI 生成 SEO",
         generatingSeo: "生成中...",
-        englishSeoNeedsTranslation: "当前还没有英文译文，已先排队文章翻译。",
-        englishSeoUnavailableForNew: "请先保存文章，再基于英文译文生成英文 SEO。",
+        englishSeoNeedsTranslation: "当前还没有目标语言译文，已先排队文章翻译。",
+        englishSeoUnavailableForNew: "请先保存文章，再基于目标语言译文生成 SEO。",
         allowCommentsLabel: "允许评论",
         pinnedLabel: "置顶",
         featuredLabel: "精选",
@@ -260,7 +262,10 @@ function createShortUuid() {
 
 export function ArticleEditorForm({
   article,
-  englishTranslation = null,
+  counterpartTranslation = null,
+  sourceLocale: sourceLocaleProp,
+  onSourceLocaleChange,
+  showSourceLocaleControl = true,
   tagOptions = [],
   versions: initialVersions = [],
   site,
@@ -268,7 +273,10 @@ export function ArticleEditorForm({
   locale = "zh-CN"
 }: {
   article?: ArticleFormValue | null;
-  englishTranslation?: ArticleTranslationFormValue | null;
+  counterpartTranslation?: ArticleTranslationFormValue | null;
+  sourceLocale?: "zh-CN" | "en";
+  onSourceLocaleChange?: (locale: "zh-CN" | "en") => void;
+  showSourceLocaleControl?: boolean;
   tagOptions?: Array<{ name: string }>;
   versions?: ArticleVersionValue[];
   site: PreviewSiteSettings;
@@ -299,8 +307,10 @@ export function ArticleEditorForm({
   const [cover, setCover] = useState(article?.cover ?? "");
   const [seoTitle, setSeoTitle] = useState(article?.seoTitle ?? "");
   const [seoDescription, setSeoDescription] = useState(article?.seoDescription ?? "");
-  const [translationSeoTitle, setTranslationSeoTitle] = useState(englishTranslation?.seoTitle ?? "");
-  const [translationSeoDescription, setTranslationSeoDescription] = useState(englishTranslation?.seoDescription ?? "");
+  const [sourceLocale, setSourceLocale] = useState<"zh-CN" | "en">(sourceLocaleProp ?? article?.sourceLocale ?? "zh-CN");
+  const counterpartLocale = sourceLocale === "zh-CN" ? "en" : "zh-CN";
+  const [translationSeoTitle, setTranslationSeoTitle] = useState(counterpartTranslation?.seoTitle ?? "");
+  const [translationSeoDescription, setTranslationSeoDescription] = useState(counterpartTranslation?.seoDescription ?? "");
   const [allowComments, setAllowComments] = useState(article?.allowComments ?? true);
   const [pinned, setPinned] = useState(article?.pinned ?? false);
   const [featured, setFeatured] = useState(article?.featured ?? false);
@@ -345,6 +355,7 @@ export function ArticleEditorForm({
       contentHtml: String(formData.get("contentHtml") ?? ""),
       contentJson: String(formData.get("contentJson") ?? JSON.stringify({ type: "doc", content: [] })),
       status,
+      sourceLocale,
       visibility,
       tagNames: selectedTags.join(", "),
       seoTitle,
@@ -365,6 +376,7 @@ export function ArticleEditorForm({
     seoDescription,
     seoTitle,
     slug,
+    sourceLocale,
     status,
     summary,
     title,
@@ -383,6 +395,12 @@ export function ArticleEditorForm({
     }, 450);
   }, [collectDraft, draftKey]);
 
+  const updateSourceLocale = useCallback((nextLocale: "zh-CN" | "en") => {
+    setSourceLocale(nextLocale);
+    onSourceLocaleChange?.(nextLocale);
+    scheduleDraftSave();
+  }, [onSourceLocaleChange, scheduleDraftSave]);
+
   const restoreDraft = useCallback((draft: ArticleDraft) => {
     setTitle(draft.title);
     setSlug(draft.slug);
@@ -396,16 +414,21 @@ export function ArticleEditorForm({
     setPublishedAt(draft.publishedAt);
     setEditorInitial({ html: draft.contentHtml, json: parseJsonDraft(draft.contentJson) });
     setStatus(draft.status);
+    updateSourceLocale(draft.sourceLocale === "en" ? "en" : "zh-CN");
     setVisibility(draft.visibility);
     setSelectedTags(draft.tagNames.split(",").map((tag) => tag.trim()).filter(Boolean));
     setEditorKey((current) => current + 1);
     setPendingDraft(null);
-  }, []);
+  }, [updateSourceLocale]);
 
   useEffect(() => {
-    setTranslationSeoTitle(englishTranslation?.seoTitle ?? "");
-    setTranslationSeoDescription(englishTranslation?.seoDescription ?? "");
-  }, [englishTranslation?.seoDescription, englishTranslation?.seoTitle]);
+    setSourceLocale(sourceLocaleProp ?? article?.sourceLocale ?? "zh-CN");
+  }, [article?.sourceLocale, sourceLocaleProp]);
+
+  useEffect(() => {
+    setTranslationSeoTitle(counterpartTranslation?.seoTitle ?? "");
+    setTranslationSeoDescription(counterpartTranslation?.seoDescription ?? "");
+  }, [counterpartTranslation?.seoDescription, counterpartTranslation?.seoTitle]);
 
   function submitWithStatus(nextStatus: ArticleStatus, returnToList = false) {
     const form = formRef.current;
@@ -452,20 +475,24 @@ export function ArticleEditorForm({
     }
   }
 
-  function queueEnglishTranslation() {
+  function languageSeoTitle(value: "zh-CN" | "en") {
+    return value === "zh-CN" ? text.chineseSeoTitle : text.englishSeoTitle;
+  }
+
+  function queueCounterpartTranslation() {
     if (!article) {
       setSeoError(text.englishSeoUnavailableForNew);
       return;
     }
 
-    setSeoTarget("en");
+    setSeoTarget(counterpartLocale);
     setSeoError("");
     setSeoMessage("");
     startSeoTransition(() => {
       void fetch("/api/console/articles/translation-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articleIds: [article.id], locale: "en" })
+        body: JSON.stringify({ articleIds: [article.id], locale: counterpartLocale })
       })
         .then(async (response) => {
           if (!response.ok) {
@@ -490,15 +517,16 @@ export function ArticleEditorForm({
     setSeoMessage("");
     setSeoTarget(target);
 
-    if (target === "en" && !englishTranslation?.contentHtml?.trim()) {
-      queueEnglishTranslation();
+    const isSourceTarget = target === sourceLocale;
+    if (!isSourceTarget && !counterpartTranslation?.contentHtml?.trim()) {
+      queueCounterpartTranslation();
       return;
     }
 
     const formData = new FormData();
-    formData.set("title", target === "en" ? englishTranslation?.title || draft.title : draft.title);
-    formData.set("summary", target === "en" ? englishTranslation?.summary || "" : draft.summary);
-    formData.set("contentHtml", target === "en" ? englishTranslation?.contentHtml || "" : draft.contentHtml);
+    formData.set("title", isSourceTarget ? draft.title : counterpartTranslation?.title || "");
+    formData.set("summary", isSourceTarget ? draft.summary : counterpartTranslation?.summary || "");
+    formData.set("contentHtml", isSourceTarget ? draft.contentHtml : counterpartTranslation?.contentHtml || "");
     formData.set("targetLocale", target);
 
     startSeoTransition(() => {
@@ -509,12 +537,12 @@ export function ArticleEditorForm({
             return;
           }
 
-          if (target === "en") {
-            setTranslationSeoTitle(result.seoTitle ?? "");
-            setTranslationSeoDescription(result.seoDescription ?? "");
-          } else {
+          if (isSourceTarget) {
             setSeoTitle(result.seoTitle ?? "");
             setSeoDescription(result.seoDescription ?? "");
+          } else {
+            setTranslationSeoTitle(result.seoTitle ?? "");
+            setTranslationSeoDescription(result.seoDescription ?? "");
           }
           setSeoMessage(result.message || text.seoGenerated);
           scheduleDraftSave();
@@ -606,6 +634,7 @@ export function ArticleEditorForm({
         onChange={scheduleDraftSave}
       >
         <input type="hidden" name="status" value={status} readOnly />
+        <input type="hidden" name="sourceLocale" value={sourceLocale} readOnly />
         <input type="hidden" name="slug" value={slug} readOnly />
         <input type="hidden" name="summary" value={summary} readOnly />
         <input type="hidden" name="cover" value={cover} readOnly />
@@ -617,7 +646,7 @@ export function ArticleEditorForm({
         <input type="hidden" name="seoDescription" value={seoDescription} readOnly />
         {article ? (
           <>
-            <input type="hidden" name="translationLocale" value="en" readOnly />
+            <input type="hidden" name="translationLocale" value={counterpartLocale} readOnly />
             <input type="hidden" name="translationSeoTitle" value={translationSeoTitle} readOnly />
             <input type="hidden" name="translationSeoDescription" value={translationSeoDescription} readOnly />
           </>
@@ -628,6 +657,32 @@ export function ArticleEditorForm({
         {featured ? <input type="hidden" name="featured" value="on" readOnly /> : null}
         <input ref={returnToListRef} type="hidden" name="returnToList" defaultValue="0" />
         <div className="space-y-6">
+          {showSourceLocaleControl ? (
+            <Card className="p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">{locale === "en" ? "Source language" : "原文语言"}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {locale === "en"
+                      ? "The selected language is stored as the article source."
+                      : "选择的语言会作为文章原文保存。"}
+                  </p>
+                </div>
+                <div className="flex rounded-lg bg-muted p-1">
+                  {(["zh-CN", "en"] as const).map((item) => (
+                    <Button
+                      key={item}
+                      type="button"
+                      variant={sourceLocale === item ? "primary" : "ghost"}
+                      onClick={() => updateSourceLocale(item)}
+                    >
+                      {item === "zh-CN" ? "中文" : "English"}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </Card>
+          ) : null}
           {warnings.length ? (
             <Card className="border-amber-300 bg-amber-50/80 p-4 text-amber-950">
               <div className="flex gap-3">
@@ -717,6 +772,7 @@ export function ArticleEditorForm({
                 <BlockEditor
                   key={editorKey}
                   title={title}
+                  locale={sourceLocale}
                   initialHtml={editorInitial.html}
                   initialJson={editorInitial.json}
                   onTitleChange={setTitle}
@@ -822,10 +878,10 @@ export function ArticleEditorForm({
               </div>
               <div className="space-y-3 rounded-md border bg-background/70 p-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm font-medium">{text.chineseSeoTitle}</p>
-                  <Button type="button" variant="secondary" onClick={() => handleGenerateSeo("zh-CN")} disabled={isGeneratingSeo}>
+                  <p className="text-sm font-medium">{languageSeoTitle(sourceLocale)}</p>
+                  <Button type="button" variant="secondary" onClick={() => handleGenerateSeo(sourceLocale)} disabled={isGeneratingSeo}>
                     <Sparkles className="mr-2 h-4 w-4" />
-                    {isGeneratingSeo && seoTarget === "zh-CN" ? text.generatingSeo : text.generateSeo}
+                    {isGeneratingSeo && seoTarget === sourceLocale ? text.generatingSeo : text.generateSeo}
                   </Button>
                 </div>
                 <Input
@@ -851,10 +907,10 @@ export function ArticleEditorForm({
               </div>
               <div className="space-y-3 rounded-md border bg-background/70 p-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm font-medium">{text.englishSeoTitle}</p>
-                  <Button type="button" variant="secondary" onClick={() => handleGenerateSeo("en")} disabled={isGeneratingSeo}>
+                  <p className="text-sm font-medium">{languageSeoTitle(counterpartLocale)}</p>
+                  <Button type="button" variant="secondary" onClick={() => handleGenerateSeo(counterpartLocale)} disabled={isGeneratingSeo}>
                     <Sparkles className="mr-2 h-4 w-4" />
-                    {isGeneratingSeo && seoTarget === "en" ? text.generatingSeo : text.generateSeo}
+                    {isGeneratingSeo && seoTarget === counterpartLocale ? text.generatingSeo : text.generateSeo}
                   </Button>
                 </div>
                 <Input

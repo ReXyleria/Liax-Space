@@ -353,6 +353,7 @@ model Article {
   viewCount         Int                      @default(0)
   seoTitle          String?
   seoDescription    String?                  @db.Text
+  sourceLocale      String                   @default("zh-CN")
   authorId          String
   publishedAt       DateTime?
   createdAt         DateTime                 @default(now())
@@ -505,6 +506,7 @@ model ArticleVersion {
   featured           Boolean
   seoTitle           String?
   seoDescription     String?           @db.Text
+  sourceLocale       String            @default("zh-CN")
   tagNames           Json
   allowedIdentityIds Json?
   createdById        String

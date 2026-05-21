@@ -86,6 +86,7 @@ function parseArticleForm(formData: FormData, options: { defaultAllowComments?: 
     featured: parseBoolean(formData.get("featured")),
     seoTitle: formData.get("seoTitle") ?? "",
     seoDescription: formData.get("seoDescription") ?? "",
+    sourceLocale: formData.get("sourceLocale") ?? "zh-CN",
     publishedAt: formData.get("publishedAt") ? new Date(String(formData.get("publishedAt"))).toISOString() : null,
     tagNames
   };

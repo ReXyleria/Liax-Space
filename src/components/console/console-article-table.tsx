@@ -144,6 +144,60 @@ function languageLabel(locale: Locale, value: string) {
   return value;
 }
 
+type ArticleLanguageStatus =
+  NonNullable<ArticleRowData["languageStatuses"]>[keyof NonNullable<ArticleRowData["languageStatuses"]>];
+
+function languageShortLabel(value: "zh-CN" | "en") {
+  return value === "zh-CN" ? "中文" : "English";
+}
+
+function languageStatusClass(status?: ArticleLanguageStatus) {
+  if (status?.isSource || status?.ready) {
+    return "bg-emerald-500";
+  }
+  if (status?.status === "TRANSLATING") {
+    return "bg-amber-500";
+  }
+  return "bg-red-500";
+}
+
+function languageStatusTitle(locale: Locale, status: ArticleLanguageStatus | undefined) {
+  const sourceReady = locale === "en" ? "source" : "原文";
+  const ready = locale === "en" ? "ready" : "可用";
+  const notReady = locale === "en" ? "not ready" : "未就绪";
+
+  if (!status) {
+    return notReady;
+  }
+  if (status.isSource) {
+    return `${languageShortLabel(status.locale)}: ${sourceReady}`;
+  }
+  if (status.ready) {
+    return `${languageShortLabel(status.locale)}: ${ready}`;
+  }
+  return `${languageShortLabel(status.locale)}: ${status.error || status.status || notReady}`;
+}
+
+function LanguageIndicator({
+  locale,
+  status,
+  displayLocale
+}: {
+  locale: Locale;
+  status: ArticleLanguageStatus | undefined;
+  displayLocale: "zh-CN" | "en";
+}) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2 py-1 text-xs text-muted-foreground"
+      title={languageStatusTitle(locale, status)}
+    >
+      <span className={cn("h-2.5 w-2.5 rounded-full", languageStatusClass(status))} />
+      {languageShortLabel(displayLocale)}
+    </span>
+  );
+}
+
 function localizeProgressMessage(value: string | null | undefined) {
   if (!value) return "";
   if (progressMessageLabels[value]) return progressMessageLabels[value];
@@ -345,19 +399,16 @@ export function ConsoleArticleTable({
                   <Link href={`/console/articles/${article.id}/edit`} className="font-medium hover:text-primary">
                     {article.title}
                   </Link>
-                  <span
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      article.translationReady ? "bg-emerald-500" : "bg-red-500"
-                    }`}
-                    title={
-                      article.translationReady
-                        ? `${text.translated}: ${article.translationTargetLocale}`
-                        : `${text.untranslated}: ${article.translationTargetLocale}`
-                    }
+                  <LanguageIndicator
+                    locale={locale}
+                    displayLocale="zh-CN"
+                    status={article.languageStatuses?.["zh-CN"]}
                   />
-                  <span className="text-xs text-muted-foreground">
-                    {article.translationReady ? text.translated : text.untranslated}
-                  </span>
+                  <LanguageIndicator
+                    locale={locale}
+                    displayLocale="en"
+                    status={article.languageStatuses?.en}
+                  />
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{article.slug}</p>
               </div>

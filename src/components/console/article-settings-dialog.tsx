@@ -33,8 +33,15 @@ type ArticleSettingsData = {
   featured: boolean;
   seoTitle: string | null;
   seoDescription: string | null;
+  sourceLocale: "zh-CN" | "en";
   publishedAt: string | null;
   translationTargetLocale?: string;
+  counterpartLocale?: "zh-CN" | "en";
+  counterpartTranslationTitle?: string | null;
+  counterpartTranslationSummary?: string | null;
+  counterpartTranslationContentHtml?: string | null;
+  counterpartTranslationSeoTitle?: string | null;
+  counterpartTranslationSeoDescription?: string | null;
   targetTranslationTitle?: string | null;
   targetTranslationSummary?: string | null;
   targetTranslationContentHtml?: string | null;
@@ -64,7 +71,7 @@ function labels(locale: Locale) {
         seoDescriptionLabel: "SEO description",
         generateSeo: "AI generate SEO",
         generatingSeo: "Generating...",
-        translationQueued: "English translation is not ready. The article has been queued for translation.",
+        translationQueued: "The target-language translation is not ready. The article has been queued for translation.",
         allowCommentsLabel: "Allow comments",
         pinnedLabel: "Pinned",
         featuredLabel: "Featured",
@@ -91,7 +98,7 @@ function labels(locale: Locale) {
         seoDescriptionLabel: "SEO 描述",
         generateSeo: "AI 生成 SEO",
         generatingSeo: "生成中...",
-        translationQueued: "英文译文尚未准备好，已将文章加入翻译队列。",
+        translationQueued: "目标语言译文尚未准备好，已将文章加入翻译队列。",
         allowCommentsLabel: "允许评论",
         pinnedLabel: "置顶",
         featuredLabel: "精选",
@@ -132,7 +139,8 @@ export function ArticleSettingsDialog({
   const [state, formAction, isPending] = useActionState(action, initialActionState);
   const [isSeoPending, startSeoTransition] = useTransition();
   const formId = `article-settings-form-${article.id}`;
-  const translationLocale = article.translationTargetLocale || "en";
+  const sourceLocale = article.sourceLocale ?? "zh-CN";
+  const translationLocale = article.counterpartLocale ?? (sourceLocale === "zh-CN" ? "en" : "zh-CN");
 
   const initialTags = article.tags.flatMap((tag) => (tag?.name ? [tag.name] : []));
   const [selectedTags, setSelectedTags] = useState(initialTags);
@@ -146,8 +154,8 @@ export function ArticleSettingsDialog({
   const [featured, setFeatured] = useState(article.featured);
   const [seoTitle, setSeoTitle] = useState(article.seoTitle ?? "");
   const [seoDescription, setSeoDescription] = useState(article.seoDescription ?? "");
-  const [translationSeoTitle, setTranslationSeoTitle] = useState(article.targetTranslationSeoTitle ?? "");
-  const [translationSeoDescription, setTranslationSeoDescription] = useState(article.targetTranslationSeoDescription ?? "");
+  const [translationSeoTitle, setTranslationSeoTitle] = useState(article.counterpartTranslationSeoTitle ?? article.targetTranslationSeoTitle ?? "");
+  const [translationSeoDescription, setTranslationSeoDescription] = useState(article.counterpartTranslationSeoDescription ?? article.targetTranslationSeoDescription ?? "");
   const [seoTarget, setSeoTarget] = useState<"zh-CN" | "en" | null>(null);
   const [seoMessage, setSeoMessage] = useState("");
   const [seoError, setSeoError] = useState("");
@@ -178,6 +186,10 @@ export function ArticleSettingsDialog({
 
   const isSubmitting = isPending || submitLocked;
 
+  function languageSeoLabel(value: "zh-CN" | "en") {
+    return value === "zh-CN" ? text.chineseSeo : text.englishSeo;
+  }
+
   function generateSeo(target: "zh-CN" | "en") {
     if (isSeoPending) {
       return;
@@ -187,7 +199,9 @@ export function ArticleSettingsDialog({
     setSeoMessage("");
     setSeoError("");
 
-    if (target === "en" && !article.targetTranslationContentHtml?.trim()) {
+    const isSourceTarget = target === sourceLocale;
+    const counterpartContentHtml = article.counterpartTranslationContentHtml ?? article.targetTranslationContentHtml ?? "";
+    if (!isSourceTarget && !counterpartContentHtml.trim()) {
       startSeoTransition(() => {
         void fetch("/api/console/articles/translation-jobs", {
           method: "POST",
@@ -202,9 +216,9 @@ export function ArticleSettingsDialog({
     }
 
     const formData = new FormData();
-    formData.set("title", target === "en" ? article.targetTranslationTitle || article.title : article.title);
-    formData.set("summary", target === "en" ? article.targetTranslationSummary || "" : summary);
-    formData.set("contentHtml", target === "en" ? article.targetTranslationContentHtml || "" : article.contentHtml);
+    formData.set("title", isSourceTarget ? article.title : article.counterpartTranslationTitle || article.targetTranslationTitle || "");
+    formData.set("summary", isSourceTarget ? summary : article.counterpartTranslationSummary || article.targetTranslationSummary || "");
+    formData.set("contentHtml", isSourceTarget ? article.contentHtml : counterpartContentHtml);
     formData.set("targetLocale", target);
 
     startSeoTransition(() => {
@@ -214,12 +228,12 @@ export function ArticleSettingsDialog({
             setSeoError(result.message);
             return;
           }
-          if (target === "en") {
-            setTranslationSeoTitle(result.seoTitle ?? "");
-            setTranslationSeoDescription(result.seoDescription ?? "");
-          } else {
+          if (isSourceTarget) {
             setSeoTitle(result.seoTitle ?? "");
             setSeoDescription(result.seoDescription ?? "");
+          } else {
+            setTranslationSeoTitle(result.seoTitle ?? "");
+            setTranslationSeoDescription(result.seoDescription ?? "");
           }
           setSeoMessage(result.message);
         })
@@ -302,10 +316,10 @@ export function ArticleSettingsDialog({
         </label>
         <section className="space-y-3 rounded-md border bg-background/70 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium">{text.chineseSeo}</p>
-            <Button type="button" variant="secondary" className="h-9 px-3" disabled={isSeoPending} onClick={() => generateSeo("zh-CN")}>
+            <p className="text-sm font-medium">{languageSeoLabel(sourceLocale)}</p>
+            <Button type="button" variant="secondary" className="h-9 px-3" disabled={isSeoPending} onClick={() => generateSeo(sourceLocale)}>
               <Sparkles className="mr-2 h-4 w-4" />
-              {isSeoPending && seoTarget === "zh-CN" ? text.generatingSeo : text.generateSeo}
+              {isSeoPending && seoTarget === sourceLocale ? text.generatingSeo : text.generateSeo}
             </Button>
           </div>
           <Input name="seoTitle" placeholder={text.seoTitleLabel} value={seoTitle} onChange={(event) => setSeoTitle(event.target.value)} />
@@ -317,11 +331,11 @@ export function ArticleSettingsDialog({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="inline-flex items-center gap-2 text-sm font-medium">
               <Languages className="h-4 w-4 text-primary" />
-              {text.englishSeo}
+              {languageSeoLabel(translationLocale)}
             </p>
-            <Button type="button" variant="secondary" className="h-9 px-3" disabled={isSeoPending} onClick={() => generateSeo("en")}>
+            <Button type="button" variant="secondary" className="h-9 px-3" disabled={isSeoPending} onClick={() => generateSeo(translationLocale)}>
               <Sparkles className="mr-2 h-4 w-4" />
-              {isSeoPending && seoTarget === "en" ? text.generatingSeo : text.generateSeo}
+              {isSeoPending && seoTarget === translationLocale ? text.generatingSeo : text.generateSeo}
             </Button>
           </div>
           <Input placeholder={text.seoTitleLabel} value={translationSeoTitle} onChange={(event) => setTranslationSeoTitle(event.target.value)} />

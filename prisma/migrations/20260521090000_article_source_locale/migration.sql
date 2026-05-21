@@ -1,0 +1,3 @@
+ALTER TABLE `Article` ADD COLUMN `sourceLocale` VARCHAR(191) NOT NULL DEFAULT 'zh-CN';
+
+ALTER TABLE `ArticleVersion` ADD COLUMN `sourceLocale` VARCHAR(191) NOT NULL DEFAULT 'zh-CN';

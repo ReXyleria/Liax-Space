@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { translateArticleAction, type ArticleTranslationActionState } from "@/features/articles/translation-actions";
 import type { Locale } from "@/lib/i18n-messages";
 
+type ArticleLanguage = "zh-CN" | "en";
 type ArticleFormValue = Parameters<typeof ArticleEditorForm>[0]["article"];
 type TranslationValue = {
   id: string;
@@ -37,23 +38,33 @@ type TranslationProgressState = {
 function labels(locale: Locale) {
   return locale === "en"
     ? {
-        sourceTab: "Chinese source",
-        translationTab: "English translation",
-        note: "Chinese content is saved to Article, English content is saved to ArticleTranslation.",
-        manualTranslate: "Rebuild English translation",
-        manualTranslateHint: "Run translation for the current article now.",
+        sourceLanguage: "Source language",
+        sourceLanguageNote: "The selected language is saved in Article. The other language is saved in ArticleTranslation.",
+        manualTranslate: "Rebuild translation",
+        manualTranslateHint: "Run translation for the other language now.",
         translating: "Translating...",
         progressFallback: "Preparing translation..."
       }
     : {
-        sourceTab: "中文原文",
-        translationTab: "英文译文",
-        note: "中文保存到 Article，英文保存到 ArticleTranslation。",
-        manualTranslate: "重新生成英文译文",
-        manualTranslateHint: "立即对当前文章重新执行翻译。",
+        sourceLanguage: "原文语言",
+        sourceLanguageNote: "选择的语言保存到 Article，另一种语言保存到 ArticleTranslation。",
+        manualTranslate: "重新生成翻译",
+        manualTranslateHint: "立即为另一种语言重新执行翻译。",
         translating: "翻译中...",
         progressFallback: "正在准备翻译..."
       };
+}
+
+function normalizeArticleLanguage(value: string | null | undefined): ArticleLanguage {
+  return value?.toLowerCase().startsWith("en") ? "en" : "zh-CN";
+}
+
+function otherLanguage(value: ArticleLanguage): ArticleLanguage {
+  return value === "zh-CN" ? "en" : "zh-CN";
+}
+
+function languageLabel(value: ArticleLanguage) {
+  return value === "zh-CN" ? "中文" : "English";
 }
 
 export function ArticleLanguageWorkspace({
@@ -70,13 +81,17 @@ export function ArticleLanguageWorkspace({
   locale?: Locale;
 }) {
   const text = labels(locale);
+  const initialSourceLocale = normalizeArticleLanguage(article.sourceLocale);
+  const [sourceLocale, setSourceLocale] = useState<ArticleLanguage>(initialSourceLocale);
+  const [language, setLanguage] = useState<ArticleLanguage>(initialSourceLocale);
+  const translationTarget = otherLanguage(sourceLocale);
+  const counterpartTranslation = translations.find((translation) => normalizeArticleLanguage(translation.locale) === translationTarget) ?? null;
+  const activeTranslation = translations.find((translation) => normalizeArticleLanguage(translation.locale) === language) ?? null;
   const [translateState, translateFormAction, isTranslating] = useActionState<ArticleTranslationActionState, FormData>(
     translateArticleAction,
     { ok: false, message: "" }
   );
-  const [language, setLanguage] = useState<"zh-CN" | "en">("zh-CN");
   const [progress, setProgress] = useState<TranslationProgressState | null>(null);
-  const englishTranslation = translations.find((translation) => translation.locale === "en") ?? null;
 
   useEffect(() => {
     if (!isTranslating) {
@@ -86,7 +101,7 @@ export function ArticleLanguageWorkspace({
     let cancelled = false;
     async function loadProgress() {
       try {
-        const response = await fetch(`/api/console/articles/${article.id}/translation-progress?locale=en`, {
+        const response = await fetch(`/api/console/articles/${article.id}/translation-progress?locale=${translationTarget}`, {
           cache: "no-store"
         });
         const payload = await response.json();
@@ -119,34 +134,54 @@ export function ArticleLanguageWorkspace({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [article.id, isTranslating, text.progressFallback]);
+  }, [article.id, isTranslating, text.progressFallback, translationTarget]);
+
+  function changeSourceLocale(nextLocale: ArticleLanguage) {
+    setSourceLocale(nextLocale);
+    setLanguage(nextLocale);
+  }
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card/85 p-2">
-        <Button
-          type="button"
-          variant={language === "zh-CN" ? "primary" : "ghost"}
-          onClick={() => setLanguage("zh-CN")}
-        >
-          {text.sourceTab}
-        </Button>
-        <Button
-          type="button"
-          variant={language === "en" ? "primary" : "ghost"}
-          onClick={() => setLanguage("en")}
-        >
-          {text.translationTab}
-        </Button>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="px-3 text-xs text-muted-foreground">{text.note}</span>
-          <form action={translateFormAction} className="shrink-0">
-            <input type="hidden" name="articleId" value={article.id} />
-            <input type="hidden" name="locale" value="en" />
-            <Button type="submit" variant="secondary" title={text.manualTranslateHint}>
-              {isTranslating ? text.translating : text.manualTranslate}
+      <div className="rounded-xl border bg-card/85 p-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-medium">{text.sourceLanguage}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{text.sourceLanguageNote}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-lg bg-muted p-1">
+              {(["zh-CN", "en"] as const).map((item) => (
+                <Button
+                  key={item}
+                  type="button"
+                  variant={sourceLocale === item ? "primary" : "ghost"}
+                  onClick={() => changeSourceLocale(item)}
+                >
+                  {languageLabel(item)}
+                </Button>
+              ))}
+            </div>
+            <form action={translateFormAction} className="shrink-0">
+              <input type="hidden" name="articleId" value={article.id} />
+              <input type="hidden" name="locale" value={translationTarget} />
+              <Button type="submit" variant="secondary" title={text.manualTranslateHint}>
+                {isTranslating ? text.translating : `${text.manualTranslate} ${languageLabel(translationTarget)}`}
+              </Button>
+            </form>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {(["zh-CN", "en"] as const).map((item) => (
+            <Button
+              key={item}
+              type="button"
+              variant={language === item ? "primary" : "ghost"}
+              onClick={() => setLanguage(item)}
+            >
+              {languageLabel(item)}
             </Button>
-          </form>
+          ))}
         </div>
       </div>
 
@@ -177,16 +212,24 @@ export function ArticleLanguageWorkspace({
         </div>
       ) : null}
 
-      {language === "zh-CN" ? (
+      {language === sourceLocale ? (
         <ArticleEditorForm
           locale={locale}
-          article={article}
-          englishTranslation={englishTranslation}
+          article={{ ...article, sourceLocale }}
+          counterpartTranslation={counterpartTranslation}
+          sourceLocale={sourceLocale}
+          onSourceLocaleChange={changeSourceLocale}
+          showSourceLocaleControl={false}
           tagOptions={tagOptions}
           site={site}
         />
       ) : (
-        <ArticleTranslationEditorForm article={article} translation={englishTranslation} locale={locale} />
+        <ArticleTranslationEditorForm
+          article={{ ...article, sourceLocale }}
+          targetLocale={language}
+          translation={activeTranslation}
+          locale={locale}
+        />
       )}
     </div>
   );
