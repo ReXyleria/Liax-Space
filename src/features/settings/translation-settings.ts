@@ -192,18 +192,6 @@ async function loadTranslationSettingsMap() {
   }
 }
 
-async function revalidateSettingsTag() {
-  try {
-    const { revalidateTag } = await import("next/cache");
-    revalidateTag("settings");
-  } catch (error) {
-    if (process.env.BACKGROUND_WORKER_ROLE === "worker") {
-      return;
-    }
-    throw error;
-  }
-}
-
 function normalizeConfigNumbers(input: {
   timeoutMs: number;
   maxRetries: number;
@@ -363,7 +351,6 @@ export async function updateTranslationSettings(user: CurrentUser, input: Transl
       })
     )
   );
-  await revalidateSettingsTag();
 }
 
 function targetLanguageLabel(value: string) {
