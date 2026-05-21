@@ -1,0 +1,9 @@
+{
+  "name": "liax-space-runtime-tools",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "prisma": "6.19.3",
+    "tsx": "4.22.3"
+  }
+}

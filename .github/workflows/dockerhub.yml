@@ -45,5 +45,6 @@ jobs:
         with:
           context: .
           push: true
+          pull: true
           platforms: linux/amd64
           tags: ${{ steps.tags.outputs.tags }}

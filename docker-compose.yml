@@ -42,7 +42,7 @@ services:
     depends_on:
       - mysql
       - app
-    command: ["sh", "scripts/docker-entrypoint.sh", "worker"]
+    command: ["scripts/docker-entrypoint.mjs", "worker"]
     environment:
       APP_STORAGE_DIR: /app/storage
       SETUP_CONFIG_DIR: /app/storage/config

@@ -1,9 +1,12 @@
-FROM node:22-alpine AS deps
+ARG CHAINGUARD_NODE_DEV_IMAGE=cgr.dev/chainguard/node:latest-dev
+ARG CHAINGUARD_NODE_RUNTIME_IMAGE=cgr.dev/chainguard/node:latest
+
+FROM ${CHAINGUARD_NODE_DEV_IMAGE} AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:22-alpine AS builder
+FROM ${CHAINGUARD_NODE_DEV_IMAGE} AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
@@ -11,31 +14,38 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:22-alpine AS runner
+FROM ${CHAINGUARD_NODE_DEV_IMAGE} AS runtime-tools
+WORKDIR /opt/prisma-cli
+COPY docker/prisma-cli/package.json docker/prisma-cli/package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+
+FROM ${CHAINGUARD_NODE_DEV_IMAGE} AS runtime-dirs
+WORKDIR /runtime
+RUN mkdir -p public/uploads storage storage/backups storage/cache storage/config
+
+FROM ${CHAINGUARD_NODE_RUNTIME_IMAGE} AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
-ENV PRISMA_BIN=/opt/prisma-cli/node_modules/.bin/prisma
-ENV WORKER_TSX_BIN=/opt/prisma-cli/node_modules/.bin/tsx
+ENV PRISMA_BIN=/opt/prisma-cli/node_modules/prisma/build/index.js
+ENV WORKER_TSX_BIN=/opt/prisma-cli/node_modules/tsx/dist/cli.mjs
+ENV PATH=/opt/prisma-cli/node_modules/.bin:$PATH
 
-RUN apk add --no-cache su-exec \
-  && npm install --prefix /opt/prisma-cli --omit=dev --no-audit --no-fund prisma@6.19.3 tsx@4.19.2 \
-  && npm cache clean --force \
-  && addgroup --system --gid 1001 nodejs \
-  && adduser --system --uid 1001 nextjs
+COPY --from=runtime-tools --chown=1001:1001 /opt/prisma-cli /opt/prisma-cli
+COPY --from=builder --chown=1001:1001 /app/.next/standalone ./
+COPY --from=builder --chown=1001:1001 /app/.next/static ./.next/static
+COPY --from=builder --chown=1001:1001 /app/prisma ./prisma
+COPY --from=builder --chown=1001:1001 /app/public ./public
+COPY --from=builder --chown=1001:1001 /app/src ./src
+COPY --from=builder --chown=1001:1001 /app/scripts ./scripts
+COPY --from=builder --chown=1001:1001 /app/tsconfig.json ./tsconfig.json
+COPY --from=runtime-dirs --chown=1001:1001 /runtime/storage ./storage
+COPY --from=runtime-dirs --chown=1001:1001 /runtime/public/uploads ./public/uploads
 
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/tsconfig.json ./tsconfig.json
-
-RUN chmod +x scripts/docker-entrypoint.sh && mkdir -p public/uploads storage storage/backups storage/cache storage/config && chown -R 1001:1001 /app
-
+USER 1001:1001
 EXPOSE 3000
 
-CMD ["sh", "scripts/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/node"]
+CMD ["scripts/docker-entrypoint.mjs"]
