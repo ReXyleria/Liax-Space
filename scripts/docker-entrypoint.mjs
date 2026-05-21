@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lchown, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -38,11 +38,62 @@ async function assertWritable(directory) {
   await rm(probe, { force: true });
 }
 
+function isRoot() {
+  return typeof process.getuid === "function" && process.getuid() === 0;
+}
+
+async function chownPath(target) {
+  await lchown(target, Number(RUNTIME_UID), Number(RUNTIME_GID));
+}
+
+async function chownRecursive(target) {
+  await chownPath(target);
+
+  let entries;
+  try {
+    entries = await readdir(target, { withFileTypes: true });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOTDIR") {
+      return;
+    }
+    throw error;
+  }
+
+  for (const entry of entries) {
+    const child = path.join(target, entry.name);
+    if (entry.isDirectory()) {
+      await chownRecursive(child);
+    } else {
+      await chownPath(child);
+    }
+  }
+}
+
+function dropRuntimePrivileges() {
+  if (!isRoot()) {
+    return;
+  }
+
+  try {
+    process.setgid(Number(RUNTIME_GID));
+    process.setuid(Number(RUNTIME_UID));
+    console.log(`[setup] Dropped runtime privileges to UID/GID ${RUNTIME_UID}:${RUNTIME_GID}.`);
+  } catch (error) {
+    console.error("[setup] Failed to drop runtime privileges.");
+    console.error(`[setup] ${describeError(error)}`);
+    process.exit(1);
+  }
+}
+
 async function prepareRuntimeDirs() {
   const directories = [STORAGE_DIR, CONFIG_DIR, BACKUP_DIR, CACHE_DIR, UPLOAD_DIR];
 
   try {
     await Promise.all(directories.map((directory) => mkdir(directory, { recursive: true })));
+    if (isRoot()) {
+      await Promise.all([chownRecursive(STORAGE_DIR), chownRecursive(UPLOAD_DIR)]);
+      dropRuntimePrivileges();
+    }
     await Promise.all(directories.map((directory) => assertWritable(directory)));
   } catch (error) {
     console.error("[setup] Runtime data directories are not writable by the application user.");

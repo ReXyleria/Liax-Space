@@ -12,14 +12,14 @@ Liax-Space 是一个面向个人站点、独立博客和小型内容社区的发
 - **发布体验更省心**：后台集中管理文章、附件、评论、访问统计、邮件、备份和搜索引擎推送，常用操作不需要在多个工具之间切换。
 - **读者感受更完整**：公开页面支持双语言展示、响应式布局、文章可见性、评论、瞬间、归档、标签和可配置首页背景，更像一个可以长期运营的站点，而不是临时演示。
 - **备份恢复更安心**：MySQL 数据、上传附件、备份文件和运行时配置都有明确的持久化目录；恢复备份后附件目录会被保留或重新创建，避免 `/uploads/...` 因目录丢失而无法显示。
-- **安全默认值更强**：登录支持二次验证、邮箱验证码、TOTP 和恢复码；生产镜像使用更小的 Chainguard Node runtime，应用以非 root UID/GID `1001:1001` 运行，final image 不依赖 apt、gosu 或 root 启动脚本。
+- **安全默认值更强**：登录支持二次验证、邮箱验证码、TOTP 和恢复码；生产镜像使用更小的 Chainguard Node runtime，不依赖 apt 或 gosu，启动时只用 Node 修复挂载目录后降权到 UID/GID `1001:1001` 运行。
 - **更适合自托管维护**：推荐 Docker Compose 部署，宿主机只需要准备数据目录和环境变量；app 与 worker 共用同一套 storage/uploads/backups 路径，迁移和排查边界清楚。
 
 ## 安装教程
 
 ### 1. 准备目录
 
-生产容器以 UID/GID `1001:1001` 运行。宿主机挂载给容器的 `storage` 和 `uploads` 目录必须允许这个用户写入。
+生产容器启动时会尝试修复 `storage` 和 `uploads` 的目录权限，然后降权为 UID/GID `1001:1001` 运行。如果宿主机安全策略禁止容器修改 ownership，再手动执行下面的 `chown`。
 
 ```bash
 mkdir -p /opt/liax-space/data/storage/config
@@ -27,7 +27,8 @@ mkdir -p /opt/liax-space/data/storage/backups
 mkdir -p /opt/liax-space/data/storage/cache
 mkdir -p /opt/liax-space/data/uploads
 mkdir -p /opt/liax-space/data/mysql
-chown -R 1001:1001 /opt/liax-space/data/storage /opt/liax-space/data/uploads
+# 如果启动日志提示目录不可写，再执行：
+# chown -R 1001:1001 /opt/liax-space/data/storage /opt/liax-space/data/uploads
 cd /opt/liax-space
 ```
 
@@ -120,7 +121,7 @@ services:
 - 上传目录使用 `${APP_PATH}/data/uploads:/app/public/uploads`。
 - 存储目录使用 `${APP_PATH}/data/storage:/app/storage`。
 - MySQL 数据目录使用 `${APP_PATH}/data/mysql:/var/lib/mysql`。
-- 如果日志提示目录不可写，先确认宿主机 `data/storage` 和 `data/uploads` 已授权给 UID/GID `1001:1001`。
+- 如果日志提示目录不可写，先确认宿主机 `data/storage` 和 `data/uploads` 允许容器修复 ownership，或手动授权给 UID/GID `1001:1001`。
 
 ### 4. 启动服务
 

@@ -44,7 +44,7 @@ COPY --from=builder --chown=1001:1001 /app/tsconfig.json ./tsconfig.json
 COPY --from=runtime-dirs --chown=1001:1001 /runtime/storage ./storage
 COPY --from=runtime-dirs --chown=1001:1001 /runtime/public/uploads ./public/uploads
 
-USER 1001:1001
+USER 0:0
 EXPOSE 3000
 
 ENTRYPOINT ["/usr/bin/node"]

@@ -1,5 +1,4 @@
 import { SettingType } from "@prisma/client";
-import { revalidateTag } from "next/cache";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
 import { assertPermission, canManageSettings } from "@/lib/permissions";
@@ -193,6 +192,18 @@ async function loadTranslationSettingsMap() {
   }
 }
 
+async function revalidateSettingsTag() {
+  try {
+    const { revalidateTag } = await import("next/cache");
+    revalidateTag("settings");
+  } catch (error) {
+    if (process.env.BACKGROUND_WORKER_ROLE === "worker") {
+      return;
+    }
+    throw error;
+  }
+}
+
 function normalizeConfigNumbers(input: {
   timeoutMs: number;
   maxRetries: number;
@@ -352,7 +363,7 @@ export async function updateTranslationSettings(user: CurrentUser, input: Transl
       })
     )
   );
-  revalidateTag("settings");
+  await revalidateSettingsTag();
 }
 
 function targetLanguageLabel(value: string) {
