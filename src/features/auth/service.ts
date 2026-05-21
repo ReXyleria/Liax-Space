@@ -446,6 +446,7 @@ export async function loginUser(
     const trustedDevice = await resolveTrustedDevice(user.id);
     if (!trustedDevice) {
       const backupMethods = buildBackupSecondFactorMethods(user);
+      const hasTotp = backupMethods.includes("totp");
       const pendingToken = await createPendingLogin(user.id);
       try {
         await sendLoginCode(user);
@@ -454,7 +455,9 @@ export async function loginUser(
           requiresSecondFactor: true,
           pendingToken,
           secondFactors: ["email", ...backupMethods],
-          message: "This device requires second-factor verification. An email code was sent."
+          message: hasTotp
+            ? "Enter your authenticator code to continue. If you lost your authenticator, use email verification or a recovery code."
+            : "This device requires second-factor verification. An email code was sent."
         };
       } catch (error) {
         if (!backupMethods.length) {
@@ -476,8 +479,8 @@ export async function loginUser(
           pendingToken,
           secondFactors: backupMethods,
           message: error instanceof Error
-            ? `Email verification code failed. Use a backup verification method: ${error.message}`
-            : "Email verification code failed. Use a backup verification method."
+            ? `Email verification code failed. Use an available backup verification method: ${error.message}`
+            : "Email verification code failed. Use an available backup verification method."
         };
       }
     }

@@ -18,6 +18,9 @@ type ApiState = {
   secondFactors?: Array<"email" | "totp" | "passkey">;
 };
 
+type SecondFactorMethod = "email" | "totp" | "passkey";
+type SecondFactorStep = "email" | "totp" | "lost" | "recovery";
+
 type AuthText = {
   loginTitle: string;
   loginIntro: string;
@@ -26,8 +29,18 @@ type AuthText = {
   secondFactorRequired: string;
   emailCodePlaceholder: string;
   emailCodeHint: string;
+  emailCodeOption: string;
+  emailCodeOptionHint: string;
   totpPlaceholder: string;
+  totpCodeHint: string;
   recoveryPlaceholder: string;
+  recoveryCodeOption: string;
+  recoveryCodeOptionHint: string;
+  recoveryCodeHint: string;
+  lostAuthenticator: string;
+  lostAuthenticatorTitle: string;
+  lostAuthenticatorHint: string;
+  backToAuthenticator: string;
   trustDevice: string;
   signingIn: string;
   verifyAndSignIn: string;
@@ -62,9 +75,19 @@ const authText: Record<Locale, AuthText> = {
     passwordPlaceholder: "密码",
     secondFactorRequired: "当前设备需要二次验证。",
     emailCodePlaceholder: "邮箱验证码",
-    emailCodeHint: "邮箱验证码是默认二次验证方式。",
+    emailCodeHint: "验证码已发送到你的邮箱。",
+    emailCodeOption: "邮箱验证码",
+    emailCodeOptionHint: "使用发送到账号邮箱的验证码。",
     totpPlaceholder: "6 位动态验证码",
-    recoveryPlaceholder: "或恢复码",
+    totpCodeHint: "打开验证器应用，输入当前 6 位动态验证码。",
+    recoveryPlaceholder: "恢复码",
+    recoveryCodeOption: "恢复码",
+    recoveryCodeOptionHint: "使用启用验证器时保存的一次性恢复码。",
+    recoveryCodeHint: "输入启用验证器时保存的一次性恢复码。",
+    lostAuthenticator: "我丢失了我的验证器",
+    lostAuthenticatorTitle: "选择恢复方式",
+    lostAuthenticatorHint: "如果无法打开验证器，可以使用邮箱验证码或恢复码继续登录。",
+    backToAuthenticator: "返回动态验证码",
     trustDevice: "信任此设备",
     signingIn: "登录中...",
     verifyAndSignIn: "验证并登录",
@@ -97,9 +120,19 @@ const authText: Record<Locale, AuthText> = {
     passwordPlaceholder: "Password",
     secondFactorRequired: "This device requires second-factor verification.",
     emailCodePlaceholder: "Email verification code",
-    emailCodeHint: "Email code is the default second-factor method.",
+    emailCodeHint: "A verification code was sent to your email.",
+    emailCodeOption: "Email code",
+    emailCodeOptionHint: "Use the verification code sent to your account email.",
     totpPlaceholder: "6-digit authenticator code",
-    recoveryPlaceholder: "Or recovery code",
+    totpCodeHint: "Open your authenticator app and enter the current 6-digit code.",
+    recoveryPlaceholder: "Recovery code",
+    recoveryCodeOption: "Recovery code",
+    recoveryCodeOptionHint: "Use a one-time recovery code saved when authenticator verification was enabled.",
+    recoveryCodeHint: "Enter a one-time recovery code saved when authenticator verification was enabled.",
+    lostAuthenticator: "I lost my authenticator",
+    lostAuthenticatorTitle: "Choose a recovery method",
+    lostAuthenticatorHint: "If you cannot open your authenticator app, continue with an email code or a recovery code.",
+    backToAuthenticator: "Back to authenticator code",
     trustDevice: "Trust this device",
     signingIn: "Signing in...",
     verifyAndSignIn: "Verify and sign in",
@@ -138,12 +171,23 @@ async function postJson(path: string, body: unknown) {
   return (await response.json()) as ApiState;
 }
 
+function getInitialSecondFactorStep(methods: SecondFactorMethod[]): SecondFactorStep {
+  if (methods.includes("totp")) {
+    return "totp";
+  }
+  if (methods.includes("email")) {
+    return "email";
+  }
+  return "email";
+}
+
 export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { callbackUrl?: string; locale?: Locale }) {
   const text = useMemo(() => authText[locale] ?? authText["zh-CN"], [locale]);
   const [state, setState] = useState<ApiState>({});
   const [account, setAccount] = useState("");
   const [pendingToken, setPendingToken] = useState<string | null>(null);
-  const [secondFactors, setSecondFactors] = useState<Array<"email" | "totp" | "passkey">>([]);
+  const [secondFactors, setSecondFactors] = useState<SecondFactorMethod[]>([]);
+  const [secondFactorStep, setSecondFactorStep] = useState<SecondFactorStep>("email");
   const [trustDevice, setTrustDevice] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [isPasskeyPending, startPasskeyTransition] = useTransition();
@@ -152,7 +196,16 @@ export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { call
   const allowEmail = secondFactors.includes("email");
   const allowTotp = secondFactors.includes("totp");
   const allowPasskey = secondFactors.includes("passkey");
-  const canSubmitSecondFactor = allowEmail || allowTotp;
+  const canSubmitSecondFactor =
+    (secondFactorStep === "email" && allowEmail) ||
+    (secondFactorStep === "totp" && allowTotp) ||
+    (secondFactorStep === "recovery" && allowTotp);
+  const showPasskeyButton = !requiresSecondFactor || (allowPasskey && !allowTotp);
+  const messageClassName = state.ok
+    ? "text-sm text-emerald-600"
+    : state.requiresSecondFactor
+      ? "text-sm text-muted-foreground"
+      : "text-sm text-destructive";
 
   function applyResult(result: ApiState) {
     setState(result);
@@ -160,14 +213,17 @@ export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { call
     if (result.ok) {
       setPendingToken(null);
       setSecondFactors([]);
+      setSecondFactorStep("email");
       setTrustDevice(false);
       window.location.assign(result.redirectTo ?? callbackUrl);
       return;
     }
 
     if (result.requiresSecondFactor && result.pendingToken) {
+      const methods = result.secondFactors ?? [];
       setPendingToken(result.pendingToken);
-      setSecondFactors(result.secondFactors ?? []);
+      setSecondFactors(methods);
+      setSecondFactorStep(getInitialSecondFactorStep(methods));
     }
   }
 
@@ -220,13 +276,29 @@ export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { call
             const formData = new FormData(event.currentTarget);
             startTransition(async () => {
               if (requiresSecondFactor && pendingToken) {
-                const result = await postJson("/api/auth/login/verify", {
+                const secondFactorPayload: {
+                  pendingToken: string;
+                  emailCode?: FormDataEntryValue | null;
+                  totpCode?: FormDataEntryValue | null;
+                  recoveryCode?: FormDataEntryValue | null;
+                  trustDevice: boolean;
+                  callbackUrl: string;
+                } = {
                   pendingToken,
-                  emailCode: formData.get("emailCode"),
-                  totpCode: formData.get("totpCode"),
-                  recoveryCode: formData.get("recoveryCode"),
                   trustDevice,
                   callbackUrl
+                };
+
+                if (secondFactorStep === "email") {
+                  secondFactorPayload.emailCode = formData.get("emailCode");
+                } else if (secondFactorStep === "totp") {
+                  secondFactorPayload.totpCode = formData.get("totpCode");
+                } else if (secondFactorStep === "recovery") {
+                  secondFactorPayload.recoveryCode = formData.get("recoveryCode");
+                }
+
+                const result = await postJson("/api/auth/login/verify", {
+                  ...secondFactorPayload
                 });
                 applyResult(result);
                 return;
@@ -258,16 +330,74 @@ export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { call
               {text.secondFactorRequired}
             </div>
           )}
-          {requiresSecondFactor && allowEmail ? (
-            <div className="space-y-2 rounded-md border bg-muted/35 p-3">
-              <Input name="emailCode" inputMode="numeric" placeholder={text.emailCodePlaceholder} maxLength={8} />
-              <p className="text-xs text-muted-foreground">{text.emailCodeHint}</p>
+          {requiresSecondFactor && secondFactorStep === "totp" && allowTotp ? (
+            <div className="space-y-3 rounded-md border bg-muted/35 p-3">
+              <Input required name="totpCode" inputMode="numeric" placeholder={text.totpPlaceholder} maxLength={6} autoFocus />
+              <p className="text-xs text-muted-foreground">{text.totpCodeHint}</p>
+              <button
+                type="button"
+                className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                onClick={() => setSecondFactorStep("lost")}
+              >
+                {text.lostAuthenticator}
+              </button>
             </div>
           ) : null}
-          {requiresSecondFactor && allowTotp ? (
+          {requiresSecondFactor && secondFactorStep === "lost" && allowTotp ? (
             <div className="space-y-3 rounded-md border bg-muted/35 p-3">
-              <Input name="totpCode" inputMode="numeric" placeholder={text.totpPlaceholder} maxLength={6} />
-              <Input name="recoveryCode" placeholder={text.recoveryPlaceholder} />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">{text.lostAuthenticatorTitle}</p>
+                <p className="text-xs text-muted-foreground">{text.lostAuthenticatorHint}</p>
+              </div>
+              <div className="grid gap-2">
+                {allowEmail ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-auto justify-start whitespace-normal px-3 py-2 text-left"
+                    onClick={() => setSecondFactorStep("email")}
+                  >
+                    <span>
+                      <span className="block text-sm font-medium">{text.emailCodeOption}</span>
+                      <span className="block text-xs font-normal text-muted-foreground">{text.emailCodeOptionHint}</span>
+                    </span>
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-auto justify-start whitespace-normal px-3 py-2 text-left"
+                  onClick={() => setSecondFactorStep("recovery")}
+                >
+                  <span>
+                    <span className="block text-sm font-medium">{text.recoveryCodeOption}</span>
+                    <span className="block text-xs font-normal text-muted-foreground">{text.recoveryCodeOptionHint}</span>
+                  </span>
+                </Button>
+              </div>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => setSecondFactorStep("totp")}>
+                {text.backToAuthenticator}
+              </Button>
+            </div>
+          ) : null}
+          {requiresSecondFactor && secondFactorStep === "email" && allowEmail ? (
+            <div className="space-y-2 rounded-md border bg-muted/35 p-3">
+              <Input required name="emailCode" inputMode="numeric" placeholder={text.emailCodePlaceholder} maxLength={8} autoFocus />
+              <p className="text-xs text-muted-foreground">{text.emailCodeHint}</p>
+              {allowTotp ? (
+                <Button type="button" variant="ghost" className="w-full" onClick={() => setSecondFactorStep("totp")}>
+                  {text.backToAuthenticator}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          {requiresSecondFactor && secondFactorStep === "recovery" && allowTotp ? (
+            <div className="space-y-2 rounded-md border bg-muted/35 p-3">
+              <Input required name="recoveryCode" placeholder={text.recoveryPlaceholder} autoFocus />
+              <p className="text-xs text-muted-foreground">{text.recoveryCodeHint}</p>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => setSecondFactorStep("lost")}>
+                {text.lostAuthenticatorTitle}
+              </Button>
             </div>
           ) : null}
           {requiresSecondFactor ? (
@@ -280,30 +410,34 @@ export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { call
             />
           ) : null}
           {state.message ? (
-            <p className={state.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>
+            <p className={messageClassName}>
               {state.message}
             </p>
           ) : null}
-          <Button className="w-full" disabled={isPending || (requiresSecondFactor && !canSubmitSecondFactor)}>
-            {isPending ? text.signingIn : requiresSecondFactor ? text.verifyAndSignIn : text.signIn}
-          </Button>
-          <Button
-            className="w-full"
-            type="button"
-            variant="secondary"
-            disabled={isPasskeyPending || (requiresSecondFactor && !allowPasskey)}
-            onClick={() => {
-              startPasskeyTransition(async () => {
-                await runPasskeyLogin();
-              });
-            }}
-          >
-            {isPasskeyPending
-              ? text.checkingPasskey
-              : requiresSecondFactor
-                ? text.verifyWithPasskey
-                : text.signInWithPasskey}
-          </Button>
+          {!requiresSecondFactor || canSubmitSecondFactor ? (
+            <Button className="w-full" disabled={isPending || (requiresSecondFactor && !canSubmitSecondFactor)}>
+              {isPending ? text.signingIn : requiresSecondFactor ? text.verifyAndSignIn : text.signIn}
+            </Button>
+          ) : null}
+          {showPasskeyButton ? (
+            <Button
+              className="w-full"
+              type="button"
+              variant="secondary"
+              disabled={isPasskeyPending || (requiresSecondFactor && !allowPasskey)}
+              onClick={() => {
+                startPasskeyTransition(async () => {
+                  await runPasskeyLogin();
+                });
+              }}
+            >
+              {isPasskeyPending
+                ? text.checkingPasskey
+                : requiresSecondFactor
+                  ? text.verifyWithPasskey
+                  : text.signInWithPasskey}
+            </Button>
+          ) : null}
           {requiresSecondFactor ? (
             <Button
               className="w-full"
@@ -316,6 +450,7 @@ export function LoginForm({ callbackUrl = "/console", locale = "zh-CN" }: { call
                   }
                   setPendingToken(null);
                   setSecondFactors([]);
+                  setSecondFactorStep("email");
                   setTrustDevice(false);
                   setState({ ok: false, message: text.secondFactorCancelled });
                 });
