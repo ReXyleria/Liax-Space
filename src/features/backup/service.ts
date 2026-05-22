@@ -76,6 +76,25 @@ function safeFilenameSegment(value: string) {
   return slug || "liax-space";
 }
 
+function padTimestampPart(value: number, length = 2) {
+  return String(value).padStart(length, "0");
+}
+
+function localBackupTimestamp(date = new Date()) {
+  return [
+    date.getFullYear(),
+    padTimestampPart(date.getMonth() + 1),
+    padTimestampPart(date.getDate())
+  ].join("-")
+    + "T"
+    + [
+      padTimestampPart(date.getHours()),
+      padTimestampPart(date.getMinutes()),
+      padTimestampPart(date.getSeconds()),
+      padTimestampPart(date.getMilliseconds(), 3)
+    ].join("-");
+}
+
 async function getBackupSiteTitle() {
   try {
     const setting = await db.setting.findUnique({
@@ -89,12 +108,12 @@ async function getBackupSiteTitle() {
 }
 
 async function backupFilename() {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const stamp = localBackupTimestamp();
   return `${safeFilenameSegment(await getBackupSiteTitle())}-${stamp}.tar.gz`;
 }
 
 function uploadedBackupFilename(originalName: string) {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const stamp = localBackupTimestamp();
   const fallback = "backup.tar.gz";
   const basename = path.basename(originalName || fallback);
   const safeName = basename

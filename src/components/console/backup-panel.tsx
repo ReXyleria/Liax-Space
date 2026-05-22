@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, FileArchive, Loader2, RefreshCw, UploadCloud, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -775,6 +775,29 @@ export function BackupPanel({
   );
   const [activeDeleteId, setActiveDeleteId] = useState<string | null>(null);
   const [activeRestoreId, setActiveRestoreId] = useState<string | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!schedule.enabled) {
+      return;
+    }
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) {
+        router.refresh();
+      }
+    };
+
+    const interval = window.setInterval(refreshWhenVisible, 60_000);
+    window.addEventListener("focus", refreshWhenVisible);
+    window.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshWhenVisible);
+      window.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [router, schedule.enabled]);
 
   return (
     <div className="space-y-6">

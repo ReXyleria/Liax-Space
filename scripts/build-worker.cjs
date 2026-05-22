@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const { build } = require("esbuild");
 const { mkdir, readFile, rm } = require("node:fs/promises");
 const { resolve } = require("node:path");

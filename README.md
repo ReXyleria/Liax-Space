@@ -40,6 +40,7 @@ cd /opt/liax-space
 APP_PATH=/opt/liax-space
 MYSQL_PASSWORD=change_this_database_password
 MYSQL_ROOT_PASSWORD=change_this_root_password
+TZ=Asia/Shanghai
 ```
 
 ### 可选：构建私有 Node 22 镜像
@@ -82,6 +83,7 @@ services:
       SETUP_CONFIG_DIR: /app/storage/config
       UPLOAD_DIR: /app/public/uploads
       BACKGROUND_WORKER_MODE: external
+      TZ: ${TZ:-Asia/Shanghai}
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       MYSQL_DATABASE: liax_space
@@ -105,6 +107,7 @@ services:
       UPLOAD_DIR: /app/public/uploads
       BACKGROUND_WORKER_MODE: external
       BACKGROUND_WORKER_ROLE: worker
+      TZ: ${TZ:-Asia/Shanghai}
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       MYSQL_DATABASE: liax_space
