@@ -96,6 +96,13 @@ enum TranslationStatus {
   FAILED
 }
 
+enum ArticleContentStatus {
+  EMPTY
+  READY
+  STALE
+  FAILED
+}
+
 enum ArticleTranslationJobStatus {
   QUEUED
   RUNNING
@@ -364,6 +371,7 @@ model Article {
   tags              ArticleTag[]
   allowedIdentities ArticleAllowedIdentity[]
   versions          ArticleVersion[]
+  contents          ArticleContent[]
   translations      ArticleTranslation[]
   translationJobs   ArticleTranslationJob[]
   comments          Comment[]
@@ -373,6 +381,31 @@ model Article {
   @@index([publishedAt])
   @@index([deletedAt])
   @@index([authorId])
+}
+
+model ArticleContent {
+  id                  String               @id @default(cuid())
+  articleId           String
+  locale              String
+  title               String
+  summary             String?              @db.Text
+  contentHtml         String               @db.LongText
+  contentJson         Json?
+  seoTitle            String?
+  seoDescription      String?              @db.Text
+  contentStatus       ArticleContentStatus @default(EMPTY)
+  contentHash         String?              @db.VarChar(64)
+  generatedFromLocale String?
+  generatedAt         DateTime?
+  error               String?              @db.Text
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  article             Article              @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, locale])
+  @@index([locale, contentStatus])
+  @@index([contentHash])
+  @@index([generatedFromLocale])
 }
 
 model ArticleTranslation {

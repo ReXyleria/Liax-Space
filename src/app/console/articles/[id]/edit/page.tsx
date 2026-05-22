@@ -6,7 +6,6 @@ import { canManageArticles } from "@/lib/permissions";
 import { getConsoleArticle, getAllTags } from "@/features/articles/service";
 import { listArticleTranslations } from "@/features/articles/translation-service";
 import { getPreviewSiteSettings } from "@/features/settings/preview-site";
-import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +19,7 @@ export default async function EditArticlePage({
     getConsoleLocale(),
     requireConsolePermission(canManageArticles, `/console/articles/${id}/edit`)
   ]);
-  const [article, tagOptions, translations, site] = await Promise.all([
+  const [article, tagOptions, contents, site] = await Promise.all([
     getConsoleArticle(user, id),
     getAllTags(),
     listArticleTranslations(user, id),
@@ -57,19 +56,19 @@ export default async function EditArticlePage({
       article={articleFormValue}
       tagOptions={tagOptions}
       site={site}
-      translations={translations.map((translation) => ({
-        id: translation.id,
-        locale: translation.locale,
-        title: translation.title,
-        summary: translation.summary,
-        seoTitle: translation.seoTitle,
-        seoDescription: translation.seoDescription,
-        contentHtml: translation.contentHtml,
-        contentJson: translation.contentJson,
-        status: translation.status,
-        error: translation.error,
-        contentHash: translation.contentHash,
-        updatedAtLabel: formatDate(translation.updatedAt)
+      contents={contents.map((content) => ({
+        id: content.id,
+        locale: content.locale.toLowerCase().startsWith("en") ? "en-US" : "zh-CN",
+        title: content.title,
+        summary: content.summary,
+        seoTitle: content.seoTitle,
+        seoDescription: content.seoDescription,
+        contentHtml: content.contentHtml,
+        contentJson: content.contentJson,
+        contentStatus: content.contentStatus,
+        error: content.error,
+        contentHash: content.contentHash,
+        updatedAtLabel: content.updatedAt.toISOString()
       }))}
     />
   );

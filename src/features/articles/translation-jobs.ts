@@ -11,7 +11,7 @@ const ACTIVE_STATUSES: ArticleTranslationJobStatus[] = [
   ArticleTranslationJobStatus.RUNNING
 ];
 
-const REQUIRED_TABLES = ["ArticleTranslation", "ArticleTranslationJob"];
+const REQUIRED_TABLES = ["ArticleContent", "ArticleTranslationJob"];
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
 let workerRunning = false;
@@ -64,7 +64,7 @@ async function assertArticleTranslationJobTablesReady() {
 
 export async function getDefaultTranslationTargetLocale() {
   const config = await getTranslationConfig().catch(() => null);
-  return normalizeTranslationLocale(config?.targetLang ?? "en");
+  return normalizeTranslationLocale(config?.targetLang ?? "en-US");
 }
 
 export async function enqueueArticleTranslationJobs(
@@ -79,7 +79,7 @@ export async function enqueueArticleTranslationJobs(
     throw new Error("请至少选择一篇文章。");
   }
 
-  const locale = normalizeTranslationLocale(String(input.locale || "en"));
+  const locale = normalizeTranslationLocale(String(input.locale || "en-US"));
   const articles = await db.article.findMany({
     where: {
       id: { in: articleIds },

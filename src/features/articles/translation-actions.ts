@@ -75,7 +75,7 @@ export async function translateArticleAction(
   try {
     const user = await requireUser();
     const articleId = String(formData.get("articleId") ?? "");
-    const locale = String(formData.get("locale") ?? "en");
+    const locale = String(formData.get("locale") ?? "en-US");
     await enqueueArticleTranslationJobs(user, { articleIds: [articleId], locale });
     revalidatePath(`/console/articles/${articleId}/edit`);
     revalidateLocalizedArticleIndex();
@@ -95,7 +95,7 @@ export async function updateArticleTranslationAction(
   const text = translationActionText(await getConsoleLocale());
   const parsed = translationEditSchema.safeParse({
     articleId: formData.get("articleId"),
-    locale: formData.get("locale") ?? "en",
+    locale: formData.get("locale") ?? "en-US",
     title: formData.get("title"),
     summary: formData.get("summary") ?? "",
     seoTitle: formData.get("seoTitle") ?? "",

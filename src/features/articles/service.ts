@@ -1,10 +1,10 @@
 import {
+  ArticleContentStatus,
   ArticleStatus,
   ContentVisibility,
   MediaReferenceSource,
   Prisma,
-  PublicContentTranslationEntity,
-  TranslationStatus
+  PublicContentTranslationEntity
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { db, isDatabaseConfigured, withDatabase } from "@/lib/db";
@@ -13,12 +13,17 @@ import { sanitizeArticleHtml } from "@/lib/sanitize";
 import type { CurrentUser } from "@/lib/auth";
 import { articleMutationSchema, articleMetaSchema, articleQuerySchema } from "@/features/articles/validators";
 import {
-  hashArticleSource,
-  normalizeArticleLanguageLocale,
-  normalizeTranslationLocale,
-  resolveArticleDisplayTranslation,
   scheduleArticleTranslationSync
 } from "@/features/articles/translation-service";
+import {
+  findArticleContent,
+  hashArticleContent,
+  isDisplayableArticleContent,
+  normalizeArticleContentLocale,
+  otherArticleContentLocale,
+  resolveArticleContentDisplay,
+  type ArticleContentLocale
+} from "@/features/articles/content-service";
 import { getTranslationConfig } from "@/features/settings/translation-settings";
 import {
   getPublicContentTranslationMap,
@@ -31,6 +36,7 @@ import { mediaUrlMatchesReference, normalizeMediaReferenceUrl } from "@/lib/medi
 const articleInclude = {
   author: { select: { nickname: true } },
   tags: { include: { tag: true } },
+  contents: true,
   translations: true
 } satisfies Prisma.ArticleInclude;
 
@@ -106,81 +112,65 @@ async function ensureArticleSlug(requestedSlug?: string | null, articleId?: stri
   }
 }
 
-function normalizeDisplayLocale(locale?: string | null) {
-  if (!locale) {
-    return null;
-  }
-
-  const lower = locale.toLowerCase();
-  if (lower.startsWith("en")) {
-    return "en";
-  }
-  if (lower.startsWith("zh")) {
-    return "zh-CN";
-  }
-  return locale;
-}
-
 function languageStatus(
   article: ArticleWithRelations,
-  translations: ArticleWithRelations["translations"],
-  contentHash: string,
-  locale: "zh-CN" | "en",
-  sourceLocale: "zh-CN" | "en"
+  locale: ArticleContentLocale,
+  sourceLocale: ArticleContentLocale
 ) {
+  const content = findArticleContent(article.contents, locale);
+
   if (locale === sourceLocale) {
     return {
       locale,
       isSource: true,
-      ready: true,
-      status: "SOURCE" as const,
-      error: null as string | null
+      ready: isDisplayableArticleContent(content) || Boolean(article.contentHtml.trim()),
+      status: content?.contentStatus ?? ArticleContentStatus.READY,
+      error: content?.error ?? null
     };
   }
-
-  const translation = translations.find((item) => item.locale === locale);
-  const ready = Boolean(
-    translation &&
-    translation.status === TranslationStatus.TRANSLATED &&
-    translation.contentHash === contentHash &&
-    translation.contentHtml.trim()
-  );
 
   return {
     locale,
     isSource: false,
-    ready,
-    status: translation?.status ?? null,
-    error: translation?.error ?? null
+    ready: isDisplayableArticleContent(content),
+    status: content?.contentStatus ?? null,
+    error: content?.error ?? null
   };
 }
 
-function mapArticle(article: ArticleWithRelations, locale?: string | null, translationTargetLocale = "en") {
-  const display = resolveArticleDisplayTranslation(article, locale);
-  const { tags, translations, ...rest } = article;
-  const normalizedLocale = normalizeDisplayLocale(locale);
-  const contentHash = hashArticleSource({
-    title: article.title,
-    summary: article.summary,
-    contentHtml: article.contentHtml
-  });
-  const sourceLocale = normalizeArticleLanguageLocale(article.sourceLocale);
-  const normalizedTargetLocale = normalizeTranslationLocale(translationTargetLocale);
-  const counterpartLocale: "zh-CN" | "en" = sourceLocale === "zh-CN" ? "en" : "zh-CN";
-  const targetTranslation = normalizedTargetLocale === sourceLocale
-    ? null
-    : translations.find((translation) => translation.locale === normalizedTargetLocale);
-  const counterpartTranslation = translations.find((translation) => translation.locale === counterpartLocale);
-  const translationReady =
-    normalizedTargetLocale === sourceLocale ||
-    (
-      Boolean(targetTranslation) &&
-      targetTranslation?.status === TranslationStatus.TRANSLATED &&
-      targetTranslation.contentHash === contentHash
-    );
+function serializeContent(content: ArticleWithRelations["contents"][number]) {
+  return {
+    id: content.id,
+    locale: normalizeArticleContentLocale(content.locale),
+    title: content.title,
+    summary: content.summary,
+    seoTitle: content.seoTitle,
+    seoDescription: content.seoDescription,
+    contentHtml: content.contentHtml,
+    contentJson: content.contentJson,
+    contentStatus: content.contentStatus,
+    contentHash: content.contentHash,
+    generatedFromLocale: content.generatedFromLocale,
+    generatedAt: content.generatedAt?.toISOString() ?? null,
+    error: content.error,
+    updatedAtLabel: content.updatedAt.toISOString()
+  };
+}
+
+function mapArticle(article: ArticleWithRelations, locale?: string | null, translationTargetLocale = "en-US") {
+  const display = resolveArticleContentDisplay(article, locale);
+  const { tags, contents, translations: _translations, ...rest } = article;
+  void _translations;
+  const normalizedLocale = locale ? normalizeArticleContentLocale(locale) : null;
+  const sourceLocale = normalizeArticleContentLocale(article.sourceLocale);
+  const normalizedTargetLocale = normalizeArticleContentLocale(translationTargetLocale);
+  const counterpartLocale = otherArticleContentLocale(sourceLocale);
+  const targetContent = findArticleContent(contents, normalizedTargetLocale);
+  const counterpartContent = findArticleContent(contents, counterpartLocale);
+  const translationReady = normalizedTargetLocale === sourceLocale || isDisplayableArticleContent(targetContent);
   const languageStatuses = {
-    "zh-CN": languageStatus(article, translations, contentHash, "zh-CN", sourceLocale),
-    en: languageStatus(article, translations, contentHash, "en", sourceLocale)
+    "zh-CN": languageStatus(article, "zh-CN", sourceLocale),
+    "en-US": languageStatus(article, "en-US", sourceLocale)
   };
 
   return {
@@ -188,25 +178,29 @@ function mapArticle(article: ArticleWithRelations, locale?: string | null, trans
     sourceLocale,
     title: display.title,
     summary: display.summary,
+    seoTitle: display.seoTitle,
+    seoDescription: display.seoDescription,
     contentHtml: display.contentHtml,
+    contentJson: display.contentJson ?? rest.contentJson,
     translationLocale: normalizedLocale,
     translationStatus: display.status,
     translationError: display.error,
     translationTargetLocale: normalizedTargetLocale,
     translationReady,
     languageStatuses,
+    contents: contents.map(serializeContent),
     counterpartLocale,
-    counterpartTranslationTitle: counterpartTranslation?.title ?? null,
-    counterpartTranslationSummary: counterpartTranslation?.summary ?? null,
-    counterpartTranslationContentHtml: counterpartTranslation?.contentHtml ?? null,
-    counterpartTranslationSeoTitle: counterpartTranslation?.seoTitle ?? null,
-    counterpartTranslationSeoDescription: counterpartTranslation?.seoDescription ?? null,
-    targetTranslationStatus: targetTranslation?.status ?? null,
-    targetTranslationTitle: normalizedTargetLocale === sourceLocale ? article.title : targetTranslation?.title ?? null,
-    targetTranslationSummary: normalizedTargetLocale === sourceLocale ? article.summary : targetTranslation?.summary ?? null,
-    targetTranslationContentHtml: normalizedTargetLocale === sourceLocale ? article.contentHtml : targetTranslation?.contentHtml ?? null,
-    targetTranslationSeoTitle: normalizedTargetLocale === sourceLocale ? article.seoTitle : targetTranslation?.seoTitle ?? null,
-    targetTranslationSeoDescription: normalizedTargetLocale === sourceLocale ? article.seoDescription : targetTranslation?.seoDescription ?? null,
+    counterpartTranslationTitle: counterpartContent?.title ?? null,
+    counterpartTranslationSummary: counterpartContent?.summary ?? null,
+    counterpartTranslationContentHtml: counterpartContent?.contentHtml ?? null,
+    counterpartTranslationSeoTitle: counterpartContent?.seoTitle ?? null,
+    counterpartTranslationSeoDescription: counterpartContent?.seoDescription ?? null,
+    targetTranslationStatus: targetContent?.contentStatus ?? null,
+    targetTranslationTitle: normalizedTargetLocale === sourceLocale ? article.title : targetContent?.title ?? null,
+    targetTranslationSummary: normalizedTargetLocale === sourceLocale ? article.summary : targetContent?.summary ?? null,
+    targetTranslationContentHtml: normalizedTargetLocale === sourceLocale ? article.contentHtml : targetContent?.contentHtml ?? null,
+    targetTranslationSeoTitle: normalizedTargetLocale === sourceLocale ? article.seoTitle : targetContent?.seoTitle ?? null,
+    targetTranslationSeoDescription: normalizedTargetLocale === sourceLocale ? article.seoDescription : targetContent?.seoDescription ?? null,
     publishedAt: rest.publishedAt?.toISOString() ?? null,
     tags: tags.map((item) => item.tag).filter(isDefined)
   };
@@ -301,6 +295,77 @@ async function recordArticleVersion(
   });
 }
 
+type ArticleContentInput = {
+  title: string;
+  summary: string | null;
+  contentHtml: string;
+  contentJson: unknown;
+  seoTitle: string | null;
+  seoDescription: string | null;
+};
+
+async function upsertReadyArticleContent(
+  tx: Prisma.TransactionClient,
+  articleId: string,
+  locale: ArticleContentLocale,
+  input: ArticleContentInput,
+  previousContents: ArticleWithRelations["contents"] = []
+) {
+  const contentHash = hashArticleContent({
+    title: input.title,
+    summary: input.summary,
+    contentHtml: input.contentHtml
+  });
+  const previous = findArticleContent(previousContents, locale);
+  const hashChanged = previous?.contentHash !== contentHash;
+
+  await tx.articleContent.upsert({
+    where: { articleId_locale: { articleId, locale } },
+    update: {
+      title: input.title,
+      summary: input.summary,
+      contentHtml: input.contentHtml,
+      contentJson: input.contentJson as Prisma.InputJsonValue,
+      seoTitle: input.seoTitle,
+      seoDescription: input.seoDescription,
+      contentStatus: ArticleContentStatus.READY,
+      contentHash,
+      error: null
+    },
+    create: {
+      articleId,
+      locale,
+      title: input.title,
+      summary: input.summary,
+      contentHtml: input.contentHtml,
+      contentJson: input.contentJson as Prisma.InputJsonValue,
+      seoTitle: input.seoTitle,
+      seoDescription: input.seoDescription,
+      contentStatus: ArticleContentStatus.READY,
+      contentHash
+    }
+  });
+
+  if (hashChanged) {
+    await tx.articleContent.updateMany({
+      where: {
+        articleId,
+        locale: otherArticleContentLocale(locale),
+        generatedFromLocale: locale,
+        OR: [
+          { title: { not: "" } },
+          { contentHtml: { not: "" } }
+        ]
+      },
+      data: {
+        contentStatus: ArticleContentStatus.STALE
+      }
+    });
+  }
+
+  return { contentHash, hashChanged };
+}
+
 export async function listPublishedArticles(input: unknown, user: CurrentUser | null, locale?: string | null) {
   const parsed = articleQuerySchema.parse(input);
 
@@ -318,6 +383,9 @@ export async function listPublishedArticles(input: unknown, user: CurrentUser | 
               { title: { contains: parsed.q } },
               { summary: { contains: parsed.q } },
               { contentHtml: { contains: parsed.q } },
+              { contents: { some: { title: { contains: parsed.q } } } },
+              { contents: { some: { summary: { contains: parsed.q } } } },
+              { contents: { some: { contentHtml: { contains: parsed.q } } } },
               { tags: { some: { tag: { name: { contains: parsed.q } } } } },
               { tags: { some: { tag: { slug: { contains: parsed.q } } } } }
             ]
@@ -454,7 +522,7 @@ export async function listConsoleArticles(user: CurrentUser) {
 
   return withDatabase(async () => {
     const config = await getTranslationConfig().catch(() => null);
-    const translationTargetLocale = normalizeTranslationLocale(config?.targetLang ?? "en");
+    const translationTargetLocale = normalizeArticleContentLocale(config?.targetLang ?? "en-US");
     const articles = await db.article.findMany({
       where: { deletedAt: null },
       include: articleInclude,
@@ -581,26 +649,40 @@ export async function createArticle(user: CurrentUser, input: unknown) {
   const parsed = articleMutationSchema.parse(input);
   const sanitizedHtml = sanitizeArticleHtml(parsed.contentHtml);
   const slug = await ensureArticleSlug(parsed.slug);
+  const sourceLocale = normalizeArticleContentLocale(parsed.sourceLocale);
 
-  const article = await db.article.create({
-    data: {
+  const article = await db.$transaction(async (tx) => {
+    const created = await tx.article.create({
+      data: {
+        title: parsed.title,
+        slug,
+        summary: parsed.summary,
+        cover: parsed.cover,
+        contentJson: parsed.contentJson as Prisma.InputJsonValue,
+        contentHtml: sanitizedHtml,
+        status: parsed.status,
+        visibility: parsed.visibility,
+        allowComments: parsed.allowComments,
+        pinned: parsed.pinned,
+        featured: parsed.featured,
+        seoTitle: parsed.seoTitle,
+        seoDescription: parsed.seoDescription,
+        sourceLocale,
+        authorId: user.id,
+        publishedAt: parsed.status === ArticleStatus.PUBLISHED ? (parsed.publishedAt ?? new Date()) : (parsed.publishedAt ?? null)
+      }
+    });
+
+    await upsertReadyArticleContent(tx, created.id, sourceLocale, {
       title: parsed.title,
-      slug,
       summary: parsed.summary,
-      cover: parsed.cover,
-      contentJson: parsed.contentJson as Prisma.InputJsonValue,
       contentHtml: sanitizedHtml,
-      status: parsed.status,
-      visibility: parsed.visibility,
-      allowComments: parsed.allowComments,
-      pinned: parsed.pinned,
-      featured: parsed.featured,
+      contentJson: parsed.contentJson,
       seoTitle: parsed.seoTitle,
-      seoDescription: parsed.seoDescription,
-      sourceLocale: parsed.sourceLocale,
-      authorId: user.id,
-      publishedAt: parsed.status === ArticleStatus.PUBLISHED ? (parsed.publishedAt ?? new Date()) : (parsed.publishedAt ?? null)
-    }
+      seoDescription: parsed.seoDescription
+    });
+
+    return created;
   });
 
   await syncTags(article.id, parsed.tagNames);
@@ -622,7 +704,8 @@ export async function updateArticle(user: CurrentUser, id: string, input: unknow
   }
   const parsed = articleMutationSchema.parse(input);
   const sanitizedHtml = sanitizeArticleHtml(parsed.contentHtml);
-  const existing = await db.article.findUnique({ where: { id } });
+  const sourceLocale = normalizeArticleContentLocale(parsed.sourceLocale);
+  const existing = await db.article.findUnique({ where: { id }, include: { contents: true } });
 
   if (!existing) {
     throw new Error("Article not found.");
@@ -630,28 +713,41 @@ export async function updateArticle(user: CurrentUser, id: string, input: unknow
 
   const slug = await ensureArticleSlug(parsed.slug || existing.slug, id);
 
-  const article = await db.article.update({
-    where: { id },
-    data: {
+  const article = await db.$transaction(async (tx) => {
+    const updated = await tx.article.update({
+      where: { id },
+      data: {
+        title: parsed.title,
+        slug,
+        summary: parsed.summary,
+        cover: parsed.cover,
+        contentJson: parsed.contentJson as Prisma.InputJsonValue,
+        contentHtml: sanitizedHtml,
+        status: parsed.status,
+        visibility: parsed.visibility,
+        allowComments: parsed.allowComments,
+        pinned: parsed.pinned,
+        featured: parsed.featured,
+        seoTitle: parsed.seoTitle,
+        seoDescription: parsed.seoDescription,
+        sourceLocale,
+        publishedAt:
+          parsed.status === ArticleStatus.PUBLISHED
+            ? (parsed.publishedAt ?? existing.publishedAt ?? new Date())
+            : (parsed.publishedAt ?? existing.publishedAt)
+      }
+    });
+
+    await upsertReadyArticleContent(tx, updated.id, sourceLocale, {
       title: parsed.title,
-      slug,
       summary: parsed.summary,
-      cover: parsed.cover,
-      contentJson: parsed.contentJson as Prisma.InputJsonValue,
       contentHtml: sanitizedHtml,
-      status: parsed.status,
-      visibility: parsed.visibility,
-      allowComments: parsed.allowComments,
-      pinned: parsed.pinned,
-      featured: parsed.featured,
+      contentJson: parsed.contentJson,
       seoTitle: parsed.seoTitle,
-      seoDescription: parsed.seoDescription,
-      sourceLocale: parsed.sourceLocale,
-      publishedAt:
-        parsed.status === ArticleStatus.PUBLISHED
-          ? (parsed.publishedAt ?? existing.publishedAt ?? new Date())
-          : (parsed.publishedAt ?? existing.publishedAt)
-    }
+      seoDescription: parsed.seoDescription
+    }, existing.contents);
+
+    return updated;
   });
 
   await syncTags(article.id, parsed.tagNames);
@@ -700,26 +796,41 @@ export async function restoreArticleVersion(user: CurrentUser, articleId: string
     ? version.tagNames.map((tag) => String(tag)).filter(Boolean)
     : [];
   const slug = await ensureArticleSlug(version.slug, articleId);
+  const sourceLocale = normalizeArticleContentLocale(version.sourceLocale);
+  const existing = await db.article.findUnique({ where: { id: articleId }, include: { contents: true } });
 
-  const article = await db.article.update({
-    where: { id: articleId },
-    data: {
+  const article = await db.$transaction(async (tx) => {
+    const restored = await tx.article.update({
+      where: { id: articleId },
+      data: {
+        title: version.title,
+        slug,
+        summary: version.summary,
+        cover: version.cover,
+        contentJson: version.contentJson as Prisma.InputJsonValue,
+        contentHtml: version.contentHtml,
+        status: version.status,
+        visibility: version.visibility,
+        allowComments: version.allowComments,
+        pinned: version.pinned,
+        featured: version.featured,
+        seoTitle: version.seoTitle,
+        seoDescription: version.seoDescription,
+        sourceLocale,
+        publishedAt: version.status === ArticleStatus.PUBLISHED ? new Date() : null
+      }
+    });
+
+    await upsertReadyArticleContent(tx, restored.id, sourceLocale, {
       title: version.title,
-      slug,
       summary: version.summary,
-      cover: version.cover,
-      contentJson: version.contentJson as Prisma.InputJsonValue,
       contentHtml: version.contentHtml,
-      status: version.status,
-      visibility: version.visibility,
-      allowComments: version.allowComments,
-      pinned: version.pinned,
-      featured: version.featured,
+      contentJson: version.contentJson,
       seoTitle: version.seoTitle,
-      seoDescription: version.seoDescription,
-      sourceLocale: version.sourceLocale,
-      publishedAt: version.status === ArticleStatus.PUBLISHED ? new Date() : null
-    }
+      seoDescription: version.seoDescription
+    }, existing?.contents ?? []);
+
+    return restored;
   });
 
   await syncTags(articleId, tagNames);
@@ -737,7 +848,7 @@ export async function setArticleStatus(user: CurrentUser, id: string, status: Ar
     throw new Error("DATABASE_URL is not configured.");
   }
 
-  const existing = await db.article.findUnique({ where: { id } });
+  const existing = await db.article.findUnique({ where: { id }, include: { contents: true } });
   if (!existing) {
     throw new Error("Article not found.");
   }
@@ -788,7 +899,7 @@ export async function updateArticleMeta(user: CurrentUser, id: string, input: un
     throw new Error("DATABASE_URL is not configured.");
   }
   const parsed = articleMetaSchema.parse(input);
-  const existing = await db.article.findUnique({ where: { id } });
+  const existing = await db.article.findUnique({ where: { id }, include: { contents: true } });
   if (!existing) {
     throw new Error("Article not found.");
   }
@@ -812,6 +923,16 @@ export async function updateArticleMeta(user: CurrentUser, id: string, input: un
     }
   });
 
+  const sourceLocale = normalizeArticleContentLocale(existing.sourceLocale);
+  const sourceContent = findArticleContent(existing.contents, sourceLocale);
+  await db.$transaction((tx) => upsertReadyArticleContent(tx, id, sourceLocale, {
+    title: sourceContent?.title ?? existing.title,
+    summary: parsed.summary,
+    contentHtml: sourceContent?.contentHtml ?? existing.contentHtml,
+    contentJson: sourceContent?.contentJson ?? existing.contentJson,
+    seoTitle: parsed.seoTitle,
+    seoDescription: parsed.seoDescription
+  }, existing.contents));
   await syncTags(article.id, parsed.tagNames);
   await syncArticleMediaReferences(article.id, existing.contentHtml, parsed.cover);
   scheduleArticleTranslationSync(article);
@@ -831,8 +952,8 @@ export async function updateArticleTranslationSeo(
     throw new Error("DATABASE_URL is not configured.");
   }
 
-  const normalizedLocale = normalizeTranslationLocale(locale);
-  const existing = await db.articleTranslation.findUnique({
+  const normalizedLocale = normalizeArticleContentLocale(locale);
+  const existing = await db.articleContent.findUnique({
     where: { articleId_locale: { articleId, locale: normalizedLocale } },
     select: { id: true }
   });
@@ -840,7 +961,7 @@ export async function updateArticleTranslationSeo(
     return { updated: false };
   }
 
-  await db.articleTranslation.update({
+  await db.articleContent.update({
     where: { articleId_locale: { articleId, locale: normalizedLocale } },
     data: {
       seoTitle: seoTitle.trim() || null,

@@ -2,7 +2,10 @@ import { ArticleStatus, ContentVisibility } from "@prisma/client";
 import { z } from "zod";
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const articleLocaleSchema = z.enum(["zh-CN", "en"]).default("zh-CN");
+const articleLocaleSchema = z.preprocess((value) => {
+  const lower = String(value ?? "").trim().toLowerCase();
+  return lower.startsWith("en") ? "en-US" : "zh-CN";
+}, z.enum(["zh-CN", "en-US"]).default("zh-CN"));
 
 export const articleMutationSchema = z.object({
   title: z.string().trim().min(2, "Title must be at least 2 characters.").max(120, "Title cannot exceed 120 characters."),

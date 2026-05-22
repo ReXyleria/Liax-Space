@@ -56,7 +56,8 @@ export async function generateMetadata({
       contentHtml: true,
       seoTitle: true,
       seoDescription: true,
-      translations: true,
+      sourceLocale: true,
+      contents: true,
       cover: true
     }
   });

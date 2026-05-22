@@ -216,6 +216,7 @@ async function exportData() {
       articleAllowedIdentities: await db.articleAllowedIdentity.findMany(),
       articleTags: await db.articleTag.findMany(),
       articleVersions: await db.articleVersion.findMany(),
+      articleContents: await db.articleContent.findMany(),
       articleTranslations: await db.articleTranslation.findMany(),
       articleTranslationJobs: await db.articleTranslationJob.findMany(),
       publicContentTranslations: await db.publicContentTranslation.findMany(),
@@ -714,6 +715,7 @@ export async function restoreBackup(user: CurrentUser, bytes: Buffer) {
       await tx.articleAllowedIdentity.deleteMany();
       await tx.articleTag.deleteMany();
       await tx.articleTranslationJob.deleteMany();
+      await tx.articleContent.deleteMany();
       await tx.articleTranslation.deleteMany();
       await tx.publicContentTranslationJob.deleteMany();
       await tx.publicContentTranslation.deleteMany();
@@ -757,6 +759,7 @@ export async function restoreBackup(user: CurrentUser, bytes: Buffer) {
       await insertRows(tx.articleAllowedIdentity, asRows(data, "articleAllowedIdentities"));
       await insertRows(tx.articleTag, asRows(data, "articleTags"));
       await insertRows(tx.articleVersion, asRows(data, "articleVersions"));
+      await insertRows(tx.articleContent, asRows(data, "articleContents"));
       await insertRows(tx.articleTranslation, asRows(data, "articleTranslations"));
       await insertRows(tx.articleTranslationJob, asRows(data, "articleTranslationJobs"));
       await insertRows(tx.publicContentTranslation, asRows(data, "publicContentTranslations"));

@@ -29,13 +29,13 @@ export type ArticleRowData = {
   featured: boolean;
   seoTitle: string | null;
   seoDescription: string | null;
-  sourceLocale: "zh-CN" | "en";
+  sourceLocale: "zh-CN" | "en-US";
   targetTranslationTitle?: string | null;
   targetTranslationSummary?: string | null;
   targetTranslationContentHtml?: string | null;
   targetTranslationSeoTitle?: string | null;
   targetTranslationSeoDescription?: string | null;
-  counterpartLocale?: "zh-CN" | "en";
+  counterpartLocale?: "zh-CN" | "en-US";
   counterpartTranslationTitle?: string | null;
   counterpartTranslationSummary?: string | null;
   counterpartTranslationContentHtml?: string | null;
@@ -48,14 +48,14 @@ export type ArticleRowData = {
   targetTranslationStatus?: string | null;
   languageStatuses?: {
     "zh-CN": {
-      locale: "zh-CN" | "en";
+      locale: "zh-CN" | "en-US";
       isSource: boolean;
       ready: boolean;
       status: string | null;
       error: string | null;
     };
-    en: {
-      locale: "zh-CN" | "en";
+    "en-US": {
+      locale: "zh-CN" | "en-US";
       isSource: boolean;
       ready: boolean;
       status: string | null;

@@ -1,32 +1,33 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
-import type { TranslationStatus } from "@prisma/client";
+import { useActionState, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArticleContentStatus, ArticleTranslationJobStatus } from "@prisma/client";
 import { ArticleEditorForm } from "@/components/forms/article-editor-form";
 import type { PreviewSiteSettings } from "@/components/forms/article-preview-overlay";
 import { Button } from "@/components/ui/button";
 import { translateArticleAction, type ArticleTranslationActionState } from "@/features/articles/translation-actions";
 import type { Locale } from "@/lib/i18n-messages";
 
-type ArticleLanguage = "zh-CN" | "en";
+type ArticleLanguage = "zh-CN" | "en-US";
 type ArticleFormValue = Parameters<typeof ArticleEditorForm>[0]["article"];
-type TranslationValue = {
+type ArticleContentValue = {
   id: string;
-  locale: string;
+  locale: ArticleLanguage;
   title: string;
   summary: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
   contentHtml: string;
   contentJson?: unknown;
-  status: TranslationStatus;
+  contentStatus: ArticleContentStatus;
   error: string | null;
   contentHash: string | null;
   updatedAtLabel?: string;
 };
 
 type TranslationProgressState = {
-  status?: TranslationStatus;
+  status?: ArticleTranslationJobStatus;
   progress: number;
   completedUnits: number;
   totalUnits: number;
@@ -34,63 +35,91 @@ type TranslationProgressState = {
   error?: string | null;
 };
 
+const emptyDoc = { type: "doc", content: [] };
+
 function labels(locale: Locale) {
   return locale === "en"
     ? {
-        sourceLanguage: "Source language",
-        sourceLanguageNote: "Choose the language used by the current editor content.",
+        sourceLanguage: "Editing language",
+        sourceLanguageNote: "Chinese and English use the same editor; switching loads that language content.",
+        chinese: "Chinese",
+        english: "English",
         translateToChinese: "Translate to Chinese",
         translateToEnglish: "Translate to English",
         manualTranslateHint: "Run translation for the other language now.",
         translating: "Translating...",
-        progressFallback: "Preparing translation..."
+        progressFallback: "Preparing translation...",
+        generatedHint: "Translation generated. Switch languages to review or apply it."
       }
     : {
-        sourceLanguage: "原文语言",
-        sourceLanguageNote: "选择当前编辑器正文使用的语言。",
+        sourceLanguage: "编辑语言",
+        sourceLanguageNote: "中文和英文使用同一个编辑器；切换后加载对应语言内容。",
+        chinese: "中文",
+        english: "英文",
         translateToChinese: "翻译为中文",
         translateToEnglish: "翻译为英文",
-        manualTranslateHint: "立即为另一种语言重新执行翻译。",
+        manualTranslateHint: "立即为另一种语言执行翻译。",
         translating: "翻译中...",
-        progressFallback: "正在准备翻译..."
+        progressFallback: "正在准备翻译...",
+        generatedHint: "译文已生成，可切换语言查看或应用。"
       };
 }
 
 function normalizeArticleLanguage(value: string | null | undefined): ArticleLanguage {
-  return value?.toLowerCase().startsWith("en") ? "en" : "zh-CN";
+  return value?.toLowerCase().startsWith("en") ? "en-US" : "zh-CN";
 }
 
 function otherLanguage(value: ArticleLanguage): ArticleLanguage {
-  return value === "zh-CN" ? "en" : "zh-CN";
+  return value === "zh-CN" ? "en-US" : "zh-CN";
 }
 
-function languageLabel(value: ArticleLanguage) {
-  return value === "zh-CN" ? "中文" : "English";
+function languageLabel(value: ArticleLanguage, locale: Locale) {
+  const text = labels(locale);
+  return value === "zh-CN" ? text.chinese : text.english;
 }
 
 export function ArticleLanguageWorkspace({
   article,
   tagOptions,
   site,
-  translations,
+  contents,
   locale = "zh-CN"
 }: {
   article: NonNullable<ArticleFormValue>;
   tagOptions: Array<{ name: string }>;
   site: PreviewSiteSettings;
-  translations: TranslationValue[];
+  contents: ArticleContentValue[];
   locale?: Locale;
 }) {
   const text = labels(locale);
+  const router = useRouter();
   const initialSourceLocale = normalizeArticleLanguage(article.sourceLocale);
   const [sourceLocale, setSourceLocale] = useState<ArticleLanguage>(initialSourceLocale);
   const translationTarget = otherLanguage(sourceLocale);
-  const counterpartTranslation = translations.find((translation) => normalizeArticleLanguage(translation.locale) === translationTarget) ?? null;
+  const activeContent = contents.find((content) => normalizeArticleLanguage(content.locale) === sourceLocale) ?? null;
+  const counterpartContent = contents.find((content) => normalizeArticleLanguage(content.locale) === translationTarget) ?? null;
   const [translateState, translateFormAction, isTranslating] = useActionState<ArticleTranslationActionState, FormData>(
     translateArticleAction,
     { ok: false, message: "" }
   );
   const [progress, setProgress] = useState<TranslationProgressState | null>(null);
+
+  const activeArticle = useMemo(() => ({
+    ...article,
+    sourceLocale,
+    title: activeContent?.title ?? (sourceLocale === initialSourceLocale ? article.title : ""),
+    summary: activeContent?.summary ?? (sourceLocale === initialSourceLocale ? article.summary : ""),
+    seoTitle: activeContent?.seoTitle ?? (sourceLocale === initialSourceLocale ? article.seoTitle : ""),
+    seoDescription: activeContent?.seoDescription ?? (sourceLocale === initialSourceLocale ? article.seoDescription : ""),
+    contentHtml: activeContent?.contentHtml ?? (sourceLocale === initialSourceLocale ? article.contentHtml : ""),
+    contentJson: activeContent?.contentJson ?? (sourceLocale === initialSourceLocale ? article.contentJson : emptyDoc)
+  }), [activeContent, article, initialSourceLocale, sourceLocale]);
+
+  useEffect(() => {
+    if (translateState.ok) {
+      router.refresh();
+    }
+  }, [router, translateState.ok]);
 
   useEffect(() => {
     if (!isTranslating) {
@@ -153,14 +182,14 @@ export function ArticleLanguageWorkspace({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex rounded-lg bg-muted p-1">
-              {(["zh-CN", "en"] as const).map((item) => (
+              {(["zh-CN", "en-US"] as const).map((item) => (
                 <Button
                   key={item}
                   type="button"
                   variant={sourceLocale === item ? "primary" : "ghost"}
                   onClick={() => changeSourceLocale(item)}
                 >
-                  {languageLabel(item)}
+                  {languageLabel(item, locale)}
                 </Button>
               ))}
             </div>
@@ -177,7 +206,7 @@ export function ArticleLanguageWorkspace({
 
       {translateState.message ? (
         <p className={translateState.ok ? "text-sm text-emerald-600" : "text-sm text-destructive"}>
-          {translateState.message}
+          {translateState.ok ? text.generatedHint : translateState.message}
         </p>
       ) : null}
 
@@ -203,9 +232,10 @@ export function ArticleLanguageWorkspace({
       ) : null}
 
       <ArticleEditorForm
+        key={`${sourceLocale}:${activeContent?.updatedAtLabel ?? "empty"}`}
         locale={locale}
-        article={{ ...article, sourceLocale }}
-        counterpartTranslation={counterpartTranslation}
+        article={activeArticle}
+        counterpartTranslation={counterpartContent}
         sourceLocale={sourceLocale}
         onSourceLocaleChange={changeSourceLocale}
         showSourceLocaleControl={false}

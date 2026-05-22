@@ -357,6 +357,7 @@ export async function deleteManagedUser(user: CurrentUser, targetUserId: string)
         ]
       }
     });
+    await tx.articleContent.deleteMany({ where: { articleId: { in: articleIds } } });
     await tx.articleTranslation.deleteMany({ where: { articleId: { in: articleIds } } });
     await tx.articleTag.deleteMany({ where: { articleId: { in: articleIds } } });
     await tx.comment.deleteMany({

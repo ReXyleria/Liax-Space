@@ -1,130 +1,48 @@
-import { Prisma, TranslationStatus } from "@prisma/client";
-import { createHash } from "crypto";
+import { ArticleContentStatus, Prisma } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
 import { assertPermission, canManageArticles } from "@/lib/permissions";
 import { sanitizeArticleHtml } from "@/lib/sanitize";
 import {
-  getTranslationConfig,
   callTranslationApi,
+  getTranslationConfig,
   type TranslationProgressUpdate
 } from "@/features/settings/translation-settings";
+import {
+  articleContentLocales,
+  findArticleContent,
+  hasArticleContentBody,
+  hashArticleContent,
+  isDisplayableArticleContent,
+  normalizeArticleContentLocale,
+  otherArticleContentLocale,
+  resolveArticleContentDisplay,
+  type ArticleContentLike,
+  type ArticleContentDisplaySource,
+  type ArticleContentLocale
+} from "@/features/articles/content-service";
+
+export const articleLanguageLocales = articleContentLocales;
+export type ArticleLanguageLocale = ArticleContentLocale;
+export type ArticleTranslationDisplaySource = ArticleContentDisplaySource;
 
 export function hashArticleSource(input: { title: string; summary: string | null; contentHtml: string }) {
-  return createHash("sha256")
-    .update(JSON.stringify({
-      title: input.title,
-      summary: input.summary ?? "",
-      contentHtml: input.contentHtml
-    }))
-    .digest("hex");
+  return hashArticleContent(input);
 }
 
 export function normalizeTranslationLocale(value: string) {
-  const lower = value.toLowerCase();
-  if (lower.startsWith("en")) {
-    return "en";
-  }
-  if (lower.startsWith("zh")) {
-    return "zh-CN";
-  }
-  return value || "en";
+  return normalizeArticleContentLocale(value);
 }
-
-export const articleLanguageLocales = ["zh-CN", "en"] as const;
-export type ArticleLanguageLocale = typeof articleLanguageLocales[number];
 
 export function normalizeArticleLanguageLocale(value: unknown): ArticleLanguageLocale {
-  return normalizeTranslationLocale(String(value ?? "zh-CN")) === "en" ? "en" : "zh-CN";
+  return normalizeArticleContentLocale(value);
 }
-
-export type ArticleTranslationDisplaySource = {
-  title: string;
-  summary: string | null;
-  contentHtml: string;
-  sourceLocale?: string | null;
-  seoTitle?: string | null;
-  seoDescription?: string | null;
-  translations: Array<{
-    locale: string;
-    title: string;
-    summary: string | null;
-    contentHtml: string;
-    seoTitle?: string | null;
-    seoDescription?: string | null;
-    status: TranslationStatus;
-    contentHash: string | null;
-    error?: string | null;
-  }>;
-};
-
-type ArticleTranslationSource = {
-  id: string;
-  title: string;
-  summary: string | null;
-  contentHtml: string;
-  contentJson?: unknown;
-  sourceLocale?: string | null;
-  updatedAt: Date;
-};
 
 export function resolveArticleDisplayTranslation(
   article: ArticleTranslationDisplaySource,
   locale?: string | null
 ) {
-  const normalizedLocale = locale ? normalizeTranslationLocale(locale) : null;
-  const sourceLocale = normalizeArticleLanguageLocale(article.sourceLocale);
-  const sourceHash = hashArticleSource({
-    title: article.title,
-    summary: article.summary,
-    contentHtml: article.contentHtml
-  });
-
-  if (!normalizedLocale || normalizedLocale === sourceLocale) {
-    return {
-      title: article.title,
-      summary: article.summary,
-      contentHtml: article.contentHtml,
-      seoTitle: article.seoTitle ?? null,
-      seoDescription: article.seoDescription ?? null,
-      locale: normalizedLocale,
-      status: null as "translated" | "fallback" | null,
-      error: null as string | null
-    };
-  }
-
-  const translation = article.translations.find((item) => item.locale === normalizedLocale);
-  if (
-    translation?.status === TranslationStatus.TRANSLATED &&
-    translation.contentHash === sourceHash &&
-    translation.contentHtml.trim()
-  ) {
-    return {
-      title: translation.title,
-      summary: translation.summary,
-      contentHtml: translation.contentHtml,
-      seoTitle: translation.seoTitle ?? null,
-      seoDescription: translation.seoDescription ?? null,
-      locale: normalizedLocale,
-      status: "translated" as const,
-      error: null as string | null
-    };
-  }
-
-  return {
-    title: article.title,
-    summary: article.summary,
-    contentHtml: article.contentHtml,
-    seoTitle: article.seoTitle ?? null,
-    seoDescription: article.seoDescription ?? null,
-    locale: normalizedLocale,
-    status: "fallback" as const,
-    error:
-      translation?.error ??
-      (translation?.contentHash && translation.contentHash !== sourceHash
-        ? "译文已过期，正在等待重新生成。"
-        : "该语言译文尚未生成。")
-  };
+  return resolveArticleContentDisplay(article, locale);
 }
 
 export async function isTranslationConfigured() {
@@ -139,7 +57,7 @@ export async function listArticleTranslations(user: CurrentUser, articleId: stri
     return [];
   }
 
-  return db.articleTranslation.findMany({
+  return db.articleContent.findMany({
     where: { articleId },
     orderBy: { updatedAt: "desc" }
   });
@@ -152,9 +70,10 @@ export async function getArticleTranslationProgress(user: CurrentUser, articleId
     throw new Error("DATABASE_URL is not configured.");
   }
 
-  const locale = normalizeTranslationLocale(targetLocale);
-  return db.articleTranslation.findUnique({
-    where: { articleId_locale: { articleId, locale } },
+  const locale = normalizeArticleContentLocale(targetLocale);
+  return db.articleTranslationJob.findFirst({
+    where: { articleId, locale },
+    orderBy: { createdAt: "desc" },
     select: {
       articleId: true,
       locale: true,
@@ -169,79 +88,46 @@ export async function getArticleTranslationProgress(user: CurrentUser, articleId
   });
 }
 
-function toProgressPercent(completedUnits: number, totalUnits: number) {
-  if (totalUnits <= 0) {
-    return 0;
+function selectSourceContent(
+  contents: ArticleContentLike[],
+  targetLocale: ArticleContentLocale,
+  articleSourceLocale: ArticleContentLocale
+) {
+  const preferredSourceLocale = otherArticleContentLocale(targetLocale);
+  const preferred = findArticleContent(contents, preferredSourceLocale);
+  if (isDisplayableArticleContent(preferred)) {
+    return preferred;
   }
-  return Math.max(0, Math.min(100, Math.round((completedUnits / totalUnits) * 100)));
+
+  if (articleSourceLocale !== targetLocale) {
+    const articleSource = findArticleContent(contents, articleSourceLocale);
+    if (isDisplayableArticleContent(articleSource)) {
+      return articleSource;
+    }
+  }
+
+  return contents.find((content) => (
+    normalizeArticleContentLocale(content.locale) !== targetLocale &&
+    isDisplayableArticleContent(content)
+  )) ?? null;
 }
 
-async function markTranslationInProgress(
-  article: ArticleTranslationSource,
-  locale: string,
-  contentHash: string,
-  progress: {
-    completedUnits?: number;
-    totalUnits?: number;
-    message?: string;
-  } = {}
-) {
-  const completedUnits = progress.completedUnits ?? 0;
-  const totalUnits = progress.totalUnits ?? 0;
-  if (normalizeArticleLanguageLocale(article.sourceLocale) === normalizeArticleLanguageLocale(locale)) {
-    return;
-  }
-
-  await db.articleTranslation.upsert({
-    where: { articleId_locale: { articleId: article.id, locale } },
+async function ensureEmptyTargetPlaceholder(articleId: string, locale: ArticleContentLocale) {
+  await db.articleContent.upsert({
+    where: { articleId_locale: { articleId, locale } },
     update: {
-      title: article.title,
-      summary: article.summary,
-      contentHtml: article.contentHtml,
-      contentJson: (article.contentJson ?? Prisma.JsonNull) as Prisma.InputJsonValue,
-      status: TranslationStatus.TRANSLATING,
-      error: null,
-      contentHash,
-      sourceUpdatedAt: article.updatedAt,
-      translatedAt: null,
-      progress: toProgressPercent(completedUnits, totalUnits),
-      completedUnits,
-      totalUnits,
-      progressMessage: progress.message ?? "翻译已排队"
+      contentStatus: ArticleContentStatus.EMPTY,
+      error: null
     },
     create: {
-      articleId: article.id,
+      articleId,
       locale,
-      title: article.title,
-      summary: article.summary,
-      contentHtml: article.contentHtml,
-      contentJson: (article.contentJson ?? Prisma.JsonNull) as Prisma.InputJsonValue,
-      status: TranslationStatus.TRANSLATING,
-      error: null,
-      contentHash,
-      sourceUpdatedAt: article.updatedAt,
-      progress: toProgressPercent(completedUnits, totalUnits),
-      completedUnits,
-      totalUnits,
-      progressMessage: progress.message ?? "翻译已排队"
-    }
-  });
-}
-
-async function updateTranslationProgress(
-  articleId: string,
-  locale: string,
-  completedUnits: number,
-  totalUnits: number,
-  message: string
-) {
-  await db.articleTranslation.update({
-    where: { articleId_locale: { articleId, locale } },
-    data: {
-      progress: toProgressPercent(completedUnits, totalUnits),
-      completedUnits,
-      totalUnits,
-      progressMessage: message
+      title: "",
+      summary: null,
+      contentHtml: "",
+      contentJson: Prisma.JsonNull,
+      contentStatus: ArticleContentStatus.EMPTY,
+      error: null
     }
   });
 }
@@ -257,24 +143,20 @@ export async function executeArticleTranslation(
 
   const config = await getTranslationConfig();
   if (!config.enabled) {
-    throw new Error("翻译功能未启用。");
+    throw new Error("Translation is disabled.");
   }
   if (!config.isConfigured) {
-    throw new Error("翻译 API 尚未配置。");
+    throw new Error("Translation API is not configured.");
   }
 
-  const locale = normalizeTranslationLocale(targetLocale);
+  const locale = normalizeArticleContentLocale(targetLocale);
   const article = await db.article.findUnique({
     where: { id: articleId },
     select: {
       id: true,
       slug: true,
-      title: true,
-      summary: true,
-      contentHtml: true,
-      contentJson: true,
       sourceLocale: true,
-      updatedAt: true
+      contents: true
     }
   });
 
@@ -282,73 +164,98 @@ export async function executeArticleTranslation(
     throw new Error("Article not found.");
   }
 
-  const contentHash = hashArticleSource(article);
-  if (normalizeArticleLanguageLocale(article.sourceLocale) === normalizeArticleLanguageLocale(locale)) {
-    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "Source language already available" });
-    return { articleSlug: article.slug };
+  const sourceLocale = normalizeArticleContentLocale(article.sourceLocale);
+  const sourceContent = selectSourceContent(article.contents, locale, sourceLocale);
+  if (!sourceContent) {
+    throw new Error("No available source content for translation.");
   }
 
-  const existing = await db.articleTranslation.findUnique({
-    where: { articleId_locale: { articleId, locale } }
+  const targetContent = findArticleContent(article.contents, locale);
+  const targetHasBody = hasArticleContentBody(targetContent);
+  const targetHadReadyBody = Boolean(targetContent?.contentStatus === ArticleContentStatus.READY && targetHasBody);
+  const targetWasMissingOrEmpty = !targetContent || !targetHasBody;
+  const sourceContentHash = hashArticleContent({
+    title: sourceContent.title,
+    summary: sourceContent.summary,
+    contentHtml: sourceContent.contentHtml
   });
+  const sourceContentLocale = normalizeArticleContentLocale(sourceContent.locale);
 
   if (
-    existing?.status === TranslationStatus.TRANSLATED &&
-    existing.contentHash === contentHash
+    targetContent?.contentStatus === ArticleContentStatus.READY &&
+    targetContent.generatedFromLocale === sourceContentLocale &&
+    targetContent.contentHash === sourceContentHash
   ) {
-    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "译文已是最新状态" });
+    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "Translation already current" });
     return { articleSlug: article.slug };
   }
 
-  await markTranslationInProgress(article, locale, contentHash);
-  await onProgress?.({ completedUnits: 0, totalUnits: 0, message: "翻译已排队" });
+  if (targetWasMissingOrEmpty) {
+    await ensureEmptyTargetPlaceholder(article.id, locale);
+  }
+
+  await onProgress?.({ completedUnits: 0, totalUnits: 0, message: "Translation queued" });
 
   try {
     const translated = await callTranslationApi(
       config,
       {
-        title: article.title,
-        summary: article.summary,
-        contentHtml: article.contentHtml,
+        title: sourceContent.title,
+        summary: sourceContent.summary,
+        contentHtml: sourceContent.contentHtml,
         targetLocale: locale
       },
       {
         onProgress: async (progress) => {
-          await updateTranslationProgress(article.id, locale, progress.completedUnits, progress.totalUnits, progress.message);
           await onProgress?.(progress);
         }
       }
     );
 
-    await db.articleTranslation.update({
+    await db.articleContent.upsert({
       where: { articleId_locale: { articleId, locale } },
-      data: {
-        ...translated,
+      update: {
+        title: translated.title,
+        summary: translated.summary,
+        contentHtml: sanitizeArticleHtml(translated.contentHtml),
         contentJson: Prisma.JsonNull,
-        status: TranslationStatus.TRANSLATED,
-        error: null,
-        contentHash,
-        sourceUpdatedAt: article.updatedAt,
-        translatedAt: new Date(),
-        progress: 100,
-        completedUnits: 1,
-        totalUnits: 1,
-        progressMessage: "翻译已完成"
+        seoTitle: null,
+        seoDescription: null,
+        contentStatus: ArticleContentStatus.READY,
+        contentHash: sourceContentHash,
+        generatedFromLocale: sourceContentLocale,
+        generatedAt: new Date(),
+        error: null
+      },
+      create: {
+        articleId,
+        locale,
+        title: translated.title,
+        summary: translated.summary,
+        contentHtml: sanitizeArticleHtml(translated.contentHtml),
+        contentJson: Prisma.JsonNull,
+        seoTitle: null,
+        seoDescription: null,
+        contentStatus: ArticleContentStatus.READY,
+        contentHash: sourceContentHash,
+        generatedFromLocale: sourceContentLocale,
+        generatedAt: new Date(),
+        error: null
       }
     });
-    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "翻译已完成" });
+
+    await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "Translation complete" });
     return { articleSlug: article.slug };
   } catch (error) {
-    await db.articleTranslation.update({
-      where: { articleId_locale: { articleId, locale } },
-      data: {
-        status: TranslationStatus.FAILED,
-        error: error instanceof Error ? error.message : "翻译失败。",
-        contentHash,
-        sourceUpdatedAt: article.updatedAt,
-        progressMessage: error instanceof Error ? error.message : "翻译失败。"
-      }
-    });
+    if (!targetHadReadyBody && targetWasMissingOrEmpty) {
+      await db.articleContent.update({
+        where: { articleId_locale: { articleId, locale } },
+        data: {
+          contentStatus: ArticleContentStatus.FAILED,
+          error: error instanceof Error ? error.message : "Translation failed."
+        }
+      });
+    }
     throw error;
   }
 }
@@ -360,7 +267,7 @@ export async function translateArticle(user: CurrentUser, articleId: string, tar
 
 const scheduledArticleTranslationSync = new Set<string>();
 
-export function scheduleArticleTranslationSync(article: ArticleTranslationSource) {
+export function scheduleArticleTranslationSync(article: { id: string }) {
   if (scheduledArticleTranslationSync.has(article.id)) {
     return;
   }
@@ -377,47 +284,9 @@ export function scheduleArticleTranslationSync(article: ArticleTranslationSource
   }, 0);
 }
 
-export async function syncArticleTranslationsAfterSourceChange(article: ArticleTranslationSource) {
+export async function syncArticleTranslationsAfterSourceChange(article: { id: string }) {
   if (!isDatabaseConfigured()) {
     return;
-  }
-
-  const contentHash = hashArticleSource(article);
-  const sourceLocale = normalizeArticleLanguageLocale(article.sourceLocale);
-  const existingTranslations = await db.articleTranslation.findMany({
-    where: { articleId: article.id },
-    select: {
-      locale: true,
-      status: true,
-      contentHash: true
-    }
-  });
-  const staleLocales = existingTranslations
-    .filter((translation) => translation.locale !== sourceLocale && translation.contentHash !== contentHash)
-    .map((translation) => translation.locale);
-
-  if (staleLocales.length) {
-    await db.articleTranslation.updateMany({
-      where: {
-        articleId: article.id,
-        locale: { in: staleLocales }
-      },
-      data: {
-        title: article.title,
-        summary: article.summary,
-        contentHtml: article.contentHtml,
-        contentJson: (article.contentJson ?? Prisma.JsonNull) as Prisma.InputJsonValue,
-        status: TranslationStatus.NOT_TRANSLATED,
-        error: null,
-        contentHash,
-        sourceUpdatedAt: article.updatedAt,
-        translatedAt: null,
-        progress: 0,
-        completedUnits: 0,
-        totalUnits: 0,
-        progressMessage: "Source content changed"
-      }
-    });
   }
 
   const config = await getTranslationConfig().catch((error) => {
@@ -429,60 +298,10 @@ export async function syncArticleTranslationsAfterSourceChange(article: ArticleT
     return;
   }
 
-  const locale = normalizeTranslationLocale(config.targetLang);
-  if (normalizeTranslationLocale(config.sourceLang) === locale || normalizeArticleLanguageLocale(locale) === sourceLocale) {
-    return;
-  }
-
-  const currentTarget = existingTranslations.find((translation) => translation.locale === locale);
-  if (currentTarget?.status === TranslationStatus.TRANSLATED && currentTarget.contentHash === contentHash) {
-    return;
-  }
-
-  await markTranslationInProgress(article, locale, contentHash);
-
-  try {
-    const translated = await callTranslationApi(
-      config,
-      {
-        title: article.title,
-        summary: article.summary,
-        contentHtml: article.contentHtml,
-        targetLocale: locale
-      },
-      {
-        onProgress: (progress) =>
-          updateTranslationProgress(article.id, locale, progress.completedUnits, progress.totalUnits, progress.message)
-      }
-    );
-
-    await db.articleTranslation.update({
-      where: { articleId_locale: { articleId: article.id, locale } },
-      data: {
-        ...translated,
-        contentJson: Prisma.JsonNull,
-        status: TranslationStatus.TRANSLATED,
-        error: null,
-        contentHash,
-        sourceUpdatedAt: article.updatedAt,
-        translatedAt: new Date(),
-        progress: 100,
-        progressMessage: "翻译已完成"
-      }
-    });
-  } catch (error) {
-    await db.articleTranslation.update({
-      where: { articleId_locale: { articleId: article.id, locale } },
-      data: {
-        status: TranslationStatus.FAILED,
-        error: error instanceof Error ? error.message : "翻译失败。",
-        contentHash,
-        sourceUpdatedAt: article.updatedAt,
-        progressMessage: error instanceof Error ? error.message : "翻译失败。"
-      }
-    });
+  const targetLocale = normalizeArticleContentLocale(config.targetLang);
+  await executeArticleTranslation(article.id, targetLocale).catch((error) => {
     console.error("Article translation sync failed", error);
-  }
+  });
 }
 
 export async function upsertManualArticleTranslation(
@@ -509,11 +328,7 @@ export async function upsertManualArticleTranslation(
     select: {
       id: true,
       slug: true,
-      title: true,
-      summary: true,
-      contentHtml: true,
-      sourceLocale: true,
-      updatedAt: true
+      contents: true
     }
   });
 
@@ -521,62 +336,65 @@ export async function upsertManualArticleTranslation(
     throw new Error("Article not found.");
   }
 
-  const locale = normalizeTranslationLocale(input.locale);
-  if (normalizeArticleLanguageLocale(article.sourceLocale) === normalizeArticleLanguageLocale(locale)) {
-    throw new Error("Selected language is the article source. Use the main article editor for this language.");
-  }
-
-  const contentHash = hashArticleSource(article);
+  const locale = normalizeArticleContentLocale(input.locale);
   const sanitizedHtml = sanitizeArticleHtml(input.contentHtml);
+  const contentHash = hashArticleContent({
+    title: input.title.trim(),
+    summary: input.summary?.trim() || null,
+    contentHtml: sanitizedHtml
+  });
+  const previous = findArticleContent(article.contents, locale);
 
-  const translation = await db.articleTranslation.upsert({
-    where: { articleId_locale: { articleId: article.id, locale } },
-    update: {
-      title: input.title.trim(),
-      summary: input.summary?.trim() || null,
-      seoTitle: input.seoTitle?.trim() || null,
-      seoDescription: input.seoDescription?.trim() || null,
-      contentHtml: sanitizedHtml,
-      contentJson: input.contentJson as Prisma.InputJsonValue,
-      status: TranslationStatus.TRANSLATED,
-      error: null,
-      contentHash,
-      sourceUpdatedAt: article.updatedAt,
-      translatedAt: new Date(),
-      progress: 100,
-      completedUnits: 1,
-      totalUnits: 1,
-      progressMessage: "Manual translation saved"
-    },
-    create: {
-      articleId: article.id,
-      locale,
-      title: input.title.trim(),
-      summary: input.summary?.trim() || null,
-      seoTitle: input.seoTitle?.trim() || null,
-      seoDescription: input.seoDescription?.trim() || null,
-      contentHtml: sanitizedHtml,
-      contentJson: input.contentJson as Prisma.InputJsonValue,
-      status: TranslationStatus.TRANSLATED,
-      error: null,
-      contentHash,
-      sourceUpdatedAt: article.updatedAt,
-      translatedAt: new Date(),
-      progress: 100,
-      completedUnits: 1,
-      totalUnits: 1,
-      progressMessage: "Manual translation saved"
+  await db.$transaction(async (tx) => {
+    await tx.articleContent.upsert({
+      where: { articleId_locale: { articleId: article.id, locale } },
+      update: {
+        title: input.title.trim(),
+        summary: input.summary?.trim() || null,
+        seoTitle: input.seoTitle?.trim() || null,
+        seoDescription: input.seoDescription?.trim() || null,
+        contentHtml: sanitizedHtml,
+        contentJson: input.contentJson as Prisma.InputJsonValue,
+        contentStatus: ArticleContentStatus.READY,
+        contentHash,
+        error: null
+      },
+      create: {
+        articleId: article.id,
+        locale,
+        title: input.title.trim(),
+        summary: input.summary?.trim() || null,
+        seoTitle: input.seoTitle?.trim() || null,
+        seoDescription: input.seoDescription?.trim() || null,
+        contentHtml: sanitizedHtml,
+        contentJson: input.contentJson as Prisma.InputJsonValue,
+        contentStatus: ArticleContentStatus.READY,
+        contentHash
+      }
+    });
+
+    if (previous?.contentHash !== contentHash) {
+      await tx.articleContent.updateMany({
+        where: {
+          articleId: article.id,
+          locale: otherArticleContentLocale(locale),
+          generatedFromLocale: locale,
+          OR: [
+            { title: { not: "" } },
+            { contentHtml: { not: "" } }
+          ]
+        },
+        data: {
+          contentStatus: ArticleContentStatus.STALE
+        }
+      });
     }
   });
-  return { translation, articleSlug: article.slug };
+
+  return { translation: null, articleSlug: article.slug };
 }
 
 export async function deleteArticleTranslationsForSource(articleId: string) {
-  if (!isDatabaseConfigured()) {
-    return;
-  }
-
-  await db.articleTranslation.deleteMany({
-    where: { articleId }
-  });
+  void articleId;
+  return;
 }

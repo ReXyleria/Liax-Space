@@ -45,7 +45,7 @@ type ArticleFormValue = {
   featured: boolean;
   seoTitle: string | null;
   seoDescription: string | null;
-  sourceLocale: "zh-CN" | "en";
+  sourceLocale: "zh-CN" | "en-US";
   publishedAt: string | null;
   tags: Array<{ name: string }>;
 };
@@ -274,8 +274,8 @@ export function ArticleEditorForm({
 }: {
   article?: ArticleFormValue | null;
   counterpartTranslation?: ArticleTranslationFormValue | null;
-  sourceLocale?: "zh-CN" | "en";
-  onSourceLocaleChange?: (locale: "zh-CN" | "en") => void;
+  sourceLocale?: "zh-CN" | "en-US";
+  onSourceLocaleChange?: (locale: "zh-CN" | "en-US") => void;
   showSourceLocaleControl?: boolean;
   tagOptions?: Array<{ name: string }>;
   versions?: ArticleVersionValue[];
@@ -307,8 +307,8 @@ export function ArticleEditorForm({
   const [cover, setCover] = useState(article?.cover ?? "");
   const [seoTitle, setSeoTitle] = useState(article?.seoTitle ?? "");
   const [seoDescription, setSeoDescription] = useState(article?.seoDescription ?? "");
-  const [sourceLocale, setSourceLocale] = useState<"zh-CN" | "en">(sourceLocaleProp ?? article?.sourceLocale ?? "zh-CN");
-  const counterpartLocale = sourceLocale === "zh-CN" ? "en" : "zh-CN";
+  const [sourceLocale, setSourceLocale] = useState<"zh-CN" | "en-US">(sourceLocaleProp ?? article?.sourceLocale ?? "zh-CN");
+  const counterpartLocale = sourceLocale === "zh-CN" ? "en-US" : "zh-CN";
   const [translationSeoTitle, setTranslationSeoTitle] = useState(counterpartTranslation?.seoTitle ?? "");
   const [translationSeoDescription, setTranslationSeoDescription] = useState(counterpartTranslation?.seoDescription ?? "");
   const [allowComments, setAllowComments] = useState(article?.allowComments ?? true);
@@ -334,7 +334,7 @@ export function ArticleEditorForm({
   const [submitLocked, setSubmitLocked] = useState(false);
   const [seoMessage, setSeoMessage] = useState("");
   const [seoError, setSeoError] = useState("");
-  const [seoTarget, setSeoTarget] = useState<"zh-CN" | "en" | null>(null);
+  const [seoTarget, setSeoTarget] = useState<"zh-CN" | "en-US" | null>(null);
 
   const tagSelectOptions = useMemo(
     () => Array.from(new Set([...tagOptions.map((tag) => tag.name), ...selectedTags]))
@@ -395,7 +395,7 @@ export function ArticleEditorForm({
     }, 450);
   }, [collectDraft, draftKey]);
 
-  const updateSourceLocale = useCallback((nextLocale: "zh-CN" | "en") => {
+  const updateSourceLocale = useCallback((nextLocale: "zh-CN" | "en-US") => {
     setSourceLocale(nextLocale);
     onSourceLocaleChange?.(nextLocale);
     scheduleDraftSave();
@@ -414,7 +414,7 @@ export function ArticleEditorForm({
     setPublishedAt(draft.publishedAt);
     setEditorInitial({ html: draft.contentHtml, json: parseJsonDraft(draft.contentJson) });
     setStatus(draft.status);
-    updateSourceLocale(draft.sourceLocale === "en" ? "en" : "zh-CN");
+    updateSourceLocale(draft.sourceLocale?.toLowerCase().startsWith("en") ? "en-US" : "zh-CN");
     setVisibility(draft.visibility);
     setSelectedTags(draft.tagNames.split(",").map((tag) => tag.trim()).filter(Boolean));
     setEditorKey((current) => current + 1);
@@ -475,7 +475,7 @@ export function ArticleEditorForm({
     }
   }
 
-  function languageSeoTitle(value: "zh-CN" | "en") {
+  function languageSeoTitle(value: "zh-CN" | "en-US") {
     return value === "zh-CN" ? text.chineseSeoTitle : text.englishSeoTitle;
   }
 
@@ -507,7 +507,7 @@ export function ArticleEditorForm({
     });
   }
 
-  function handleGenerateSeo(target: "zh-CN" | "en") {
+  function handleGenerateSeo(target: "zh-CN" | "en-US") {
     const draft = collectDraft();
     if (!draft || isGeneratingSeo) {
       return;
@@ -669,7 +669,7 @@ export function ArticleEditorForm({
                   </p>
                 </div>
                 <div className="flex rounded-lg bg-muted p-1">
-                  {(["zh-CN", "en"] as const).map((item) => (
+                  {(["zh-CN", "en-US"] as const).map((item) => (
                     <Button
                       key={item}
                       type="button"
@@ -772,7 +772,7 @@ export function ArticleEditorForm({
                 <BlockEditor
                   key={editorKey}
                   title={title}
-                  locale={sourceLocale}
+                  locale={sourceLocale === "en-US" ? "en" : "zh-CN"}
                   initialHtml={editorInitial.html}
                   initialJson={editorInitial.json}
                   onTitleChange={setTitle}

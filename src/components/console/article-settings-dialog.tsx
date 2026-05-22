@@ -33,10 +33,10 @@ type ArticleSettingsData = {
   featured: boolean;
   seoTitle: string | null;
   seoDescription: string | null;
-  sourceLocale: "zh-CN" | "en";
+  sourceLocale: "zh-CN" | "en-US";
   publishedAt: string | null;
   translationTargetLocale?: string;
-  counterpartLocale?: "zh-CN" | "en";
+  counterpartLocale?: "zh-CN" | "en-US";
   counterpartTranslationTitle?: string | null;
   counterpartTranslationSummary?: string | null;
   counterpartTranslationContentHtml?: string | null;
@@ -140,7 +140,7 @@ export function ArticleSettingsDialog({
   const [isSeoPending, startSeoTransition] = useTransition();
   const formId = `article-settings-form-${article.id}`;
   const sourceLocale = article.sourceLocale ?? "zh-CN";
-  const translationLocale = article.counterpartLocale ?? (sourceLocale === "zh-CN" ? "en" : "zh-CN");
+  const translationLocale = article.counterpartLocale ?? (sourceLocale === "zh-CN" ? "en-US" : "zh-CN");
 
   const initialTags = article.tags.flatMap((tag) => (tag?.name ? [tag.name] : []));
   const [selectedTags, setSelectedTags] = useState(initialTags);
@@ -156,7 +156,7 @@ export function ArticleSettingsDialog({
   const [seoDescription, setSeoDescription] = useState(article.seoDescription ?? "");
   const [translationSeoTitle, setTranslationSeoTitle] = useState(article.counterpartTranslationSeoTitle ?? article.targetTranslationSeoTitle ?? "");
   const [translationSeoDescription, setTranslationSeoDescription] = useState(article.counterpartTranslationSeoDescription ?? article.targetTranslationSeoDescription ?? "");
-  const [seoTarget, setSeoTarget] = useState<"zh-CN" | "en" | null>(null);
+  const [seoTarget, setSeoTarget] = useState<"zh-CN" | "en-US" | null>(null);
   const [seoMessage, setSeoMessage] = useState("");
   const [seoError, setSeoError] = useState("");
   const [submitLocked, setSubmitLocked] = useState(false);
@@ -186,11 +186,11 @@ export function ArticleSettingsDialog({
 
   const isSubmitting = isPending || submitLocked;
 
-  function languageSeoLabel(value: "zh-CN" | "en") {
+  function languageSeoLabel(value: "zh-CN" | "en-US") {
     return value === "zh-CN" ? text.chineseSeo : text.englishSeo;
   }
 
-  function generateSeo(target: "zh-CN" | "en") {
+  function generateSeo(target: "zh-CN" | "en-US") {
     if (isSeoPending) {
       return;
     }

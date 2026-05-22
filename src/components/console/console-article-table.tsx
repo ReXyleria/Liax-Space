@@ -140,22 +140,22 @@ function statusClass(status?: ArticleTranslationJobStatus) {
 function languageLabel(locale: Locale, value: string) {
   const text = labels(locale);
   if (value === "zh-CN") return text.chinese;
-  if (value === "en") return text.english;
+  if (value === "en" || value === "en-US") return text.english;
   return value;
 }
 
 type ArticleLanguageStatus =
   NonNullable<ArticleRowData["languageStatuses"]>[keyof NonNullable<ArticleRowData["languageStatuses"]>];
 
-function languageShortLabel(value: "zh-CN" | "en") {
+function languageShortLabel(value: "zh-CN" | "en-US") {
   return value === "zh-CN" ? "中文" : "English";
 }
 
 function languageStatusClass(status?: ArticleLanguageStatus) {
-  if (status?.isSource || status?.ready) {
+  if (status?.ready && status.status !== "STALE") {
     return "bg-emerald-500";
   }
-  if (status?.status === "TRANSLATING") {
+  if (status?.status === "STALE") {
     return "bg-amber-500";
   }
   return "bg-red-500";
@@ -185,7 +185,7 @@ function LanguageIndicator({
 }: {
   locale: Locale;
   status: ArticleLanguageStatus | undefined;
-  displayLocale: "zh-CN" | "en";
+  displayLocale: "zh-CN" | "en-US";
 }) {
   return (
     <span
@@ -264,7 +264,7 @@ export function ConsoleArticleTable({
 }) {
   const text = labels(locale);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [targetLocale, setTargetLocale] = useState(defaultTargetLocale || "en");
+  const [targetLocale, setTargetLocale] = useState(defaultTargetLocale || "en-US");
   const [jobsByKey, setJobsByKey] = useState<Record<string, TranslationJob>>({});
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -272,7 +272,7 @@ export function ConsoleArticleTable({
   const allSelected = selectedIds.length === articles.length && articles.length > 0;
   const hasActiveJobs = Object.values(jobsByKey).some((job) => activeStatuses.has(job.status));
   const languageOptions = useMemo(() => {
-    const values = Array.from(new Set([defaultTargetLocale || "en", "en", "zh-CN"]));
+    const values = Array.from(new Set([defaultTargetLocale || "en-US", "en-US", "zh-CN"]));
     return values.map((value) => ({ value, label: languageLabel(locale, value) }));
   }, [defaultTargetLocale, locale]);
 
@@ -406,8 +406,8 @@ export function ConsoleArticleTable({
                   />
                   <LanguageIndicator
                     locale={locale}
-                    displayLocale="en"
-                    status={article.languageStatuses?.en}
+                    displayLocale="en-US"
+                    status={article.languageStatuses?.["en-US"]}
                   />
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{article.slug}</p>

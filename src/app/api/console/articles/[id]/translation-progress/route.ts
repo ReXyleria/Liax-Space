@@ -12,7 +12,7 @@ export async function GET(
   try {
     const user = await requireUser();
     const { id } = await context.params;
-    const locale = request.nextUrl.searchParams.get("locale") ?? "en";
+    const locale = request.nextUrl.searchParams.get("locale") ?? "en-US";
     const progress = await getArticleTranslationProgress(user, id, locale);
 
     return NextResponse.json({
