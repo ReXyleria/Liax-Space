@@ -133,6 +133,10 @@ function labels(locale: Locale) {
         versionLabel: "Version",
         seoGenerated: "SEO has been generated. You can continue adjusting it manually.",
         seoGenerateFailed: "AI SEO generation failed.",
+        sourceLanguageTitle: "Editing language",
+        sourceLanguageDescription: "Chinese and English use the same editor; switching changes the stored source language.",
+        chineseLanguage: "Chinese",
+        englishLanguage: "English",
         statusLabels: {
           [ArticleStatus.DRAFT]: "Draft",
           [ArticleStatus.PUBLISHED]: "Published",
@@ -192,6 +196,10 @@ function labels(locale: Locale) {
         versionLabel: "版本",
         seoGenerated: "SEO 已生成，可继续手动调整。",
         seoGenerateFailed: "AI SEO 生成失败。",
+        sourceLanguageTitle: "编辑语言",
+        sourceLanguageDescription: "中文和 English 使用同一个编辑器；切换后会改变保存的原文语言。",
+        chineseLanguage: "中文",
+        englishLanguage: "English",
         statusLabels: {
           [ArticleStatus.DRAFT]: "草稿",
           [ArticleStatus.PUBLISHED]: "已发布",
@@ -414,7 +422,7 @@ export function ArticleEditorForm({
     setPublishedAt(draft.publishedAt);
     setEditorInitial({ html: draft.contentHtml, json: parseJsonDraft(draft.contentJson) });
     setStatus(draft.status);
-    updateSourceLocale(draft.sourceLocale?.toLowerCase().startsWith("en") ? "en-US" : "zh-CN");
+    updateSourceLocale(draft.sourceLocale === "en-US" ? "en-US" : "zh-CN");
     setVisibility(draft.visibility);
     setSelectedTags(draft.tagNames.split(",").map((tag) => tag.trim()).filter(Boolean));
     setEditorKey((current) => current + 1);
@@ -661,11 +669,9 @@ export function ArticleEditorForm({
             <Card className="p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-medium">{locale === "en" ? "Source language" : "原文语言"}</p>
+                  <p className="text-sm font-medium">{text.sourceLanguageTitle}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {locale === "en"
-                      ? "The selected language is stored as the article source."
-                      : "选择的语言会作为文章原文保存。"}
+                    {text.sourceLanguageDescription}
                   </p>
                 </div>
                 <div className="flex rounded-lg bg-muted p-1">
@@ -676,7 +682,7 @@ export function ArticleEditorForm({
                       variant={sourceLocale === item ? "primary" : "ghost"}
                       onClick={() => updateSourceLocale(item)}
                     >
-                      {item === "zh-CN" ? "中文" : "English"}
+                      {item === "zh-CN" ? text.chineseLanguage : text.englishLanguage}
                     </Button>
                   ))}
                 </div>

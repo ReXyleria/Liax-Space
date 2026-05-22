@@ -53,7 +53,7 @@ const defaultSettings: Array<{
   { key: "translation.apiKey", value: "", group: "translation", type: "PASSWORD" },
   { key: "translation.model", value: "", group: "translation", type: "TEXT" },
   { key: "translation.sourceLang", value: "zh-CN", group: "translation", type: "TEXT" },
-  { key: "translation.targetLang", value: "en", group: "translation", type: "TEXT" },
+  { key: "translation.targetLang", value: "en-US", group: "translation", type: "TEXT" },
   { key: "translation.timeoutMs", value: "30000", group: "translation", type: "NUMBER" },
   { key: "translation.maxRetries", value: "2", group: "translation", type: "NUMBER" },
   { key: "translation.autoTranslate", value: "true", group: "translation", type: "BOOLEAN" },

@@ -31,6 +31,7 @@ import {
 } from "@/features/i18n/public-content-translations";
 import { pushArticleUrlAfterPublish } from "@/features/site-push/service";
 import { normalizeTagSlug } from "@/features/tags/utils";
+import { localeToUrlLocale } from "@/lib/locale-url";
 import { mediaUrlMatchesReference, normalizeMediaReferenceUrl } from "@/lib/media-reference";
 
 const articleInclude = {
@@ -158,10 +159,11 @@ function serializeContent(content: ArticleWithRelations["contents"][number]) {
 }
 
 function mapArticle(article: ArticleWithRelations, locale?: string | null, translationTargetLocale = "en-US") {
-  const display = resolveArticleContentDisplay(article, locale);
+  const requestContentLocale = locale ? normalizeArticleContentLocale(localeToUrlLocale(locale)) : null;
+  const display = resolveArticleContentDisplay(article, requestContentLocale);
   const { tags, contents, translations: _translations, ...rest } = article;
   void _translations;
-  const normalizedLocale = locale ? normalizeArticleContentLocale(locale) : null;
+  const normalizedLocale = requestContentLocale;
   const sourceLocale = normalizeArticleContentLocale(article.sourceLocale);
   const normalizedTargetLocale = normalizeArticleContentLocale(translationTargetLocale);
   const counterpartLocale = otherArticleContentLocale(sourceLocale);

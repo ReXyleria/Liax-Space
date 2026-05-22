@@ -4,9 +4,12 @@ import { createHash } from "crypto";
 export const articleContentLocales = ["zh-CN", "en-US"] as const;
 export type ArticleContentLocale = typeof articleContentLocales[number];
 
+export function isArticleContentLocale(value: unknown): value is ArticleContentLocale {
+  return value === "zh-CN" || value === "en-US";
+}
+
 export function normalizeArticleContentLocale(value: unknown): ArticleContentLocale {
-  const lower = String(value ?? "").trim().toLowerCase();
-  return lower.startsWith("en") ? "en-US" : "zh-CN";
+  return value === "en-US" ? "en-US" : "zh-CN";
 }
 
 export function otherArticleContentLocale(locale: ArticleContentLocale): ArticleContentLocale {
@@ -17,7 +20,7 @@ export function contentLocaleLabel(locale: ArticleContentLocale, displayLocale: 
   if (displayLocale === "en") {
     return locale === "zh-CN" ? "Chinese" : "English";
   }
-  return locale === "zh-CN" ? "中文" : "英文";
+  return locale === "zh-CN" ? "中文" : "English";
 }
 
 export function hashArticleContent(input: { title: string; summary: string | null; contentHtml: string }) {
@@ -63,7 +66,7 @@ export function findArticleContent(
   contents: ArticleContentLike[] | null | undefined,
   locale: ArticleContentLocale
 ) {
-  return contents?.find((content) => normalizeArticleContentLocale(content.locale) === locale) ?? null;
+  return contents?.find((content) => content.locale === locale) ?? null;
 }
 
 export type ArticleContentDisplaySource = {

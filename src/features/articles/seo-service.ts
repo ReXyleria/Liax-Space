@@ -59,7 +59,7 @@ export async function generateArticleSeo(input: SeoInput): Promise<SeoResult> {
       {
         role: "system",
         content:
-          `You generate SEO metadata for blog articles. Return strict JSON only: {"seoTitle":"...","seoDescription":"..."}. Do not use markdown. seoTitle must be <=120 characters. seoDescription must be <=300 characters. Write the metadata in ${input.targetLocale?.toLowerCase().startsWith("en") ? "English" : "Simplified Chinese"}.`
+          `You generate SEO metadata for blog articles. Return strict JSON only: {"seoTitle":"...","seoDescription":"..."}. Do not use markdown. seoTitle must be <=120 characters. seoDescription must be <=300 characters. Write the metadata in ${input.targetLocale === "en-US" ? "English" : "Simplified Chinese"}.`
       },
       {
         role: "user",

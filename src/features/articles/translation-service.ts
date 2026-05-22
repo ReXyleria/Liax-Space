@@ -8,6 +8,7 @@ import {
   getTranslationConfig,
   type TranslationProgressUpdate
 } from "@/features/settings/translation-settings";
+import { localeToUrlLocale } from "@/lib/locale-url";
 import {
   articleContentLocales,
   findArticleContent,
@@ -42,7 +43,7 @@ export function resolveArticleDisplayTranslation(
   article: ArticleTranslationDisplaySource,
   locale?: string | null
 ) {
-  return resolveArticleContentDisplay(article, locale);
+  return resolveArticleContentDisplay(article, locale ? localeToUrlLocale(locale) : locale);
 }
 
 export async function isTranslationConfigured() {

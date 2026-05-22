@@ -53,9 +53,9 @@ function labels(locale: Locale) {
       }
     : {
         sourceLanguage: "编辑语言",
-        sourceLanguageNote: "中文和英文使用同一个编辑器；切换后加载对应语言内容。",
+        sourceLanguageNote: "中文和 English 使用同一个编辑器；切换后加载对应语言内容。",
         chinese: "中文",
-        english: "英文",
+        english: "English",
         translateToChinese: "翻译为中文",
         translateToEnglish: "翻译为英文",
         manualTranslateHint: "立即为另一种语言执行翻译。",
@@ -66,7 +66,7 @@ function labels(locale: Locale) {
 }
 
 function normalizeArticleLanguage(value: string | null | undefined): ArticleLanguage {
-  return value?.toLowerCase().startsWith("en") ? "en-US" : "zh-CN";
+  return value === "en-US" ? "en-US" : "zh-CN";
 }
 
 function otherLanguage(value: ArticleLanguage): ArticleLanguage {
@@ -76,6 +76,24 @@ function otherLanguage(value: ArticleLanguage): ArticleLanguage {
 function languageLabel(value: ArticleLanguage, locale: Locale) {
   const text = labels(locale);
   return value === "zh-CN" ? text.chinese : text.english;
+}
+
+function hasRenderableEditorJson(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as { type?: unknown; content?: unknown };
+  if (candidate.type !== "doc" || !Array.isArray(candidate.content)) {
+    return true;
+  }
+  return candidate.content.length > 0;
+}
+
+function editorJsonOrHtmlFallback(value: unknown, html: string) {
+  if (hasRenderableEditorJson(value)) {
+    return value;
+  }
+  return html.trim() ? undefined : emptyDoc;
 }
 
 export function ArticleLanguageWorkspace({
@@ -96,24 +114,31 @@ export function ArticleLanguageWorkspace({
   const initialSourceLocale = normalizeArticleLanguage(article.sourceLocale);
   const [sourceLocale, setSourceLocale] = useState<ArticleLanguage>(initialSourceLocale);
   const translationTarget = otherLanguage(sourceLocale);
-  const activeContent = contents.find((content) => normalizeArticleLanguage(content.locale) === sourceLocale) ?? null;
-  const counterpartContent = contents.find((content) => normalizeArticleLanguage(content.locale) === translationTarget) ?? null;
+  const activeContent = contents.find((content) => content.locale === sourceLocale) ?? null;
+  const counterpartContent = contents.find((content) => content.locale === translationTarget) ?? null;
   const [translateState, translateFormAction, isTranslating] = useActionState<ArticleTranslationActionState, FormData>(
     translateArticleAction,
     { ok: false, message: "" }
   );
   const [progress, setProgress] = useState<TranslationProgressState | null>(null);
 
-  const activeArticle = useMemo(() => ({
-    ...article,
-    sourceLocale,
-    title: activeContent?.title ?? (sourceLocale === initialSourceLocale ? article.title : ""),
-    summary: activeContent?.summary ?? (sourceLocale === initialSourceLocale ? article.summary : ""),
-    seoTitle: activeContent?.seoTitle ?? (sourceLocale === initialSourceLocale ? article.seoTitle : ""),
-    seoDescription: activeContent?.seoDescription ?? (sourceLocale === initialSourceLocale ? article.seoDescription : ""),
-    contentHtml: activeContent?.contentHtml ?? (sourceLocale === initialSourceLocale ? article.contentHtml : ""),
-    contentJson: activeContent?.contentJson ?? (sourceLocale === initialSourceLocale ? article.contentJson : emptyDoc)
-  }), [activeContent, article, initialSourceLocale, sourceLocale]);
+  const activeArticle = useMemo(() => {
+    const contentHtml = activeContent?.contentHtml ?? (sourceLocale === initialSourceLocale ? article.contentHtml : "");
+    const contentJson = activeContent
+      ? editorJsonOrHtmlFallback(activeContent.contentJson, contentHtml)
+      : editorJsonOrHtmlFallback(sourceLocale === initialSourceLocale ? article.contentJson : null, contentHtml);
+
+    return {
+      ...article,
+      sourceLocale,
+      title: activeContent?.title ?? (sourceLocale === initialSourceLocale ? article.title : ""),
+      summary: activeContent?.summary ?? (sourceLocale === initialSourceLocale ? article.summary : ""),
+      seoTitle: activeContent?.seoTitle ?? (sourceLocale === initialSourceLocale ? article.seoTitle : ""),
+      seoDescription: activeContent?.seoDescription ?? (sourceLocale === initialSourceLocale ? article.seoDescription : ""),
+      contentHtml,
+      contentJson
+    };
+  }, [activeContent, article, initialSourceLocale, sourceLocale]);
 
   useEffect(() => {
     if (translateState.ok) {

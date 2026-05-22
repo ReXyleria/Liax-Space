@@ -37,7 +37,7 @@ ALTER TABLE `ArticleContent`
 
 UPDATE `Article`
 SET `sourceLocale` = CASE
-  WHEN `sourceLocale` IN ('en', 'en-US') THEN 'en-US'
+  WHEN `sourceLocale` = 'en-US' THEN 'en-US'
   ELSE 'zh-CN'
 END;
 
@@ -63,7 +63,7 @@ SELECT
   CONCAT('ac_', REPLACE(UUID(), '-', '')),
   `Article`.`id`,
   CASE
-    WHEN `Article`.`sourceLocale` IN ('en', 'en-US') THEN 'en-US'
+    WHEN `Article`.`sourceLocale` = 'en-US' THEN 'en-US'
     ELSE 'zh-CN'
   END,
   `Article`.`title`,
@@ -113,7 +113,7 @@ SELECT
   CONCAT('ac_', REPLACE(UUID(), '-', '')),
   `ArticleTranslation`.`articleId`,
   CASE
-    WHEN `ArticleTranslation`.`locale` IN ('en', 'en-US') THEN 'en-US'
+    WHEN `ArticleTranslation`.`locale` = 'en-US' THEN 'en-US'
     ELSE 'zh-CN'
   END,
   `ArticleTranslation`.`title`,
@@ -129,7 +129,7 @@ SELECT
   END,
   `ArticleTranslation`.`contentHash`,
   CASE
-    WHEN `Article`.`sourceLocale` IN ('en', 'en-US') THEN 'en-US'
+    WHEN `Article`.`sourceLocale` = 'en-US' THEN 'en-US'
     ELSE 'zh-CN'
   END,
   `ArticleTranslation`.`translatedAt`,
@@ -144,7 +144,7 @@ WHERE NOT EXISTS (
   FROM `ArticleContent`
   WHERE `ArticleContent`.`articleId` = `ArticleTranslation`.`articleId`
     AND `ArticleContent`.`locale` = CASE
-      WHEN `ArticleTranslation`.`locale` IN ('en', 'en-US') THEN 'en-US'
+      WHEN `ArticleTranslation`.`locale` = 'en-US' THEN 'en-US'
       ELSE 'zh-CN'
     END
 );

@@ -40,7 +40,7 @@ function labels(locale: Locale) {
         canceled: "Canceled",
         idle: "Idle",
         retry: "Retry",
-        chinese: "Simplified Chinese",
+        chinese: "Chinese",
         english: "English",
         responseInvalid: "Invalid response format.",
         loadFailed: "Failed to load translation jobs.",
@@ -64,8 +64,8 @@ function labels(locale: Locale) {
         canceled: "已取消",
         idle: "空闲",
         retry: "重试",
-        chinese: "简体中文",
-        english: "英文",
+        chinese: "中文",
+        english: "English",
         responseInvalid: "响应格式无效。",
         loadFailed: "翻译任务加载失败。",
         selectAtLeastOne: "请至少选择一篇文章。",
@@ -140,14 +140,17 @@ function statusClass(status?: ArticleTranslationJobStatus) {
 function languageLabel(locale: Locale, value: string) {
   const text = labels(locale);
   if (value === "zh-CN") return text.chinese;
-  if (value === "en" || value === "en-US") return text.english;
+  if (value === "en-US") return text.english;
   return value;
 }
 
 type ArticleLanguageStatus =
   NonNullable<ArticleRowData["languageStatuses"]>[keyof NonNullable<ArticleRowData["languageStatuses"]>];
 
-function languageShortLabel(value: "zh-CN" | "en-US") {
+function languageShortLabel(value: "zh-CN" | "en-US", locale: Locale) {
+  if (locale === "en") {
+    return value === "zh-CN" ? "Chinese" : "English";
+  }
   return value === "zh-CN" ? "中文" : "English";
 }
 
@@ -170,12 +173,12 @@ function languageStatusTitle(locale: Locale, status: ArticleLanguageStatus | und
     return notReady;
   }
   if (status.isSource) {
-    return `${languageShortLabel(status.locale)}: ${sourceReady}`;
+    return `${languageShortLabel(status.locale, locale)}: ${sourceReady}`;
   }
   if (status.ready) {
-    return `${languageShortLabel(status.locale)}: ${ready}`;
+    return `${languageShortLabel(status.locale, locale)}: ${ready}`;
   }
-  return `${languageShortLabel(status.locale)}: ${status.error || status.status || notReady}`;
+  return `${languageShortLabel(status.locale, locale)}: ${status.error || status.status || notReady}`;
 }
 
 function LanguageIndicator({
@@ -193,7 +196,7 @@ function LanguageIndicator({
       title={languageStatusTitle(locale, status)}
     >
       <span className={cn("h-2.5 w-2.5 rounded-full", languageStatusClass(status))} />
-      {languageShortLabel(displayLocale)}
+      {languageShortLabel(displayLocale, locale)}
     </span>
   );
 }

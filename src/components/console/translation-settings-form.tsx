@@ -255,7 +255,7 @@ export function TranslationSettingsForm({
             <Select
               name="sourceLang"
               defaultValue={settings.sourceLang}
-              options={[{ value: "zh-CN", label: "简体中文" }, { value: "en", label: "英文" }]}
+              options={[{ value: "zh-CN", label: "中文" }, { value: "en-US", label: "English" }]}
             />
           </label>
           <label className="space-y-1.5">
@@ -263,7 +263,7 @@ export function TranslationSettingsForm({
             <Select
               name="targetLang"
               defaultValue={settings.targetLang}
-              options={[{ value: "en", label: "英文" }, { value: "zh-CN", label: "简体中文" }]}
+              options={[{ value: "en-US", label: "English" }, { value: "zh-CN", label: "中文" }]}
             />
           </label>
           <label className="space-y-1.5">

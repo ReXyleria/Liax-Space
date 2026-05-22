@@ -101,7 +101,7 @@ const defaultValues = {
   apiKey: "",
   model: "",
   sourceLang: "zh-CN",
-  targetLang: "en",
+  targetLang: "en-US",
   timeoutMs: 30000,
   maxRetries: 2,
   autoTranslate: true,
@@ -131,6 +131,11 @@ function parseNumber(value: unknown, fallback: number) {
 
 function normalizeString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeArticleSettingLocale(value: unknown, fallback: "zh-CN" | "en-US") {
+  const normalized = normalizeString(value);
+  return normalized === "zh-CN" || normalized === "en-US" ? normalized : fallback;
 }
 
 function normalizeProvider(value: unknown) {
@@ -228,8 +233,8 @@ function buildConfig(map: Map<string, string>): TranslationConfig {
     baseUrl,
     apiKey,
     model,
-    sourceLang: pickValue(map, "sourceLang", defaultValues.sourceLang),
-    targetLang: pickValue(map, "targetLang", defaultValues.targetLang),
+    sourceLang: normalizeArticleSettingLocale(pickValue(map, "sourceLang", defaultValues.sourceLang), "zh-CN"),
+    targetLang: normalizeArticleSettingLocale(pickValue(map, "targetLang", defaultValues.targetLang), "en-US"),
     timeoutMs: numbers.timeoutMs,
     maxRetries: numbers.maxRetries,
     autoTranslate: parseBoolean(map.get(SETTING_KEYS.autoTranslate), defaultValues.autoTranslate),
@@ -286,8 +291,8 @@ export function parseTranslationSettingsInput(values: Record<string, unknown>): 
     baseUrl: normalizeString(values.baseUrl),
     apiKey: normalizeString(values.apiKey),
     model: normalizeString(values.model),
-    sourceLang: normalizeString(values.sourceLang) || defaultValues.sourceLang,
-    targetLang: normalizeString(values.targetLang) || defaultValues.targetLang,
+    sourceLang: normalizeArticleSettingLocale(values.sourceLang, "zh-CN"),
+    targetLang: normalizeArticleSettingLocale(values.targetLang, "en-US"),
     timeoutMs: numbers.timeoutMs,
     maxRetries: numbers.maxRetries,
     autoTranslate: parseBoolean(values.autoTranslate, defaultValues.autoTranslate),
@@ -354,10 +359,10 @@ export async function updateTranslationSettings(user: CurrentUser, input: Transl
 }
 
 function targetLanguageLabel(value: string) {
-  if (value === "zh-CN" || value === "zh") {
+  if (value === "zh-CN") {
     return "Simplified Chinese";
   }
-  if (value === "en") {
+  if (value === "en-US") {
     return "English";
   }
   return value;

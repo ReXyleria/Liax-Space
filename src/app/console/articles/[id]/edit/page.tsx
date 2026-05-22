@@ -58,7 +58,7 @@ export default async function EditArticlePage({
       site={site}
       contents={contents.map((content) => ({
         id: content.id,
-        locale: content.locale.toLowerCase().startsWith("en") ? "en-US" : "zh-CN",
+        locale: content.locale === "en-US" ? "en-US" : "zh-CN",
         title: content.title,
         summary: content.summary,
         seoTitle: content.seoTitle,
