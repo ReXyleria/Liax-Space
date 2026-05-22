@@ -30,7 +30,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV PRISMA_BIN=/opt/prisma-cli/node_modules/prisma/build/index.js
-ENV WORKER_BUNDLE=.next/worker/worker.mjs
+ENV WORKER_BUNDLE=.next/worker/worker.cjs
 ENV PATH=/opt/prisma-cli/node_modules/.bin:$PATH
 
 COPY --from=runtime-tools --chown=1001:1001 /opt/prisma-cli /opt/prisma-cli
