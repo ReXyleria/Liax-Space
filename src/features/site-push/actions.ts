@@ -6,7 +6,8 @@ import {
   pushManualUrl,
   pushPublishedArticles,
   saveSitePushSettings,
-  SitePushValidationError
+  SitePushValidationError,
+  type SitePushSubmissionSummary
 } from "@/features/site-push/service";
 import type { Locale } from "@/lib/i18n-messages";
 
@@ -26,13 +27,19 @@ function copy(locale: Locale) {
         error: "Operation failed. Please try again.",
         saved: "Site push settings saved.",
         manualSubmitted: "Push request submitted. The result was written to records.",
-        batchSubmitted: "Published article URLs submitted. Results were written to records."
+        batchSubmitted: "Published article URLs submitted. Results were written to records.",
+        noUrls: "No indexable published article URLs are available to push.",
+        summary: (summary: SitePushSubmissionSummary) =>
+          `URLs ${summary.urls}, providers ${summary.providers}, records ${summary.records}, success ${summary.success}, failed ${summary.failed}, skipped ${summary.skipped}.`
       }
     : {
         error: "操作失败，请稍后重试。",
         saved: "站点推送配置已保存。",
         manualSubmitted: "推送请求已提交，结果已写入记录。",
-        batchSubmitted: "已提交已发布文章 URL，结果已写入记录。"
+        batchSubmitted: "已提交已发布文章 URL，结果已写入记录。",
+        noUrls: "没有可推送的已发布文章 URL。",
+        summary: (summary: SitePushSubmissionSummary) =>
+          `URL ${summary.urls} 个，渠道 ${summary.providers} 个，记录 ${summary.records} 条，成功 ${summary.success} 条，失败 ${summary.failed} 条，跳过 ${summary.skipped} 条。`
       };
 }
 
@@ -62,9 +69,12 @@ export async function pushManualUrlAction(
   const text = copy(getLocale(formData));
   try {
     const user = await requireUser();
-    await pushManualUrl(user, formData);
+    const summary = await pushManualUrl(user, formData);
     revalidatePath("/console/site-push");
-    return { ok: true, message: text.manualSubmitted };
+    return {
+      ok: summary.urls > 0 && summary.failed === 0,
+      message: `${text.manualSubmitted} ${text.summary(summary)}`
+    };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : text.error };
   }
@@ -78,9 +88,12 @@ export async function pushPublishedArticlesAction(
   const text = copy(getLocale(formData));
   try {
     const user = await requireUser();
-    await pushPublishedArticles(user);
+    const summary = await pushPublishedArticles(user);
     revalidatePath("/console/site-push");
-    return { ok: true, message: text.batchSubmitted };
+    return {
+      ok: summary.urls > 0 && summary.failed === 0,
+      message: `${summary.urls ? text.batchSubmitted : text.noUrls} ${text.summary(summary)}`
+    };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : text.error };
   }

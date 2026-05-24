@@ -12,9 +12,9 @@ CREATE TABLE `ArticleTranslationChunk` (
   `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `updatedAt` DATETIME(3) NOT NULL,
 
-  UNIQUE INDEX `ArticleTranslationChunk_articleId_locale_sourceHash_chunkIndex_key`(`articleId`, `locale`, `sourceHash`, `chunkIndex`),
-  INDEX `ArticleTranslationChunk_articleId_locale_sourceHash_status_idx`(`articleId`, `locale`, `sourceHash`, `status`),
-  INDEX `ArticleTranslationChunk_status_updatedAt_idx`(`status`, `updatedAt`),
+  UNIQUE INDEX `ATC_article_locale_hash_chunk_key`(`articleId`, `locale`, `sourceHash`, `chunkIndex`),
+  INDEX `ATC_article_locale_hash_status_idx`(`articleId`, `locale`, `sourceHash`, `status`),
+  INDEX `ATC_status_updatedAt_idx`(`status`, `updatedAt`),
   PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 

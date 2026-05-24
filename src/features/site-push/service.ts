@@ -87,6 +87,17 @@ type PushResult = {
   error?: string;
 };
 
+export type SitePushSubmissionSummary = {
+  urls: number;
+  providers: number;
+  records: number;
+  success: number;
+  failed: number;
+  skipped: number;
+};
+
+type ProviderPushSummary = Omit<SitePushSubmissionSummary, "urls" | "providers">;
+
 export class SitePushValidationError extends Error {
   fieldErrors: Record<string, string[]>;
 
@@ -161,6 +172,25 @@ function chunks<T>(values: T[], size: number) {
     result.push(values.slice(index, index + size));
   }
   return result;
+}
+
+function emptyProviderSummary(): ProviderPushSummary {
+  return { records: 0, success: 0, failed: 0, skipped: 0 };
+}
+
+function emptySubmissionSummary(urls: number, providers: number): SitePushSubmissionSummary {
+  return { urls, providers, ...emptyProviderSummary() };
+}
+
+function addProviderResult(summary: ProviderPushSummary, status: SitePushStatus, count: number) {
+  summary.records += count;
+  if (status === SitePushStatus.SUCCESS) {
+    summary.success += count;
+  } else if (status === SitePushStatus.FAILED) {
+    summary.failed += count;
+  } else if (status === SitePushStatus.SKIPPED) {
+    summary.skipped += count;
+  }
 }
 
 function base64Url(value: Buffer | string) {
@@ -642,7 +672,9 @@ async function pushWithProvider(
   provider: SitePushProvider,
   urls: string[],
   action: SitePushAction
-) {
+): Promise<ProviderPushSummary> {
+  const summary = emptyProviderSummary();
+  let pendingUrls = urls;
   const batchSize =
     provider === SitePushProvider.BAIDU
       ? BAIDU_BATCH_SIZE
@@ -651,7 +683,7 @@ async function pushWithProvider(
         : GOOGLE_BATCH_SIZE;
 
   try {
-    const pendingUrls = await filterRecentlySuccessfulUrls(provider, urls);
+    pendingUrls = await filterRecentlySuccessfulUrls(provider, urls);
     const skippedUrls = urls.filter((url) => !pendingUrls.includes(url));
     await Promise.all(
       skippedUrls.map((url) =>
@@ -661,6 +693,7 @@ async function pushWithProvider(
         })
       )
     );
+    addProviderResult(summary, SitePushStatus.SKIPPED, skippedUrls.length);
 
     for (const batch of chunks(pendingUrls, batchSize)) {
       const result =
@@ -671,17 +704,21 @@ async function pushWithProvider(
             : await pushGoogle(settings, batch);
 
       await Promise.all(batch.map((url) => createRecord(provider, url, action, result)));
+      addProviderResult(summary, result.status, batch.length);
     }
   } catch (error) {
     await Promise.all(
-      urls.map((url) =>
+      pendingUrls.map((url) =>
         createRecord(provider, url, action, {
           status: SitePushStatus.FAILED,
           error: error instanceof Error ? error.message : "Push request failed."
         })
       )
     );
+    addProviderResult(summary, SitePushStatus.FAILED, pendingUrls.length);
   }
+
+  return summary;
 }
 
 function normalizeProviders(values: FormDataEntryValue[]) {
@@ -716,7 +753,7 @@ export async function pushManualUrl(user: CurrentUser, formData: FormData) {
     throw new Error(`Selected providers are not enabled or fully configured: ${unavailable.join(", ")}.`);
   }
 
-  await pushUrls([url], providers, SitePushAction.MANUAL, settings);
+  return pushUrls([url], providers, SitePushAction.MANUAL, settings);
 }
 
 export async function pushPublishedArticles(user: CurrentUser) {
@@ -734,6 +771,7 @@ export async function pushPublishedArticles(user: CurrentUser) {
     select: {
       slug: true,
       title: true,
+      contentHtml: true,
       status: true,
       deletedAt: true,
       sourceLocale: true,
@@ -741,13 +779,17 @@ export async function pushPublishedArticles(user: CurrentUser) {
         select: {
           locale: true,
           title: true,
+          contentHtml: true,
           contentStatus: true
         }
       }
     }
   });
   const urls = articles.flatMap((article) => getIndexableArticleLocaleUrls(article, settings.siteUrl).map((item) => item.url));
-  await pushUrls(urls, providers, SitePushAction.BATCH, settings);
+  if (!urls.length) {
+    return emptySubmissionSummary(0, providers.length);
+  }
+  return pushUrls(urls, providers, SitePushAction.BATCH, settings);
 }
 
 export async function pushArticleUrlAfterPublish(articleId: string) {
@@ -765,6 +807,7 @@ export async function pushArticleUrlAfterPublish(articleId: string) {
     select: {
       slug: true,
       title: true,
+      contentHtml: true,
       status: true,
       deletedAt: true,
       sourceLocale: true,
@@ -772,6 +815,7 @@ export async function pushArticleUrlAfterPublish(articleId: string) {
         select: {
           locale: true,
           title: true,
+          contentHtml: true,
           contentStatus: true
         }
       }
@@ -789,16 +833,25 @@ async function pushUrls(
   providers: SitePushProvider[],
   action: SitePushAction,
   providedSettings?: InternalSitePushSettings
-) {
+): Promise<SitePushSubmissionSummary> {
   if (!isDatabaseConfigured()) {
     throw new Error("DATABASE_URL is not configured.");
   }
   const settings = providedSettings ?? (await loadInternalSettings());
   const normalizedUrls = Array.from(new Set(urls.map((url) => url.trim()).filter(Boolean)));
   if (!normalizedUrls.length) {
-    return;
+    return emptySubmissionSummary(0, providers.length);
   }
-  await Promise.all(providers.map((provider) => pushWithProvider(settings, provider, normalizedUrls, action)));
+  const providerSummaries = await Promise.all(
+    providers.map((provider) => pushWithProvider(settings, provider, normalizedUrls, action))
+  );
+  return providerSummaries.reduce<SitePushSubmissionSummary>((summary, providerSummary) => ({
+    ...summary,
+    records: summary.records + providerSummary.records,
+    success: summary.success + providerSummary.success,
+    failed: summary.failed + providerSummary.failed,
+    skipped: summary.skipped + providerSummary.skipped
+  }), emptySubmissionSummary(normalizedUrls.length, providers.length));
 }
 
 export async function getIndexNowKey() {
