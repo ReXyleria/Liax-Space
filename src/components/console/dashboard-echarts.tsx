@@ -2,7 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef } from "react";
-import * as echarts from "echarts";
+import { BarChart, LineChart, PieChart } from "echarts/charts";
+import {
+  GridComponent,
+  LegendComponent,
+  TitleComponent,
+  TooltipComponent
+} from "echarts/components";
+import * as echarts from "echarts/core";
+import { CanvasRenderer } from "echarts/renderers";
+import type { EChartsOption } from "echarts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { t, type Locale } from "@/lib/i18n-messages";
@@ -15,7 +24,18 @@ type DashboardEchartsProps = Pick<
 
 const RANGE_OPTIONS: DashboardStats["rangeDays"][] = [7, 14, 30];
 
-function useChart(ref: React.RefObject<HTMLDivElement | null>, option: echarts.EChartsOption) {
+echarts.use([
+  BarChart,
+  LineChart,
+  PieChart,
+  GridComponent,
+  LegendComponent,
+  TitleComponent,
+  TooltipComponent,
+  CanvasRenderer
+]);
+
+function useChart(ref: React.RefObject<HTMLDivElement | null>, option: EChartsOption) {
   useEffect(() => {
     const element = ref.current;
     if (!element) {
@@ -35,7 +55,7 @@ function useChart(ref: React.RefObject<HTMLDivElement | null>, option: echarts.E
   }, [ref, option]);
 }
 
-function getVisitTrendOption(visitTrend: DashboardStats["visitTrend"]): echarts.EChartsOption {
+function getVisitTrendOption(visitTrend: DashboardStats["visitTrend"]): EChartsOption {
   return {
     grid: { left: 36, right: 18, top: 28, bottom: 36 },
     tooltip: { trigger: "axis" },
@@ -71,7 +91,7 @@ function getVisitTrendOption(visitTrend: DashboardStats["visitTrend"]): echarts.
   };
 }
 
-function getCountryOption(countryTimeline: DashboardStats["countryTimeline"]): echarts.EChartsOption {
+function getCountryOption(countryTimeline: DashboardStats["countryTimeline"]): EChartsOption {
   const timeline = countryTimeline.length
     ? countryTimeline
     : [{ date: "No data", countries: [{ countryCode: "Unknown", count: 0 }] }];
@@ -132,7 +152,7 @@ function getCountryOption(countryTimeline: DashboardStats["countryTimeline"]): e
   };
 }
 
-function getDeviceSourceOption(deviceSources: DashboardStats["deviceSources"]): echarts.EChartsOption {
+function getDeviceSourceOption(deviceSources: DashboardStats["deviceSources"]): EChartsOption {
   const data = deviceSources.length ? deviceSources : [{ name: "No data", value: 0 }];
 
   return {

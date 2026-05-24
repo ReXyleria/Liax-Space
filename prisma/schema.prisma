@@ -379,6 +379,7 @@ model Article {
   visitLogs         VisitLog[]
 
   @@index([status, visibility])
+  @@index([status, deletedAt, pinned, publishedAt])
   @@index([publishedAt])
   @@index([deletedAt])
   @@index([authorId])
@@ -760,6 +761,8 @@ model VisitLog {
   @@index([countryCode])
   @@index([searchEngine])
   @@index([createdAt])
+  @@index([createdAt, countryCode])
+  @@index([createdAt, searchEngine])
 }
 
 model MediaAsset {
@@ -814,6 +817,7 @@ model SitePushRecord {
   id           String           @id @default(cuid())
   provider     SitePushProvider
   url          String           @db.Text
+  urlHash      String?          @db.VarChar(64)
   action       SitePushAction
   status       SitePushStatus   @default(PENDING)
   httpStatus   Int?
@@ -826,6 +830,7 @@ model SitePushRecord {
   @@index([status])
   @@index([createdAt])
   @@index([submittedAt])
+  @@index([provider, urlHash, status, submittedAt])
 }
 
 model SystemInstallation {

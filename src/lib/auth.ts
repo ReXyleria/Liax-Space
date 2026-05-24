@@ -34,6 +34,10 @@ type CookieWriteOptions = {
   maxAge?: number;
 };
 
+type CurrentUserOptions = {
+  touchSession?: boolean;
+};
+
 function readBooleanEnv(value: string | undefined) {
   if (!value) {
     return undefined;
@@ -205,7 +209,7 @@ export async function clearSession() {
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export async function getCurrentUser(options: CurrentUserOptions = {}): Promise<CurrentUser | null> {
   if (!isDatabaseConfigured()) {
     return null;
   }
@@ -258,12 +262,14 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       return null;
     }
 
-    await db.authSession
-      .update({
-        where: { id: session.id },
-        data: { lastUsedAt: new Date() }
-      })
-      .catch(() => undefined);
+    if (options.touchSession ?? true) {
+      await db.authSession
+        .update({
+          where: { id: session.id },
+          data: { lastUsedAt: new Date() }
+        })
+        .catch(() => undefined);
+    }
 
     return session.user;
   } catch (error) {

@@ -29,6 +29,14 @@ function getBrowserName(deviceName: string | null | undefined) {
   return device.includes("·") ? device.split("·")[0].trim() : device;
 }
 
+function rowCount(value: bigint | number | string) {
+  return Number(value);
+}
+
+function rowDateKey(value: Date | string) {
+  return value instanceof Date ? getDateKey(value) : String(value).slice(0, 10);
+}
+
 export async function getDashboardStats(
   user: CurrentUser,
   rangeDaysInput = 7
@@ -55,7 +63,8 @@ export async function getDashboardStats(
       todayVisits,
       popularArticles,
       recentArticles,
-      visitLogs,
+      visitTrendRows,
+      countryRows,
       loginEvents
     ] = await Promise.all([
       db.article.count({ where: { deletedAt: null } }),
@@ -75,18 +84,27 @@ export async function getDashboardStats(
         take: 8,
         select: { id: true, title: true, slug: true, publishedAt: true }
       }),
-      db.visitLog.findMany({
+      db.$queryRaw<Array<{ date: Date | string; count: bigint | number | string }>>`
+        SELECT DATE(createdAt) AS date, COUNT(*) AS count
+        FROM VisitLog
+        WHERE createdAt >= ${startDate}
+        GROUP BY DATE(createdAt)
+        ORDER BY date ASC
+      `,
+      db.$queryRaw<Array<{ date: Date | string; countryCode: string | null; count: bigint | number | string }>>`
+        SELECT
+          DATE(createdAt) AS date,
+          COALESCE(NULLIF(TRIM(countryCode), ''), 'Unknown') AS countryCode,
+          COUNT(*) AS count
+        FROM VisitLog
+        WHERE createdAt >= ${startDate}
+        GROUP BY DATE(createdAt), COALESCE(NULLIF(TRIM(countryCode), ''), 'Unknown')
+      `,
+      withDatabase(() => db.loginEvent.groupBy({
+        by: ["deviceName"],
         where: { createdAt: { gte: startDate } },
-        select: {
-          createdAt: true,
-          countryCode: true,
-          searchEngine: true
-        }
-      }),
-      withDatabase(() => db.loginEvent.findMany({
-        where: { createdAt: { gte: startDate } },
-        select: { deviceName: true }
-      }), [] as Array<{ deviceName: string | null }>)
+        _count: { _all: true }
+      }), [] as Array<{ deviceName: string | null; _count: { _all: number } }>)
     ]);
 
     const dateKeys = buildDateKeys(startDate, rangeDays);
@@ -94,15 +112,19 @@ export async function getDashboardStats(
     const countryTotals = new Map<string, number>();
     const countryByDate = new Map<string, Map<string, number>>();
 
-    for (const log of visitLogs) {
-      const dateKey = getDateKey(log.createdAt);
-      const countryCode = (log.countryCode || "Unknown").trim() || "Unknown";
+    for (const row of visitTrendRows) {
+      trendMap.set(rowDateKey(row.date), rowCount(row.count));
+    }
 
-      trendMap.set(dateKey, (trendMap.get(dateKey) ?? 0) + 1);
-      countryTotals.set(countryCode, (countryTotals.get(countryCode) ?? 0) + 1);
+    for (const row of countryRows) {
+      const dateKey = rowDateKey(row.date);
+      const countryCode = (row.countryCode || "Unknown").trim() || "Unknown";
+      const count = rowCount(row.count);
+
+      countryTotals.set(countryCode, (countryTotals.get(countryCode) ?? 0) + count);
 
       const dailyCountries = countryByDate.get(dateKey) ?? new Map<string, number>();
-      dailyCountries.set(countryCode, (dailyCountries.get(countryCode) ?? 0) + 1);
+      dailyCountries.set(countryCode, (dailyCountries.get(countryCode) ?? 0) + count);
       countryByDate.set(dateKey, dailyCountries);
     }
 
@@ -128,7 +150,7 @@ export async function getDashboardStats(
     const deviceTotals = new Map<string, number>();
     for (const event of loginEvents) {
       const browser = getBrowserName(event.deviceName);
-      deviceTotals.set(browser, (deviceTotals.get(browser) ?? 0) + 1);
+      deviceTotals.set(browser, (deviceTotals.get(browser) ?? 0) + event._count._all);
     }
     const deviceSources = Array.from(deviceTotals.entries())
       .map(([name, value]) => ({ name, value }))

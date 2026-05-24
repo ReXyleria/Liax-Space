@@ -39,12 +39,45 @@ import { isValidSeoDescription } from "@/lib/seo";
 const articleInclude = {
   author: { select: { nickname: true } },
   tags: { include: { tag: true } },
-  contents: true,
-  translations: true
+  contents: true
 } satisfies Prisma.ArticleInclude;
 
 type ArticleWithRelations = Prisma.ArticleGetPayload<{ include: typeof articleInclude }>;
-type PublicArticle = ReturnType<typeof mapArticle>;
+
+const publicArticleListSelect = {
+  id: true,
+  title: true,
+  slug: true,
+  summary: true,
+  cover: true,
+  status: true,
+  visibility: true,
+  pinned: true,
+  featured: true,
+  viewCount: true,
+  seoTitle: true,
+  seoDescription: true,
+  sourceLocale: true,
+  publishedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+  tags: { include: { tag: true } },
+  contents: {
+    select: {
+      locale: true,
+      title: true,
+      summary: true,
+      seoTitle: true,
+      seoDescription: true,
+      contentStatus: true,
+      error: true
+    }
+  }
+} satisfies Prisma.ArticleSelect;
+
+type PublicArticleListRow = Prisma.ArticleGetPayload<{ select: typeof publicArticleListSelect }>;
+type PublicArticle = ReturnType<typeof mapPublicArticleListItem>;
 
 function scheduleArticleSitePush(articleId: string) {
   void pushArticleUrlAfterPublish(articleId).catch((error) => {
@@ -66,7 +99,6 @@ const tagWithArticlesInclude = {
         select: {
           slug: true,
           title: true,
-          contentHtml: true,
           status: true,
           deletedAt: true,
           visibility: true,
@@ -75,7 +107,6 @@ const tagWithArticlesInclude = {
             select: {
               locale: true,
               title: true,
-              contentHtml: true,
               contentStatus: true
             }
           }
@@ -175,8 +206,7 @@ function serializeContent(content: ArticleWithRelations["contents"][number]) {
 function mapArticle(article: ArticleWithRelations, locale?: string | null, translationTargetLocale = "en-US") {
   const requestContentLocale = locale ? normalizeArticleContentLocale(localeToUrlLocale(locale)) : null;
   const display = resolveArticleContentDisplay(article, requestContentLocale, { allowFallback: !requestContentLocale });
-  const { tags, contents, translations: _translations, ...rest } = article;
-  void _translations;
+  const { tags, contents, ...rest } = article;
   const normalizedLocale = requestContentLocale;
   const sourceLocale = normalizeArticleContentLocale(article.sourceLocale);
   const normalizedTargetLocale = normalizeArticleContentLocale(translationTargetLocale);
@@ -219,6 +249,55 @@ function mapArticle(article: ArticleWithRelations, locale?: string | null, trans
     targetTranslationSeoDescription: normalizedTargetLocale === sourceLocale ? article.seoDescription : targetContent?.seoDescription ?? null,
     publishedAt: rest.publishedAt?.toISOString() ?? null,
     tags: tags.map((item) => item.tag).filter(isDefined)
+  };
+}
+
+function isDisplayableListContent(content: PublicArticleListRow["contents"][number] | null | undefined) {
+  return Boolean(
+    content &&
+    (content.contentStatus === ArticleContentStatus.READY || content.contentStatus === ArticleContentStatus.STALE) &&
+    content.title.trim()
+  );
+}
+
+function mapPublicArticleListItem(article: PublicArticleListRow, locale?: string | null) {
+  const requestedLocale = locale ? normalizeArticleContentLocale(localeToUrlLocale(locale)) : null;
+  const sourceLocale = normalizeArticleContentLocale(article.sourceLocale);
+  const requestedContent = requestedLocale
+    ? article.contents.find((content) => normalizeArticleContentLocale(content.locale) === requestedLocale)
+    : null;
+  const canUseRequestedContent = isDisplayableListContent(requestedContent);
+  const canUseSourceContent = !requestedLocale || requestedLocale === sourceLocale;
+  const display = canUseRequestedContent
+    ? requestedContent
+    : canUseSourceContent
+      ? article
+      : null;
+
+  return {
+    id: article.id,
+    slug: article.slug,
+    title: display?.title ?? requestedContent?.title ?? "",
+    summary: display?.summary ?? requestedContent?.summary ?? null,
+    cover: article.cover,
+    status: article.status,
+    visibility: article.visibility,
+    pinned: article.pinned,
+    featured: article.featured,
+    viewCount: article.viewCount,
+    seoTitle: display?.seoTitle ?? requestedContent?.seoTitle ?? null,
+    seoDescription: display?.seoDescription ?? requestedContent?.seoDescription ?? null,
+    sourceLocale,
+    publishedAt: article.publishedAt?.toISOString() ?? null,
+    createdAt: article.createdAt,
+    updatedAt: article.updatedAt,
+    deletedAt: article.deletedAt,
+    translationLocale: requestedLocale,
+    translationStatus: requestedLocale && !display ? ("missing" as const) : null,
+    translationError: requestedLocale && !display
+      ? requestedContent?.error ?? "Requested article content is unavailable."
+      : null,
+    tags: article.tags.map((item) => item.tag).filter(isDefined)
   };
 }
 
@@ -412,14 +491,14 @@ export async function listPublishedArticles(input: unknown, user: CurrentUser | 
 
     const rows = await db.article.findMany({
       where,
-      include: articleInclude,
+      select: publicArticleListSelect,
       orderBy: parsed.sort === "popular" ? [{ viewCount: "desc" }] : [{ pinned: "desc" }, { publishedAt: "desc" }],
       take: 100
     });
 
     const articles = rows
       .filter((article) => canViewArticle(user, article))
-      .map((article) => mapArticle(article, locale))
+      .map((article) => mapPublicArticleListItem(article, locale))
       .filter((article) => !locale || article.translationStatus !== "missing");
 
     return {
@@ -521,13 +600,6 @@ export async function getPublishedArticleBySlug(slug: string, user: CurrentUser 
     if (!canViewArticle(user, article)) {
       return { article: mapArticle(article, locale), canView: false, error: null as string | null };
     }
-
-    await db.article
-      .update({
-        where: { id: article.id },
-        data: { viewCount: { increment: 1 } }
-      })
-      .catch((error) => console.error("Failed to increment article view count", error));
 
     return { article: mapArticle(article, locale), canView: true, error: null as string | null };
   }, { article: null, canView: false, error: "Failed to load article." });

@@ -13,8 +13,18 @@ const ACTIVE_STATUSES: ArticleTranslationJobStatus[] = [
 
 const REQUIRED_TABLES = ["ArticleContent", "ArticleTranslationJob", "ArticleTranslationChunk"];
 const STALE_RUNNING_MS = 15 * 60 * 1000;
+const DEFAULT_JOB_CONCURRENCY = 1;
+const MAX_JOB_CONCURRENCY = 4;
 
 let workerRunning = false;
+
+function getJobConcurrency() {
+  const raw = Number(process.env.ARTICLE_TRANSLATION_JOB_CONCURRENCY ?? process.env.TRANSLATION_JOB_CONCURRENCY ?? DEFAULT_JOB_CONCURRENCY);
+  if (!Number.isFinite(raw)) {
+    return DEFAULT_JOB_CONCURRENCY;
+  }
+  return Math.max(1, Math.min(MAX_JOB_CONCURRENCY, Math.floor(raw)));
+}
 
 function toProgressPercent(completedUnits: number, totalUnits: number) {
   if (totalUnits <= 0) {
@@ -287,12 +297,15 @@ export async function drainArticleTranslationJobs() {
     return;
   }
 
+  const concurrency = getJobConcurrency();
+
   while (true) {
-    const job = await claimNextJob();
-    if (!job) {
+    const jobs = (await Promise.all(Array.from({ length: concurrency }, () => claimNextJob())))
+      .filter((job): job is NonNullable<Awaited<ReturnType<typeof claimNextJob>>> => Boolean(job));
+    if (!jobs.length) {
       return;
     }
-    await runJob(job);
+    await Promise.all(jobs.map((job) => runJob(job)));
   }
 }
 

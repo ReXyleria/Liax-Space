@@ -1,4 +1,4 @@
-import { createSign } from "node:crypto";
+import { createHash, createSign } from "node:crypto";
 import {
   ArticleStatus,
   SettingType,
@@ -29,6 +29,11 @@ const SETTING_KEYS = {
 const DEFAULT_BING_ENDPOINT = "https://api.indexnow.org/indexnow";
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/indexing";
 const GOOGLE_PUBLISH_ENDPOINT = "https://indexing.googleapis.com/v3/urlNotifications:publish";
+const BAIDU_BATCH_SIZE = 2000;
+const INDEXNOW_BATCH_SIZE = 10000;
+const GOOGLE_BATCH_SIZE = 10;
+const GOOGLE_CONCURRENCY = 3;
+const RECENT_SUCCESS_DEDUP_MS = 24 * 60 * 60 * 1000;
 
 type GoogleServiceAccount = {
   client_email?: string;
@@ -144,6 +149,18 @@ function buildDefaultIndexNowKeyLocation(siteUrl: string) {
 
 function limitBody(value: string) {
   return value.length > 4000 ? value.slice(0, 4000) : value;
+}
+
+function urlHash(url: string) {
+  return createHash("sha256").update(url).digest("hex");
+}
+
+function chunks<T>(values: T[], size: number) {
+  const result: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    result.push(values.slice(index, index + size));
+  }
+  return result;
 }
 
 function base64Url(value: Buffer | string) {
@@ -476,6 +493,7 @@ async function createRecord(provider: SitePushProvider, url: string, action: Sit
     data: {
       provider,
       url,
+      urlHash: urlHash(url),
       action,
       status: result.status,
       httpStatus: result.httpStatus,
@@ -484,6 +502,22 @@ async function createRecord(provider: SitePushProvider, url: string, action: Sit
       submittedAt: result.status === SitePushStatus.SKIPPED ? null : new Date()
     }
   });
+}
+
+async function filterRecentlySuccessfulUrls(provider: SitePushProvider, urls: string[]) {
+  const hashesByUrl = new Map(urls.map((url) => [url, urlHash(url)]));
+  const recentCutoff = new Date(Date.now() - RECENT_SUCCESS_DEDUP_MS);
+  const records = await db.sitePushRecord.findMany({
+    where: {
+      provider,
+      urlHash: { in: Array.from(new Set(hashesByUrl.values())) },
+      status: SitePushStatus.SUCCESS,
+      submittedAt: { gte: recentCutoff }
+    },
+    select: { urlHash: true }
+  });
+  const pushedHashes = new Set(records.flatMap((record) => record.urlHash ? [record.urlHash] : []));
+  return urls.filter((url) => !pushedHashes.has(hashesByUrl.get(url) ?? ""));
 }
 
 function buildBaiduEndpoint(settings: InternalSitePushSettings) {
@@ -572,20 +606,27 @@ async function pushGoogle(settings: InternalSitePushSettings, urls: string[]): P
   let finalStatus: SitePushStatus = SitePushStatus.SUCCESS;
   let finalHttpStatus = 200;
 
-  for (const url of urls) {
-    const response = await fetch(GOOGLE_PUBLISH_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`
-      },
-      body: JSON.stringify({ url, type: "URL_UPDATED" })
-    });
-    const body = await response.text().catch(() => "");
-    responses.push(`${url}: ${body}`);
-    finalHttpStatus = response.status;
-    if (!response.ok) {
-      finalStatus = SitePushStatus.FAILED;
+  for (let index = 0; index < urls.length; index += GOOGLE_CONCURRENCY) {
+    const batch = urls.slice(index, index + GOOGLE_CONCURRENCY);
+    const batchResults = await Promise.all(batch.map(async (url) => {
+      const response = await fetch(GOOGLE_PUBLISH_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ url, type: "URL_UPDATED" })
+      });
+      const body = await response.text().catch(() => "");
+      return { url, ok: response.ok, status: response.status, body };
+    }));
+
+    for (const result of batchResults) {
+      responses.push(`${result.url}: ${result.body}`);
+      finalHttpStatus = result.status;
+      if (!result.ok) {
+        finalStatus = SitePushStatus.FAILED;
+      }
     }
   }
 
@@ -602,15 +643,35 @@ async function pushWithProvider(
   urls: string[],
   action: SitePushAction
 ) {
-  try {
-    const result =
-      provider === SitePushProvider.BAIDU
-        ? await pushBaidu(settings, urls)
-        : provider === SitePushProvider.BING
-          ? await pushBing(settings, urls)
-          : await pushGoogle(settings, urls);
+  const batchSize =
+    provider === SitePushProvider.BAIDU
+      ? BAIDU_BATCH_SIZE
+      : provider === SitePushProvider.BING
+        ? INDEXNOW_BATCH_SIZE
+        : GOOGLE_BATCH_SIZE;
 
-    await Promise.all(urls.map((url) => createRecord(provider, url, action, result)));
+  try {
+    const pendingUrls = await filterRecentlySuccessfulUrls(provider, urls);
+    const skippedUrls = urls.filter((url) => !pendingUrls.includes(url));
+    await Promise.all(
+      skippedUrls.map((url) =>
+        createRecord(provider, url, action, {
+          status: SitePushStatus.SKIPPED,
+          error: "URL was pushed successfully within the last 24 hours."
+        })
+      )
+    );
+
+    for (const batch of chunks(pendingUrls, batchSize)) {
+      const result =
+        provider === SitePushProvider.BAIDU
+          ? await pushBaidu(settings, batch)
+          : provider === SitePushProvider.BING
+            ? await pushBing(settings, batch)
+            : await pushGoogle(settings, batch);
+
+      await Promise.all(batch.map((url) => createRecord(provider, url, action, result)));
+    }
   } catch (error) {
     await Promise.all(
       urls.map((url) =>
@@ -673,7 +734,6 @@ export async function pushPublishedArticles(user: CurrentUser) {
     select: {
       slug: true,
       title: true,
-      contentHtml: true,
       status: true,
       deletedAt: true,
       sourceLocale: true,
@@ -681,7 +741,6 @@ export async function pushPublishedArticles(user: CurrentUser) {
         select: {
           locale: true,
           title: true,
-          contentHtml: true,
           contentStatus: true
         }
       }
@@ -706,7 +765,6 @@ export async function pushArticleUrlAfterPublish(articleId: string) {
     select: {
       slug: true,
       title: true,
-      contentHtml: true,
       status: true,
       deletedAt: true,
       sourceLocale: true,
@@ -714,7 +772,6 @@ export async function pushArticleUrlAfterPublish(articleId: string) {
         select: {
           locale: true,
           title: true,
-          contentHtml: true,
           contentStatus: true
         }
       }

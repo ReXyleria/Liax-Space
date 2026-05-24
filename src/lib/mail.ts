@@ -68,11 +68,24 @@ const legacySceneMap: Partial<Record<MailTemplateScene, DbMailTemplateScene>> = 
   articleComment: DbMailTemplateScene.ARTICLE_COMMENT
 };
 
+function hasUnsafeMailHeaderChars(value: string) {
+  return /[\r\n]/.test(value);
+}
+
+function isPlainEmailAddress(value: string) {
+  return /^[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+\.[^\s@<>"'(),;:]+$/.test(value);
+}
+
+function sanitizeEmailAddress(value: string) {
+  const email = value.trim();
+  return !hasUnsafeMailHeaderChars(email) && isPlainEmailAddress(email) ? email : "";
+}
+
 function completeConfig(values: Record<string, string | undefined>): SmtpConfig | null {
   const host = values["smtp.host"]?.trim();
   const user = values["smtp.user"]?.trim();
   const pass = values["smtp.pass"];
-  const from = (values["smtp.from"] || user)?.trim();
+  const from = sanitizeEmailAddress((values["smtp.from"] || user) ?? "");
   const fromName = values["smtp.fromName"]?.trim() || "";
   const port = Number(values["smtp.port"] || 587);
   const encryptionValue = values["smtp.encryption"]?.trim();
@@ -80,7 +93,16 @@ function completeConfig(values: Record<string, string | undefined>): SmtpConfig 
     ? encryptionValue
     : "starttls";
 
-  if (!host || !user || !pass || !from || !Number.isFinite(port)) {
+  if (
+    !host ||
+    !user ||
+    !pass ||
+    !from ||
+    !Number.isFinite(port) ||
+    hasUnsafeMailHeaderChars(host) ||
+    hasUnsafeMailHeaderChars(user) ||
+    hasUnsafeMailHeaderChars(fromName)
+  ) {
     return null;
   }
 
@@ -258,6 +280,16 @@ export async function sendTemplatedMail({
   const subject = renderTemplate(template.subject, nextVariables);
   const html = renderTemplate(template.bodyHtml, nextVariables);
   const text = htmlToText(html);
+  const safeTo = sanitizeEmailAddress(to);
+
+  if (!safeTo) {
+    await recordMailLog({ scene: dbScene, to, subject, status: MailSendStatus.FAILED, error: "Invalid recipient address." });
+    return {
+      ok: false,
+      reason: "SEND_FAILED",
+      message: "Email send failed. Check recipient address."
+    };
+  }
 
   if (respectNotificationToggle) {
     const settings = await getSettingsValues(["smtp.notificationsEnabled"]);
@@ -282,7 +314,7 @@ export async function sendTemplatedMail({
     const transporter = createSmtpTransport(config);
 
     await transporter.sendMail({
-      to,
+      to: safeTo,
       from: formatFrom(config),
       subject,
       text,
@@ -356,11 +388,19 @@ export async function sendSmtpTestMail(
   }
 
   try {
+    const safeTo = sanitizeEmailAddress(to);
+    if (!safeTo) {
+      return {
+        ok: false,
+        reason: "SEND_FAILED",
+        message: "Invalid recipient address."
+      };
+    }
     const site = await getSiteConfig();
     const transporter = createSmtpTransport(config);
     await transporter.verify();
     await transporter.sendMail({
-      to,
+      to: safeTo,
       from: formatFrom(config),
       subject: `SMTP test - ${site.title}`,
       text: `SMTP test from ${site.title}. If you received this message, mail delivery is working.`,

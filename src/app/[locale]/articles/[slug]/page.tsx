@@ -171,7 +171,7 @@ export default async function ArticleDetailPage({
     notFound();
   }
 
-  const user = await getCurrentUser();
+  const user = await getCurrentUser({ touchSession: false });
   const { article, canView, error } = await getPublishedArticleBySlug(slug, user, locale);
 
   if (error) {
@@ -267,7 +267,7 @@ export default async function ArticleDetailPage({
                   </p>
                 ) : null}
                 <p className="mt-5 text-sm text-muted-foreground">
-                  {article.author.nickname} · {formatDate(article.publishedAt ?? article.createdAt)} · {article.viewCount + 1} {t(locale, "reads")}
+                  {article.author.nickname} · {formatDate(article.publishedAt ?? article.createdAt)} · {article.viewCount} {t(locale, "reads")}
                 </p>
               </MotionItem>
               <MotionItem>

@@ -39,7 +39,7 @@ export default async function GuestbookPage({
 
   const [{ messages, error }, user] = await Promise.all([
     listApprovedGuestbookMessages(locale),
-    getCurrentUser()
+    getCurrentUser({ touchSession: false })
   ]);
   const currentUser = user
     ? {

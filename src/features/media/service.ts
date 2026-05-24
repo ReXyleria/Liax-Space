@@ -6,8 +6,17 @@ import { deleteUploadedFileByUrl } from "@/lib/upload";
 import { mediaUrlMatchesReference, normalizeMediaReferenceUrl } from "@/lib/media-reference";
 
 const UNUSED_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+const WRITE_BATCH_SIZE = 1000;
 const mediaReferenceSourceValues = Object.values(MediaReferenceSource);
 const mediaReferenceSources = new Set<string>(mediaReferenceSourceValues);
+
+function chunks<T>(values: T[], size: number) {
+  const result: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    result.push(values.slice(index, index + size));
+  }
+  return result;
+}
 
 async function cleanupInvalidMediaReferences() {
   await db.$executeRaw(
@@ -102,6 +111,11 @@ export async function rescanMediaReferences(user: CurrentUser) {
 
   await db.mediaReference.deleteMany();
 
+  const allReferences: Array<{ assetId: string; source: MediaReferenceSource; sourceId: string }> = [];
+  const usedAssetIds: string[] = [];
+  const oldUnusedAssetIds: string[] = [];
+  const youngUnusedAssetIds: string[] = [];
+
   for (const asset of assets) {
     const references: Array<{ assetId: string; source: MediaReferenceSource; sourceId: string }> = [];
     const normalizedAssetUrl = normalizeMediaReferenceUrl(asset.url);
@@ -157,21 +171,42 @@ export async function rescanMediaReferences(user: CurrentUser) {
     }
 
     if (references.length) {
-      await db.mediaReference.createMany({ data: references, skipDuplicates: true });
-      await db.mediaAsset.update({
-        where: { id: asset.id },
-        data: { isUnused: false, unusedSince: null, lastScannedAt: now }
-      });
+      allReferences.push(...references);
+      usedAssetIds.push(asset.id);
+    } else if (asset.createdAt <= cutoff) {
+      oldUnusedAssetIds.push(asset.id);
     } else {
-      await db.mediaAsset.update({
-        where: { id: asset.id },
-        data: {
-          isUnused: asset.createdAt <= cutoff,
-          unusedSince: asset.createdAt <= cutoff ? asset.unusedSince ?? now : null,
-          lastScannedAt: now
-        }
-      });
+      youngUnusedAssetIds.push(asset.id);
     }
+  }
+
+  for (const batch of chunks(allReferences, WRITE_BATCH_SIZE)) {
+    await db.mediaReference.createMany({ data: batch, skipDuplicates: true });
+  }
+
+  for (const batch of chunks(usedAssetIds, WRITE_BATCH_SIZE)) {
+    await db.mediaAsset.updateMany({
+      where: { id: { in: batch } },
+      data: { isUnused: false, unusedSince: null, lastScannedAt: now }
+    });
+  }
+
+  for (const batch of chunks(oldUnusedAssetIds, WRITE_BATCH_SIZE)) {
+    await db.mediaAsset.updateMany({
+      where: { id: { in: batch }, unusedSince: null },
+      data: { unusedSince: now }
+    });
+    await db.mediaAsset.updateMany({
+      where: { id: { in: batch } },
+      data: { isUnused: true, lastScannedAt: now }
+    });
+  }
+
+  for (const batch of chunks(youngUnusedAssetIds, WRITE_BATCH_SIZE)) {
+    await db.mediaAsset.updateMany({
+      where: { id: { in: batch } },
+      data: { isUnused: false, unusedSince: null, lastScannedAt: now }
+    });
   }
 
   return db.mediaAsset.count({ where: { isUnused: true } });

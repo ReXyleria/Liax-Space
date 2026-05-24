@@ -39,7 +39,7 @@ export default async function MomentsPage({
     notFound();
   }
   const text = copy(locale);
-  const user = await getCurrentUser();
+  const user = await getCurrentUser({ touchSession: false });
   const { moments, error } = await listPublicMoments(user, locale);
 
   return (

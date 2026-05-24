@@ -41,7 +41,7 @@ export default async function TagsPage({
     notFound();
   }
   const text = copy(locale);
-  const user = await getCurrentUser();
+  const user = await getCurrentUser({ touchSession: false });
   const { tags, error } = await listPublicTags(user, locale);
 
   return (

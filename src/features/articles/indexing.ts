@@ -1,10 +1,7 @@
 import { ArticleStatus, type ArticleContentStatus } from "@prisma/client";
 import {
-  findArticleContent,
   hasArticleContentBody,
-  isDisplayableArticleContent,
   normalizeArticleContentLocale,
-  type ArticleContentLike,
   type ArticleContentLocale
 } from "@/features/articles/content-service";
 import { localizedPath, urlLocales } from "@/lib/locale-url";
@@ -12,17 +9,30 @@ import { localizedPath, urlLocales } from "@/lib/locale-url";
 export type IndexableArticleLike = {
   slug: string;
   title: string;
-  contentHtml: string;
+  contentHtml?: string | null;
   status: ArticleStatus;
   deletedAt: Date | string | null;
   sourceLocale?: string | null;
-  contents?: Array<ArticleContentLike | {
+  contents?: Array<{
     locale: string;
     title: string;
-    contentHtml: string;
+    contentHtml?: string | null;
     contentStatus: ArticleContentStatus;
   }>;
 };
+type IndexableArticleContent = NonNullable<IndexableArticleLike["contents"]>[number];
+
+function findIndexableContent(article: IndexableArticleLike, locale: ArticleContentLocale) {
+  return article.contents?.find((content) => normalizeArticleContentLocale(content.locale) === locale) ?? null;
+}
+
+function isDisplayableIndexableContent(content: IndexableArticleContent | null | undefined) {
+  return Boolean(
+    content &&
+    (content.contentStatus === "READY" || content.contentStatus === "STALE") &&
+    hasArticleContentBody({ title: content.title, contentHtml: content.contentHtml ?? "" })
+  );
+}
 
 export function isIndexableArticleLocale(article: IndexableArticleLike, locale: ArticleContentLocale) {
   if (article.status !== ArticleStatus.PUBLISHED || article.deletedAt) {
@@ -30,12 +40,12 @@ export function isIndexableArticleLocale(article: IndexableArticleLike, locale: 
   }
 
   const sourceLocale = normalizeArticleContentLocale(article.sourceLocale);
-  const content = findArticleContent(article.contents as ArticleContentLike[] | undefined, locale);
-  if (isDisplayableArticleContent(content)) {
+  const content = findIndexableContent(article, locale);
+  if (isDisplayableIndexableContent(content)) {
     return true;
   }
 
-  return locale === sourceLocale && hasArticleContentBody(article);
+  return locale === sourceLocale && hasArticleContentBody({ title: article.title, contentHtml: article.contentHtml ?? "" });
 }
 
 export function getIndexableArticleLocales(article: IndexableArticleLike) {

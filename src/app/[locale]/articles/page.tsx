@@ -49,7 +49,7 @@ export default async function ArticlesPage({
   }
   const text = copy(locale);
 
-  const user = await getCurrentUser();
+  const user = await getCurrentUser({ touchSession: false });
   const { articles, error } = await listPublishedArticles({ q: params.q, tag: params.tag, sort: "newest" }, user, locale);
   const activeTag = params.tag?.trim();
 
@@ -113,11 +113,6 @@ export default async function ArticlesPage({
                         </div>
                         <h2 className="text-2xl font-semibold">{article.title}</h2>
                         <p className="mt-3 line-clamp-3 text-sm leading-6 text-muted-foreground">{article.summary}</p>
-                        {article.translationStatus === "fallback" ? (
-                          <p className="mt-3 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
-                            {article.translationError || t(locale, "articleTranslationFallback")}
-                          </p>
-                        ) : null}
                         <div className="mt-5 flex items-center justify-between text-xs text-muted-foreground">
                           <span>{formatDate(article.publishedAt ?? article.createdAt)}</span>
                           <span>{article.viewCount} {t(locale, "reads")}</span>

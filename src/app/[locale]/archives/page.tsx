@@ -42,7 +42,7 @@ export default async function ArchivesPage({
     notFound();
   }
 
-  const user = await getCurrentUser();
+  const user = await getCurrentUser({ touchSession: false });
   const { archives, error } = await listPublishedArticleArchives(user, locale);
   const articleCount = archives.reduce((total, group) => total + group.articles.length, 0);
   const text = copy(locale, articleCount);

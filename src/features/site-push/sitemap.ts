@@ -62,7 +62,6 @@ async function loadSitemapArticles() {
     select: {
       slug: true,
       title: true,
-      contentHtml: true,
       status: true,
       deletedAt: true,
       sourceLocale: true,
@@ -71,7 +70,6 @@ async function loadSitemapArticles() {
         select: {
           locale: true,
           title: true,
-          contentHtml: true,
           contentStatus: true
         }
       }

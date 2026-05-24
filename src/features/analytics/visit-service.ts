@@ -1,3 +1,4 @@
+import { ArticleStatus } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { hashIp } from "@/lib/security";
@@ -96,21 +97,31 @@ export async function recordVisit(request: Request, input: unknown) {
 
   const referrerParts = getReferrerParts(body.referrer ?? request.headers.get("referer"));
   const [user, articleId] = await Promise.all([
-    getCurrentUser().catch(() => null),
+    getCurrentUser({ touchSession: false }).catch(() => null),
     resolveArticleId(path).catch(() => null)
   ]);
 
-  await db.visitLog.create({
-    data: {
-      path,
-      articleId,
-      userId: user?.id ?? null,
-      ipHash: hashIp(getClientIp(request)),
-      userAgent: request.headers.get("user-agent")?.slice(0, 2000) ?? null,
-      referrer: referrerParts.referrer,
-      referrerHost: referrerParts.referrerHost,
-      searchEngine: referrerParts.searchEngine,
-      countryCode: getCountryCode(request)
-    }
-  });
+  await db.$transaction([
+    db.visitLog.create({
+      data: {
+        path,
+        articleId,
+        userId: user?.id ?? null,
+        ipHash: hashIp(getClientIp(request)),
+        userAgent: request.headers.get("user-agent")?.slice(0, 2000) ?? null,
+        referrer: referrerParts.referrer,
+        referrerHost: referrerParts.referrerHost,
+        searchEngine: referrerParts.searchEngine,
+        countryCode: getCountryCode(request)
+      }
+    }),
+    ...(articleId
+      ? [
+          db.article.updateMany({
+            where: { id: articleId, status: ArticleStatus.PUBLISHED, deletedAt: null },
+            data: { viewCount: { increment: 1 } }
+          })
+        ]
+      : [])
+  ]);
 }

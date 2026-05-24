@@ -74,7 +74,7 @@ export async function PublicShell({
   const [{ settings }, { settings: codeInjection }, user, resolvedLocale] = await Promise.all([
     getSettingsMap(),
     getCodeInjectionMap(),
-    getCurrentUser(),
+    getCurrentUser({ touchSession: false }),
     locale ? Promise.resolve(locale) : getCurrentLocale()
   ]);
 
