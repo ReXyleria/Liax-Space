@@ -19,9 +19,15 @@ function queueActiveCount(report: SystemHealthReport) {
     + report.queues.publicContent.QUEUED + report.queues.publicContent.RUNNING;
 }
 
+function queueIssueCount(report: SystemHealthReport) {
+  return report.queues.article.FAILED + report.queues.article.staleRunning
+    + report.queues.publicContent.FAILED + report.queues.publicContent.staleRunning;
+}
+
 export function SystemHealthPanel({ report, locale }: { report: SystemHealthReport; locale: Locale }) {
   const text = healthText(locale);
   const activeQueueCount = queueActiveCount(report);
+  const queueIssues = queueIssueCount(report);
   const directoriesStatus = report.directories.some((item) => item.status === "critical") ? "critical" : "ok";
 
   return (
@@ -54,7 +60,13 @@ export function SystemHealthPanel({ report, locale }: { report: SystemHealthRepo
           icon={FolderCheck}
           text={text}
         />
-        <SummaryCard title={text.queues} value={String(activeQueueCount)} status={report.queues.status} icon={Activity} text={text} />
+        <SummaryCard
+          title={text.queues}
+          value={`${text.activeQueues} ${activeQueueCount}${queueIssues ? ` / ${text.queueIssues} ${queueIssues}` : ""}`}
+          status={report.queues.status}
+          icon={Activity}
+          text={text}
+        />
         <SummaryCard title={text.security} value={String(report.security.activeAdminUsers)} status={report.security.status} icon={ShieldCheck} text={text} />
       </div>
 
