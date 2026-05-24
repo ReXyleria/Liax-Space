@@ -6,13 +6,17 @@ import { getCodeInjectionMap, getEnabledCodeInjection } from "@/features/code-in
 import { ensureScheduledBackupWorker } from "@/features/backup/scheduler";
 import { getSettingsMap } from "@/features/settings/service";
 import { getCurrentLocale } from "@/lib/i18n-server";
+import { buildMetaDescription } from "@/lib/seo";
 import { getMetadataBase, getSiteConfig } from "@/lib/site";
 import { getThemeStyle } from "@/lib/theme";
 import "../styles/globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const site = await getSiteConfig();
-  const { settings } = await getSettingsMap();
+  const [site, { settings }, locale] = await Promise.all([
+    getSiteConfig(),
+    getSettingsMap(),
+    getCurrentLocale()
+  ]);
   const logo = settings["site.logo"]?.trim();
 
   return {
@@ -21,7 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
       default: site.title,
       template: `%s - ${site.title}`
     },
-    description: site.subtitle || "A production-oriented Liax-Space publishing system.",
+    description: buildMetaDescription(site.subtitle, "A production-oriented Liax-Space publishing system.", locale),
     icons: logo ? { icon: logo, apple: logo } : undefined
   };
 }

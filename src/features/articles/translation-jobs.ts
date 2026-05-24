@@ -11,7 +11,7 @@ const ACTIVE_STATUSES: ArticleTranslationJobStatus[] = [
   ArticleTranslationJobStatus.RUNNING
 ];
 
-const REQUIRED_TABLES = ["ArticleContent", "ArticleTranslationJob"];
+const REQUIRED_TABLES = ["ArticleContent", "ArticleTranslationJob", "ArticleTranslationChunk"];
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
 let workerRunning = false;

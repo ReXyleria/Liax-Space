@@ -8,9 +8,9 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 import { db, isDatabaseConfigured } from "@/lib/db";
+import { getIndexableArticleLocaleUrls } from "@/features/articles/indexing";
 import { assertPermission, canManageSettings } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
-import { localizedPath, urlLocales } from "@/lib/locale-url";
 
 const SETTING_KEYS = {
   baiduEnabled: "sitePush.baidu.enabled",
@@ -670,11 +670,24 @@ export async function pushPublishedArticles(user: CurrentUser) {
     where: { status: ArticleStatus.PUBLISHED, deletedAt: null },
     orderBy: { publishedAt: "desc" },
     take: 100,
-    select: { slug: true }
+    select: {
+      slug: true,
+      title: true,
+      contentHtml: true,
+      status: true,
+      deletedAt: true,
+      sourceLocale: true,
+      contents: {
+        select: {
+          locale: true,
+          title: true,
+          contentHtml: true,
+          contentStatus: true
+        }
+      }
+    }
   });
-  const urls = articles.flatMap((article) =>
-    urlLocales.map((locale) => `${settings.siteUrl}${localizedPath(locale, `/articles/${article.slug}`)}`)
-  );
+  const urls = articles.flatMap((article) => getIndexableArticleLocaleUrls(article, settings.siteUrl).map((item) => item.url));
   await pushUrls(urls, providers, SitePushAction.BATCH, settings);
 }
 
@@ -690,17 +703,28 @@ export async function pushArticleUrlAfterPublish(articleId: string) {
 
   const article = await db.article.findUnique({
     where: { id: articleId },
-    select: { slug: true, status: true, deletedAt: true }
+    select: {
+      slug: true,
+      title: true,
+      contentHtml: true,
+      status: true,
+      deletedAt: true,
+      sourceLocale: true,
+      contents: {
+        select: {
+          locale: true,
+          title: true,
+          contentHtml: true,
+          contentStatus: true
+        }
+      }
+    }
   });
   if (!article || article.deletedAt || article.status !== ArticleStatus.PUBLISHED) {
     return;
   }
-  await pushUrls(
-    urlLocales.map((locale) => `${settings.siteUrl}${localizedPath(locale, `/articles/${article.slug}`)}`),
-    providers,
-    SitePushAction.AUTO,
-    settings
-  );
+  const urls = getIndexableArticleLocaleUrls(article, settings.siteUrl).map((item) => item.url);
+  await pushUrls(urls, providers, SitePushAction.AUTO, settings);
 }
 
 async function pushUrls(

@@ -9,6 +9,7 @@ import type { Locale } from "@/lib/i18n";
 import { getConsoleLocale } from "@/lib/i18n-server";
 import { assertPermission, canManageArticles } from "@/lib/permissions";
 import { localizedPath, urlLocales } from "@/lib/locale-url";
+import { SEO_DESCRIPTION_MAX_LENGTH, SEO_DESCRIPTION_MIN_LENGTH, isValidSeoDescription } from "@/lib/seo";
 import {
   createArticle,
   deleteArticle,
@@ -144,6 +145,38 @@ function actionText(locale: Locale) {
       };
 }
 
+function validateTranslationSeoFields(formData: FormData, locale: Locale): ArticleActionState | null {
+  const hasTranslationSeoFields = formData.has("translationSeoTitle") || formData.has("translationSeoDescription");
+  if (!hasTranslationSeoFields) {
+    return null;
+  }
+
+  const seoTitle = String(formData.get("translationSeoTitle") ?? "").trim();
+  const seoDescription = String(formData.get("translationSeoDescription") ?? "").trim();
+
+  if (seoTitle.length > 120) {
+    return {
+      ok: false,
+      message: actionText(locale).checkFields,
+      fieldErrors: { translationSeoTitle: ["SEO title cannot exceed 120 characters."] }
+    };
+  }
+
+  if (seoDescription && !isValidSeoDescription(seoDescription)) {
+    return {
+      ok: false,
+      message: actionText(locale).checkFields,
+      fieldErrors: {
+        translationSeoDescription: [
+          `SEO description must be between ${SEO_DESCRIPTION_MIN_LENGTH} and ${SEO_DESCRIPTION_MAX_LENGTH} characters.`
+        ]
+      }
+    };
+  }
+
+  return null;
+}
+
 function actionErrorState(error: unknown, locale: Locale): ArticleActionState {
   const text = actionText(locale);
   if (error instanceof ZodError) {
@@ -189,6 +222,10 @@ export async function createArticleAction(
       fieldErrors: fieldErrorsFromZod(parsed.error)
     };
   }
+  const translationSeoError = validateTranslationSeoFields(formData, locale);
+  if (translationSeoError) {
+    return translationSeoError;
+  }
 
   try {
     const user = await requireUser();
@@ -222,6 +259,10 @@ export async function updateArticleAction(
       message: actionText(locale).checkFields,
       fieldErrors: fieldErrorsFromZod(parsed.error)
     };
+  }
+  const translationSeoError = validateTranslationSeoFields(formData, locale);
+  if (translationSeoError) {
+    return translationSeoError;
   }
 
   try {
@@ -341,6 +382,10 @@ export async function updateArticleSettingsAction(
       message: actionText(locale).checkFields,
       fieldErrors: fieldErrorsFromZod(parsed.error)
     };
+  }
+  const translationSeoError = validateTranslationSeoFields(formData, locale);
+  if (translationSeoError) {
+    return translationSeoError;
   }
 
   try {

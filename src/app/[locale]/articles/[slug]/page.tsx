@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { ArticleStatus } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { t } from "@/lib/i18n";
+import { getIndexableArticleLocaleUrls } from "@/features/articles/indexing";
+import { buildMetaDescription, stripHtmlForSeo } from "@/lib/seo";
 import { getSiteConfig, resolveAbsoluteUrl } from "@/lib/site";
 import { articleHref, localizedPath, urlLocaleToLocale } from "@/lib/locale-url";
 import { MotionItem, MotionList, MotionPage } from "@/components/animations/reveal";
@@ -52,11 +54,14 @@ export async function generateMetadata({
     },
     select: {
       title: true,
+      slug: true,
       summary: true,
       contentHtml: true,
       seoTitle: true,
       seoDescription: true,
       sourceLocale: true,
+      status: true,
+      deletedAt: true,
       contents: true,
       cover: true
     }
@@ -69,24 +74,37 @@ export async function generateMetadata({
     };
   }
 
-  const display = resolveArticleDisplayTranslation(article, locale);
+  const display = resolveArticleDisplayTranslation(article, locale, { allowFallback: false });
+  const localeUrls = getIndexableArticleLocaleUrls(article, site.url);
+  const languages = Object.fromEntries(localeUrls.map((item) => [item.locale, item.url]));
+  if (display.status === "missing") {
+    return {
+      title: site.title,
+      description: buildMetaDescription(null, site.subtitle, locale),
+      alternates: {
+        languages
+      },
+      robots: {
+        index: false,
+        follow: true
+      }
+    };
+  }
+
   const title = display.seoTitle || display.title;
-  const summary = display.seoDescription || display.summary;
+  const summary = buildMetaDescription(display.seoDescription, display.summary || stripHtmlForSeo(display.contentHtml), locale);
   const url = resolveAbsoluteUrl(site.url, articleHref(locale, slug));
 
   return {
     title: `${title} - ${site.title}`,
-    description: summary || site.subtitle,
+    description: summary,
     alternates: {
       canonical: url,
-      languages: {
-        "zh-CN": resolveAbsoluteUrl(site.url, localizedPath("zh-CN", `/articles/${slug}`)),
-        "en-US": resolveAbsoluteUrl(site.url, localizedPath("en", `/articles/${slug}`))
-      }
+      languages
     },
     openGraph: {
       title,
-      description: summary || site.subtitle,
+      description: summary,
       url,
       siteName: site.title,
       images: article.cover ? [{ url: article.cover }] : undefined
@@ -179,6 +197,34 @@ export default async function ArticleDetailPage({
             <p className="mt-3 text-muted-foreground">{t(locale, "articleRequiresHigherRole")}</p>
             <Link className="mt-5 inline-flex text-primary" href="/login">
               {t(locale, "loginAndRetry")}
+            </Link>
+          </Card>
+        </main>
+      </PublicShell>
+    );
+  }
+
+  if (article.translationStatus === "missing") {
+    const text = locale === "en"
+      ? {
+          title: "This language version is not ready",
+          description: "The article exists, but the selected language has not been translated yet.",
+          back: "Back to articles"
+        }
+      : {
+          title: "当前语言版本尚未准备好",
+          description: "这篇文章存在，但所选语言内容还没有完成翻译。",
+          back: "返回文章列表"
+        };
+
+    return (
+      <PublicShell locale={locale} autoHideHeader>
+        <main className="mx-auto max-w-3xl px-6 py-16">
+          <Card className="p-8">
+            <h1 className="text-2xl font-semibold">{text.title}</h1>
+            <p className="mt-3 text-muted-foreground">{article.translationError || text.description}</p>
+            <Link className="mt-5 inline-flex text-primary" href={localizedPath(locale, "/articles")}>
+              {text.back}
             </Link>
           </Card>
         </main>

@@ -1,8 +1,18 @@
 import { ArticleStatus, ContentVisibility } from "@prisma/client";
 import { z } from "zod";
+import { SEO_DESCRIPTION_MAX_LENGTH, SEO_DESCRIPTION_MIN_LENGTH } from "@/lib/seo";
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const articleLocaleSchema = z.enum(["zh-CN", "en-US"]).default("zh-CN");
+const seoDescriptionSchema = z.string()
+  .trim()
+  .max(SEO_DESCRIPTION_MAX_LENGTH, `SEO description cannot exceed ${SEO_DESCRIPTION_MAX_LENGTH} characters.`)
+  .refine(
+    (value) => !value || Array.from(value).length >= SEO_DESCRIPTION_MIN_LENGTH,
+    `SEO description must be at least ${SEO_DESCRIPTION_MIN_LENGTH} characters.`
+  )
+  .optional()
+  .default("");
 
 export const articleMutationSchema = z.object({
   title: z.string().trim().min(2, "Title must be at least 2 characters.").max(120, "Title cannot exceed 120 characters."),
@@ -23,7 +33,7 @@ export const articleMutationSchema = z.object({
   pinned: z.boolean().default(false),
   featured: z.boolean().default(false),
   seoTitle: z.string().max(120, "SEO title cannot exceed 120 characters.").optional().default(""),
-  seoDescription: z.string().max(300, "SEO description cannot exceed 300 characters.").optional().default(""),
+  seoDescription: seoDescriptionSchema,
   sourceLocale: articleLocaleSchema,
   tagNames: z.array(z.string().trim().min(1).max(30, "Tag cannot exceed 30 characters.")).max(12, "At most 12 tags are allowed.").default([]),
   publishedAt: z.preprocess(
@@ -51,7 +61,7 @@ export const articleMetaSchema = z.object({
   pinned: z.boolean().default(false),
   featured: z.boolean().default(false),
   seoTitle: z.string().max(120, "SEO title cannot exceed 120 characters.").optional().default(""),
-  seoDescription: z.string().max(300, "SEO description cannot exceed 300 characters.").optional().default(""),
+  seoDescription: seoDescriptionSchema,
   tagNames: z.array(z.string().trim().min(1).max(30, "Tag cannot exceed 30 characters.")).max(12, "At most 12 tags are allowed.").default([]),
   publishedAt: z.preprocess(
     (value) => {

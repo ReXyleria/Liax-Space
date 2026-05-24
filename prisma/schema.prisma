@@ -374,6 +374,7 @@ model Article {
   contents          ArticleContent[]
   translations      ArticleTranslation[]
   translationJobs   ArticleTranslationJob[]
+  translationChunks ArticleTranslationChunk[]
   comments          Comment[]
   visitLogs         VisitLog[]
 
@@ -457,6 +458,26 @@ model ArticleTranslationJob {
   @@index([articleId, locale, createdAt])
   @@index([status, createdAt])
   @@index([createdById])
+}
+
+model ArticleTranslationChunk {
+  id             String            @id @default(cuid())
+  articleId      String
+  locale         String
+  sourceHash     String            @db.VarChar(64)
+  chunkIndex     Int
+  sourceHtml     String            @db.LongText
+  translatedHtml String?           @db.LongText
+  status         TranslationStatus @default(NOT_TRANSLATED)
+  error          String?           @db.Text
+  translatedAt   DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  article        Article           @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, locale, sourceHash, chunkIndex])
+  @@index([articleId, locale, sourceHash, status])
+  @@index([status, updatedAt])
 }
 
 model PublicContentTranslation {

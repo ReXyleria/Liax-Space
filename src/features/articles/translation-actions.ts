@@ -5,6 +5,7 @@ import { ZodError, z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { getConsoleLocale } from "@/lib/i18n-server";
 import { localizedPath, urlLocales } from "@/lib/locale-url";
+import { SEO_DESCRIPTION_MAX_LENGTH, SEO_DESCRIPTION_MIN_LENGTH } from "@/lib/seo";
 import { enqueueArticleTranslationJobs } from "@/features/articles/translation-jobs";
 import { upsertManualArticleTranslation } from "@/features/articles/translation-service";
 
@@ -20,7 +21,15 @@ const translationEditSchema = z.object({
   title: z.string().trim().min(1, "Translation title is required."),
   summary: z.string().optional().nullable(),
   seoTitle: z.string().max(120, "SEO title cannot exceed 120 characters.").optional().default(""),
-  seoDescription: z.string().max(300, "SEO description cannot exceed 300 characters.").optional().default(""),
+  seoDescription: z.string()
+    .trim()
+    .max(SEO_DESCRIPTION_MAX_LENGTH, `SEO description cannot exceed ${SEO_DESCRIPTION_MAX_LENGTH} characters.`)
+    .refine(
+      (value) => !value || Array.from(value).length >= SEO_DESCRIPTION_MIN_LENGTH,
+      `SEO description must be at least ${SEO_DESCRIPTION_MIN_LENGTH} characters.`
+    )
+    .optional()
+    .default(""),
   contentHtml: z.string().min(1, "Translation content is required."),
   contentJson: z.unknown()
 });

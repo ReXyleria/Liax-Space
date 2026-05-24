@@ -1,4 +1,10 @@
 import { getTranslationConfig, type TranslationConfig } from "@/features/settings/translation-settings";
+import {
+  SEO_DESCRIPTION_MAX_LENGTH,
+  SEO_DESCRIPTION_MIN_LENGTH,
+  buildMetaDescription,
+  stripHtmlForSeo
+} from "@/lib/seo";
 
 type SeoInput = {
   title: string;
@@ -29,18 +35,9 @@ function extractJsonText(value: string) {
   return fenced?.[1]?.trim() ?? trimmed;
 }
 
-function stripHtml(value: string) {
-  return value
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function clampText(value: string, maxLength: number) {
   const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized.length > maxLength ? normalized.slice(0, maxLength) : normalized;
+  return Array.from(normalized).length > maxLength ? Array.from(normalized).slice(0, maxLength).join("").trim() : normalized;
 }
 
 function assertSeoConfig(config: TranslationConfig) {
@@ -59,14 +56,14 @@ export async function generateArticleSeo(input: SeoInput): Promise<SeoResult> {
       {
         role: "system",
         content:
-          `You generate SEO metadata for blog articles. Return strict JSON only: {"seoTitle":"...","seoDescription":"..."}. Do not use markdown. seoTitle must be <=120 characters. seoDescription must be <=300 characters. Write the metadata in ${input.targetLocale === "en-US" ? "English" : "Simplified Chinese"}.`
+          `You generate SEO metadata for blog articles. Return strict JSON only: {"seoTitle":"...","seoDescription":"..."}. Do not use markdown. seoTitle must be <=120 characters. seoDescription must be ${SEO_DESCRIPTION_MIN_LENGTH}-${SEO_DESCRIPTION_MAX_LENGTH} characters. Write the metadata in ${input.targetLocale === "en-US" ? "English" : "Simplified Chinese"}.`
       },
       {
         role: "user",
         content: JSON.stringify({
           title: input.title,
           summary: input.summary,
-          contentText: stripHtml(input.contentHtml).slice(0, 6000),
+          contentText: stripHtmlForSeo(input.contentHtml).slice(0, 6000),
           targetLocale: input.targetLocale ?? "zh-CN"
         })
       }
@@ -115,7 +112,11 @@ export async function generateArticleSeo(input: SeoInput): Promise<SeoResult> {
 
       return {
         seoTitle: clampText(parsed.seoTitle, 120),
-        seoDescription: clampText(parsed.seoDescription, 300)
+        seoDescription: buildMetaDescription(
+          parsed.seoDescription,
+          input.summary || stripHtmlForSeo(input.contentHtml),
+          input.targetLocale
+        )
       };
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {

@@ -1,4 +1,4 @@
-import { ArticleContentStatus, Prisma } from "@prisma/client";
+import { ArticleContentStatus, Prisma, TranslationStatus } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth";
 import { assertPermission, canManageArticles } from "@/lib/permissions";
@@ -6,6 +6,8 @@ import { sanitizeArticleHtml } from "@/lib/sanitize";
 import {
   callTranslationApi,
   getTranslationConfig,
+  requestTranslationApi,
+  splitHtmlIntoChunks,
   type TranslationProgressUpdate
 } from "@/features/settings/translation-settings";
 import { localeToUrlLocale } from "@/lib/locale-url";
@@ -22,6 +24,7 @@ import {
   type ArticleContentDisplaySource,
   type ArticleContentLocale
 } from "@/features/articles/content-service";
+import { pushArticleUrlAfterPublish } from "@/features/site-push/service";
 
 export const articleLanguageLocales = articleContentLocales;
 export type ArticleLanguageLocale = ArticleContentLocale;
@@ -41,9 +44,10 @@ export function normalizeArticleLanguageLocale(value: unknown): ArticleLanguageL
 
 export function resolveArticleDisplayTranslation(
   article: ArticleTranslationDisplaySource,
-  locale?: string | null
+  locale?: string | null,
+  options?: { allowFallback?: boolean }
 ) {
-  return resolveArticleContentDisplay(article, locale ? localeToUrlLocale(locale) : locale);
+  return resolveArticleContentDisplay(article, locale ? localeToUrlLocale(locale) : locale, options);
 }
 
 export async function isTranslationConfigured() {
@@ -133,6 +137,199 @@ async function ensureEmptyTargetPlaceholder(articleId: string, locale: ArticleCo
   });
 }
 
+async function prepareTranslationChunkRows(
+  articleId: string,
+  locale: ArticleContentLocale,
+  sourceHash: string,
+  chunks: string[]
+) {
+  const existing = await db.articleTranslationChunk.findMany({
+    where: { articleId, locale, sourceHash },
+    orderBy: { chunkIndex: "asc" }
+  });
+  const chunksMatch =
+    existing.length === chunks.length &&
+    existing.every((row) => row.sourceHtml === chunks[row.chunkIndex]);
+
+  if (!chunksMatch) {
+    await db.articleTranslationChunk.deleteMany({
+      where: { articleId, locale, sourceHash }
+    });
+    if (chunks.length) {
+      await db.articleTranslationChunk.createMany({
+        data: chunks.map((chunk, chunkIndex) => ({
+          articleId,
+          locale,
+          sourceHash,
+          chunkIndex,
+          sourceHtml: chunk,
+          status: TranslationStatus.NOT_TRANSLATED
+        }))
+      });
+    }
+  }
+
+  return db.articleTranslationChunk.findMany({
+    where: { articleId, locale, sourceHash },
+    orderBy: { chunkIndex: "asc" }
+  });
+}
+
+async function translatePersistedChunks(
+  config: Awaited<ReturnType<typeof getTranslationConfig>>,
+  input: {
+    articleId: string;
+    locale: ArticleContentLocale;
+    sourceHash: string;
+    chunks: string[];
+  },
+  onChunkComplete?: (completedChunks: number) => void | Promise<void>
+) {
+  const rows = await prepareTranslationChunkRows(input.articleId, input.locale, input.sourceHash, input.chunks);
+  const results = new Array<string>(input.chunks.length);
+  const completedIndexes = new Set<number>();
+
+  for (const row of rows) {
+    if (row.status === TranslationStatus.TRANSLATED && row.translatedHtml?.trim()) {
+      results[row.chunkIndex] = row.translatedHtml;
+      completedIndexes.add(row.chunkIndex);
+    }
+  }
+
+  let completedChunks = completedIndexes.size;
+  await onChunkComplete?.(completedChunks);
+
+  let nextIndex = 0;
+  const concurrency = Math.min(4, Math.max(1, config.chunkConcurrency || 2));
+
+  async function worker() {
+    while (nextIndex < rows.length) {
+      const row = rows[nextIndex];
+      nextIndex += 1;
+
+      if (!row || completedIndexes.has(row.chunkIndex)) {
+        continue;
+      }
+
+      await db.articleTranslationChunk.update({
+        where: { id: row.id },
+        data: {
+          status: TranslationStatus.TRANSLATING,
+          error: null
+        }
+      });
+
+      try {
+        const translated = await requestTranslationApi(config, {
+          title: `Chunk ${row.chunkIndex + 1}`,
+          summary: null,
+          contentHtml: row.sourceHtml,
+          targetLocale: input.locale,
+          purpose: "chunk"
+        });
+        const translatedHtml = sanitizeArticleHtml(translated.contentHtml);
+        results[row.chunkIndex] = translatedHtml;
+        completedIndexes.add(row.chunkIndex);
+        completedChunks = completedIndexes.size;
+
+        await db.articleTranslationChunk.update({
+          where: { id: row.id },
+          data: {
+            translatedHtml,
+            status: TranslationStatus.TRANSLATED,
+            error: null,
+            translatedAt: new Date()
+          }
+        });
+        await onChunkComplete?.(completedChunks);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        await db.articleTranslationChunk.update({
+          where: { id: row.id },
+          data: {
+            status: TranslationStatus.FAILED,
+            error: message
+          }
+        });
+        throw new Error(`Chunk ${row.chunkIndex + 1} translation failed: ${message}`);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, rows.length) }, () => worker()));
+
+  const missing = results.findIndex((value) => !value?.trim());
+  if (missing >= 0) {
+    throw new Error(`Chunk ${missing + 1} translation is incomplete.`);
+  }
+
+  return results;
+}
+
+async function translateArticleWithPersistentChunks(
+  config: Awaited<ReturnType<typeof getTranslationConfig>>,
+  input: {
+    articleId: string;
+    sourceHash: string;
+    title: string;
+    summary: string | null;
+    contentHtml: string;
+    targetLocale: ArticleContentLocale;
+  },
+  onProgress?: (progress: TranslationProgressUpdate) => void | Promise<void>
+) {
+  const maxChunkChars = Math.max(800, config.maxChunkChars || 3500);
+  const chunks = splitHtmlIntoChunks(input.contentHtml, maxChunkChars);
+  const totalUnits = chunks.length + 1;
+
+  await onProgress?.({ completedUnits: 0, totalUnits, message: "Preparing translation chunks" });
+  const rows = await prepareTranslationChunkRows(input.articleId, input.targetLocale, input.sourceHash, chunks);
+  const alreadyTranslated = rows.filter((row) => (
+    row.status === TranslationStatus.TRANSLATED && row.translatedHtml?.trim()
+  )).length;
+  await onProgress?.({
+    completedUnits: alreadyTranslated,
+    totalUnits,
+    message: alreadyTranslated ? `Reusing ${alreadyTranslated}/${chunks.length} translated chunks` : "Translation chunks ready"
+  });
+
+  const meta = await requestTranslationApi(config, {
+    title: input.title,
+    summary: input.summary,
+    contentHtml: "",
+    targetLocale: input.targetLocale,
+    purpose: "meta"
+  });
+  await onProgress?.({
+    completedUnits: alreadyTranslated + 1,
+    totalUnits,
+    message: "Metadata translated"
+  });
+
+  const translatedChunks = await translatePersistedChunks(
+    config,
+    {
+      articleId: input.articleId,
+      locale: input.targetLocale,
+      sourceHash: input.sourceHash,
+      chunks
+    },
+    async (completedChunks) => {
+      await onProgress?.({
+        completedUnits: completedChunks + 1,
+        totalUnits,
+        message: `Translated ${completedChunks}/${chunks.length} content chunks`
+      });
+    }
+  );
+
+  return {
+    title: meta.title,
+    summary: meta.summary,
+    contentHtml: sanitizeArticleHtml(translatedChunks.join(""))
+  };
+}
+
 export async function executeArticleTranslation(
   articleId: string,
   targetLocale: string,
@@ -198,20 +395,34 @@ export async function executeArticleTranslation(
   await onProgress?.({ completedUnits: 0, totalUnits: 0, message: "Translation queued" });
 
   try {
-    const translated = await callTranslationApi(
-      config,
-      {
-        title: sourceContent.title,
-        summary: sourceContent.summary,
-        contentHtml: sourceContent.contentHtml,
-        targetLocale: locale
-      },
-      {
-        onProgress: async (progress) => {
-          await onProgress?.(progress);
-        }
-      }
-    );
+    const maxChunkChars = Math.max(800, config.maxChunkChars || 3500);
+    const translated = config.chunkingEnabled && sourceContent.contentHtml.length > maxChunkChars
+      ? await translateArticleWithPersistentChunks(
+          config,
+          {
+            articleId: article.id,
+            sourceHash: sourceContentHash,
+            title: sourceContent.title,
+            summary: sourceContent.summary,
+            contentHtml: sourceContent.contentHtml,
+            targetLocale: locale
+          },
+          onProgress
+        )
+      : await callTranslationApi(
+          config,
+          {
+            title: sourceContent.title,
+            summary: sourceContent.summary,
+            contentHtml: sourceContent.contentHtml,
+            targetLocale: locale
+          },
+          {
+            onProgress: async (progress) => {
+              await onProgress?.(progress);
+            }
+          }
+        );
 
     await db.articleContent.upsert({
       where: { articleId_locale: { articleId, locale } },
@@ -243,6 +454,14 @@ export async function executeArticleTranslation(
         generatedAt: new Date(),
         error: null
       }
+    });
+
+    void pushArticleUrlAfterPublish(article.id).catch((error) => {
+      console.warn("[site-push] automatic translated article push failed", {
+        articleId: article.id,
+        locale,
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
     });
 
     await onProgress?.({ completedUnits: 1, totalUnits: 1, message: "Translation complete" });
@@ -390,6 +609,14 @@ export async function upsertManualArticleTranslation(
         }
       });
     }
+  });
+
+  void pushArticleUrlAfterPublish(article.id).catch((error) => {
+    console.warn("[site-push] automatic manual translation push failed", {
+      articleId: article.id,
+      locale,
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
   });
 
   return { translation: null, articleSlug: article.slug };

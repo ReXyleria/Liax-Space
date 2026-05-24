@@ -15,6 +15,7 @@ import { articleMutationSchema, articleMetaSchema, articleQuerySchema } from "@/
 import {
   scheduleArticleTranslationSync
 } from "@/features/articles/translation-service";
+import { isIndexableArticleLocale } from "@/features/articles/indexing";
 import {
   findArticleContent,
   hashArticleContent,
@@ -33,6 +34,7 @@ import { pushArticleUrlAfterPublish } from "@/features/site-push/service";
 import { normalizeTagSlug } from "@/features/tags/utils";
 import { localeToUrlLocale } from "@/lib/locale-url";
 import { mediaUrlMatchesReference, normalizeMediaReferenceUrl } from "@/lib/media-reference";
+import { isValidSeoDescription } from "@/lib/seo";
 
 const articleInclude = {
   author: { select: { nickname: true } },
@@ -62,9 +64,21 @@ const tagWithArticlesInclude = {
     include: {
       article: {
         select: {
+          slug: true,
+          title: true,
+          contentHtml: true,
           status: true,
           deletedAt: true,
-          visibility: true
+          visibility: true,
+          sourceLocale: true,
+          contents: {
+            select: {
+              locale: true,
+              title: true,
+              contentHtml: true,
+              contentStatus: true
+            }
+          }
         }
       }
     }
@@ -160,7 +174,7 @@ function serializeContent(content: ArticleWithRelations["contents"][number]) {
 
 function mapArticle(article: ArticleWithRelations, locale?: string | null, translationTargetLocale = "en-US") {
   const requestContentLocale = locale ? normalizeArticleContentLocale(localeToUrlLocale(locale)) : null;
-  const display = resolveArticleContentDisplay(article, requestContentLocale);
+  const display = resolveArticleContentDisplay(article, requestContentLocale, { allowFallback: !requestContentLocale });
   const { tags, contents, translations: _translations, ...rest } = article;
   void _translations;
   const normalizedLocale = requestContentLocale;
@@ -403,7 +417,10 @@ export async function listPublishedArticles(input: unknown, user: CurrentUser | 
       take: 100
     });
 
-    const articles = rows.filter((article) => canViewArticle(user, article)).map((article) => mapArticle(article, locale));
+    const articles = rows
+      .filter((article) => canViewArticle(user, article))
+      .map((article) => mapArticle(article, locale))
+      .filter((article) => !locale || article.translationStatus !== "missing");
 
     return {
       articles: await applyTranslatedTagNames(articles, locale),
@@ -438,7 +455,8 @@ export async function listPublicTags(user: CurrentUser | null, locale?: string |
         articleCount: tag.articles.filter(({ article }) => (
           article.status === ArticleStatus.PUBLISHED &&
           article.deletedAt === null &&
-          canViewArticle(user, article)
+          canViewArticle(user, article) &&
+          (!locale || isIndexableArticleLocale(article, localeToUrlLocale(locale)))
         )).length
       })),
       error: null as string | null
@@ -840,6 +858,9 @@ export async function restoreArticleVersion(user: CurrentUser, articleId: string
   const versionArticle = await db.article.findUniqueOrThrow({ where: { id: article.id }, include: articleInclude });
   await recordArticleVersion(versionArticle, tagNames, user.id);
   scheduleArticleTranslationSync(article);
+  if (article.status === ArticleStatus.PUBLISHED) {
+    scheduleArticleSitePush(article.id);
+  }
 
   return article;
 }
@@ -938,6 +959,9 @@ export async function updateArticleMeta(user: CurrentUser, id: string, input: un
   await syncTags(article.id, parsed.tagNames);
   await syncArticleMediaReferences(article.id, existing.contentHtml, parsed.cover);
   scheduleArticleTranslationSync(article);
+  if (existing.status === ArticleStatus.PUBLISHED) {
+    scheduleArticleSitePush(article.id);
+  }
 
   return article;
 }
@@ -955,6 +979,11 @@ export async function updateArticleTranslationSeo(
   }
 
   const normalizedLocale = normalizeArticleContentLocale(locale);
+  const normalizedSeoDescription = seoDescription.trim();
+  if (normalizedSeoDescription && !isValidSeoDescription(normalizedSeoDescription)) {
+    throw new Error("SEO description must be between 25 and 160 characters.");
+  }
+
   const existing = await db.articleContent.findUnique({
     where: { articleId_locale: { articleId, locale: normalizedLocale } },
     select: { id: true }
@@ -967,8 +996,15 @@ export async function updateArticleTranslationSeo(
     where: { articleId_locale: { articleId, locale: normalizedLocale } },
     data: {
       seoTitle: seoTitle.trim() || null,
-      seoDescription: seoDescription.trim() || null
+      seoDescription: normalizedSeoDescription || null
     }
+  });
+  void pushArticleUrlAfterPublish(articleId).catch((error) => {
+    console.warn("[site-push] automatic translation SEO push failed", {
+      articleId,
+      locale: normalizedLocale,
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
   });
   return { updated: true };
 }

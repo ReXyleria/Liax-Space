@@ -439,7 +439,7 @@ export async function callTranslationApi(
   return translated;
 }
 
-function splitHtmlIntoChunks(html: string, maxChunkChars: number) {
+export function splitHtmlIntoChunks(html: string, maxChunkChars: number) {
   const tokens = (html.match(/[\s\S]*?(?:<\/(?:p|h1|h2|h3|h4|h5|h6|blockquote|pre|table|ul|ol|details|figure|div)>|$)/gi) ?? [])
     .map((chunk) => chunk.trim())
     .filter(Boolean);
@@ -515,7 +515,7 @@ async function translateChunks(
   return results;
 }
 
-async function requestTranslationApi(
+export async function requestTranslationApi(
   config: TranslationConfig,
   input: {
     title: string;

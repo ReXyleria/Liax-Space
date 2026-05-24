@@ -81,8 +81,10 @@ export type ArticleContentDisplaySource = {
 
 export function resolveArticleContentDisplay(
   article: ArticleContentDisplaySource,
-  locale?: string | null
+  locale?: string | null,
+  options: { allowFallback?: boolean } = {}
 ) {
+  const allowFallback = options.allowFallback ?? true;
   const requestedLocale = locale
     ? normalizeArticleContentLocale(locale)
     : normalizeArticleContentLocale(article.sourceLocale);
@@ -91,7 +93,7 @@ export function resolveArticleContentDisplay(
   const fallbackContent = findArticleContent(article.contents, fallbackLocale);
   const selectedContent = isDisplayableArticleContent(requestedContent)
     ? requestedContent
-    : isDisplayableArticleContent(fallbackContent)
+    : allowFallback && isDisplayableArticleContent(fallbackContent)
       ? fallbackContent
       : null;
 
@@ -111,17 +113,34 @@ export function resolveArticleContentDisplay(
     };
   }
 
+  const sourceLocale = normalizeArticleContentLocale(article.sourceLocale);
+  if (requestedLocale === sourceLocale && hasArticleContentBody(article)) {
+    return {
+      title: article.title,
+      summary: article.summary,
+      contentHtml: article.contentHtml,
+      contentJson: null,
+      seoTitle: article.seoTitle ?? null,
+      seoDescription: article.seoDescription ?? null,
+      locale: sourceLocale,
+      requestedLocale,
+      contentStatus: null as ArticleContentStatus | null,
+      status: null,
+      error: null
+    };
+  }
+
   return {
-    title: article.title,
-    summary: article.summary,
-    contentHtml: article.contentHtml,
+    title: requestedContent?.title || "",
+    summary: requestedContent?.summary ?? null,
+    contentHtml: "",
     contentJson: null,
-    seoTitle: article.seoTitle ?? null,
-    seoDescription: article.seoDescription ?? null,
-    locale: normalizeArticleContentLocale(article.sourceLocale),
+    seoTitle: requestedContent?.seoTitle ?? null,
+    seoDescription: requestedContent?.seoDescription ?? null,
+    locale: requestedLocale,
     requestedLocale,
-    contentStatus: null as ArticleContentStatus | null,
-    status: "fallback" as const,
+    contentStatus: requestedContent?.contentStatus ?? null,
+    status: "missing" as const,
     error: "Requested article content is unavailable."
   };
 }
