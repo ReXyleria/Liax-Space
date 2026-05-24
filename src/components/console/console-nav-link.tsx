@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
+  Activity,
   Archive,
   Bell,
   Circle,
@@ -53,7 +54,8 @@ export type ConsoleNavIconKey =
   | "security"
   | "totp"
   | "passkey"
-  | "analytics";
+  | "analytics"
+  | "health";
 
 export const iconMap: Record<ConsoleNavIconKey, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -79,7 +81,8 @@ export const iconMap: Record<ConsoleNavIconKey, LucideIcon> = {
   security: ShieldCheck,
   totp: KeyRound,
   passkey: Fingerprint,
-  analytics: LayoutDashboard
+  analytics: LayoutDashboard,
+  health: Activity
 };
 
 export function ConsoleNavLink({

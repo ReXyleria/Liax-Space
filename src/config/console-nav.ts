@@ -96,6 +96,7 @@ export const consoleSidebarGroups: ConsoleSidebarGroup[] = [
     basePath: "/console/settings",
     tabs: [
       { href: "/console/settings/basic", labelKey: "consoleBasicSettings", iconKey: "settings", visibility: "settings" },
+      { href: "/console/settings/health", labelKey: "consoleHealth", iconKey: "health", visibility: "settings" },
       { href: "/console/settings/translation", labelKey: "consoleTranslation", iconKey: "settings", visibility: "settings" },
       { href: "/console/settings/code-injection", labelKey: "consoleCodeInjection", iconKey: "code", visibility: "codeInjection" }
     ]
