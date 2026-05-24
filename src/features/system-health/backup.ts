@@ -1,8 +1,11 @@
+import "server-only";
+
 import { BackupStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   backupScheduleSettingKeys,
   defaultBackupScheduleTime,
+  normalizeRetentionDays,
   normalizeScheduleTime,
   type BackupScheduleFrequency
 } from "@/features/backup/service";
@@ -60,7 +63,7 @@ export async function collectBackupHealth(databaseOk: boolean): Promise<SystemHe
       scheduleEnabled,
       frequency: normalizeFrequency(settings[backupScheduleSettingKeys.frequency]),
       time: normalizeScheduleTime(settings[backupScheduleSettingKeys.time] ?? defaultBackupScheduleTime),
-      retentionDays: Number(settings[backupScheduleSettingKeys.retentionDays] ?? 7),
+      retentionDays: normalizeRetentionDays(settings[backupScheduleSettingKeys.retentionDays]),
       lastRunAt,
       lastRunStatus,
       latestBackup,

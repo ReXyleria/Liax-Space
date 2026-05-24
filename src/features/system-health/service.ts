@@ -31,7 +31,9 @@ export async function getSystemHealthReport(user: CurrentUser): Promise<SystemHe
     timezone: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || "server-default",
     workerMode: process.env.BACKGROUND_WORKER_MODE ?? "in-process",
     workerRole: process.env.BACKGROUND_WORKER_ROLE ?? "web",
-    inProcessWorkersEnabled: shouldRunInProcessWorkers()
+    inProcessWorkersEnabled: shouldRunInProcessWorkers(),
+    status: "ok" as const,
+    workerQueueWarning: false
   };
   const [directories, backup, queues, mail, security] = await Promise.all([
     Promise.all([
@@ -55,13 +57,17 @@ export async function getSystemHealthReport(user: CurrentUser): Promise<SystemHe
     mail,
     security
   } satisfies Omit<SystemHealthReport, "overallStatus"> & { overallStatus: "ok" };
-  const workerQueueStatus =
-    runtime.workerMode === "external" && runtime.workerRole !== "worker" && activeQueueCount(report) > 0
-      ? "warning"
-      : "ok";
+  const workerQueueWarning =
+    runtime.workerMode === "external" && runtime.workerRole !== "worker" && activeQueueCount(report) > 0;
+  const runtimeStatus = workerQueueWarning ? "warning" : "ok";
 
   return {
     ...report,
+    runtime: {
+      ...runtime,
+      status: runtimeStatus,
+      workerQueueWarning
+    },
     overallStatus: worstStatus([
       database.status,
       ...directories.map((directory) => directory.status),
@@ -69,7 +75,7 @@ export async function getSystemHealthReport(user: CurrentUser): Promise<SystemHe
       queues.status,
       mail.status,
       security.status,
-      workerQueueStatus
+      runtimeStatus
     ])
   };
 }

@@ -27,12 +27,14 @@ export type SystemHealthReport = {
   generatedAt: Date;
   overallStatus: SystemHealthStatus;
   runtime: {
+    status: SystemHealthStatus;
     nodeEnv: string;
     nodeVersion: string;
     timezone: string;
     workerMode: string;
     workerRole: string;
     inProcessWorkersEnabled: boolean;
+    workerQueueWarning: boolean;
   };
   database: {
     status: SystemHealthStatus;

@@ -1,3 +1,5 @@
+import "server-only";
+
 import { LoginEventMethod, UserRole, UserStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { SystemHealthReport } from "@/features/system-health/types";

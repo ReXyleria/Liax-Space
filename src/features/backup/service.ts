@@ -36,7 +36,7 @@ export type BackupScheduleConfig = {
 
 const retentionOptions = [1, 3, 5, 7, 30] as const;
 
-function normalizeRetentionDays(value: unknown): BackupRetentionDays {
+export function normalizeRetentionDays(value: unknown): BackupRetentionDays {
   const parsed = Number(value);
   return retentionOptions.includes(parsed as BackupRetentionDays) ? parsed as BackupRetentionDays : 7;
 }

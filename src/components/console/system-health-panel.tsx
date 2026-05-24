@@ -90,7 +90,7 @@ export function SystemHealthPanel({ report, locale }: { report: SystemHealthRepo
         <Card className="space-y-3 p-5">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">{text.runtime}</h2>
-            <StatusPill status="ok" text={text} />
+            <StatusPill status={report.runtime.status} text={text} />
           </div>
           <DetailRow label={text.nodeEnv} value={report.runtime.nodeEnv} />
           <DetailRow label={text.nodeVersion} value={report.runtime.nodeVersion} />
@@ -98,6 +98,9 @@ export function SystemHealthPanel({ report, locale }: { report: SystemHealthRepo
           <DetailRow label={text.workerMode} value={report.runtime.workerMode} />
           <DetailRow label={text.workerRole} value={report.runtime.workerRole} />
           <DetailRow label={text.inProcessWorkers} value={yesNo(text, report.runtime.inProcessWorkersEnabled)} />
+          {report.runtime.workerQueueWarning ? (
+            <DetailRow label={text.workerQueueWarning} value={text.externalWorkerQueueWarning} />
+          ) : null}
         </Card>
       </div>
 

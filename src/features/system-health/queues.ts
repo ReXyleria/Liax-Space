@@ -1,3 +1,5 @@
+import "server-only";
+
 import { ArticleTranslationJobStatus, PublicContentTranslationJobStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { QueueHealth } from "@/features/system-health/types";

@@ -1,3 +1,5 @@
+import "server-only";
+
 import { readdir, stat, unlink, writeFile } from "fs/promises";
 import path from "path";
 import type { RuntimeDirectoryHealth } from "@/features/system-health/types";
