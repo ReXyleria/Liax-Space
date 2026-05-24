@@ -12,6 +12,7 @@ function emptyArticleQueueCounts() {
     [ArticleTranslationJobStatus.SUCCEEDED]: 0,
     [ArticleTranslationJobStatus.FAILED]: 0,
     [ArticleTranslationJobStatus.CANCELED]: 0,
+    failedLast24Hours: 0,
     staleRunning: 0
   };
 }
@@ -23,6 +24,7 @@ function emptyPublicQueueCounts() {
     [PublicContentTranslationJobStatus.SUCCEEDED]: 0,
     [PublicContentTranslationJobStatus.FAILED]: 0,
     [PublicContentTranslationJobStatus.CANCELED]: 0,
+    failedLast24Hours: 0,
     staleRunning: 0
   };
 }
@@ -35,10 +37,24 @@ export async function collectQueueHealth(databaseOk: boolean): Promise<QueueHeal
   }
 
   try {
+    const failedSince = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const staleBefore = new Date(Date.now() - queueStaleAfterMs);
-    const [articleRows, publicRows, staleArticleRunning, stalePublicRunning] = await Promise.all([
+    const [
+      articleRows,
+      publicRows,
+      recentArticleFailures,
+      recentPublicFailures,
+      staleArticleRunning,
+      stalePublicRunning
+    ] = await Promise.all([
       db.articleTranslationJob.groupBy({ by: ["status"], _count: { _all: true } }),
       db.publicContentTranslationJob.groupBy({ by: ["status"], _count: { _all: true } }),
+      db.articleTranslationJob.count({
+        where: { status: ArticleTranslationJobStatus.FAILED, updatedAt: { gte: failedSince } }
+      }),
+      db.publicContentTranslationJob.count({
+        where: { status: PublicContentTranslationJobStatus.FAILED, updatedAt: { gte: failedSince } }
+      }),
       db.articleTranslationJob.count({
         where: { status: ArticleTranslationJobStatus.RUNNING, updatedAt: { lt: staleBefore } }
       }),
@@ -49,16 +65,18 @@ export async function collectQueueHealth(databaseOk: boolean): Promise<QueueHeal
 
     const articleCounts = {
       ...countByStatus(Object.values(ArticleTranslationJobStatus), articleRows),
+      failedLast24Hours: recentArticleFailures,
       staleRunning: staleArticleRunning
     };
     const publicContentCounts = {
       ...countByStatus(Object.values(PublicContentTranslationJobStatus), publicRows),
+      failedLast24Hours: recentPublicFailures,
       staleRunning: stalePublicRunning
     };
 
     return {
       status: worstStatus([
-        articleCounts.FAILED > 0 || publicContentCounts.FAILED > 0 ? "warning" : "ok",
+        articleCounts.failedLast24Hours > 0 || publicContentCounts.failedLast24Hours > 0 ? "warning" : "ok",
         articleCounts.staleRunning > 0 || publicContentCounts.staleRunning > 0 ? "warning" : "ok"
       ]),
       article: articleCounts,

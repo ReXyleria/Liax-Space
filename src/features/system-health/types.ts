@@ -18,8 +18,8 @@ export type RuntimeDirectoryHealth = {
 
 export type QueueHealth = {
   status: SystemHealthStatus;
-  article: Record<ArticleTranslationJobStatus, number> & { staleRunning: number };
-  publicContent: Record<PublicContentTranslationJobStatus, number> & { staleRunning: number };
+  article: Record<ArticleTranslationJobStatus, number> & { failedLast24Hours: number; staleRunning: number };
+  publicContent: Record<PublicContentTranslationJobStatus, number> & { failedLast24Hours: number; staleRunning: number };
   error?: string;
 };
 

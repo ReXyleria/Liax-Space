@@ -20,8 +20,8 @@ function queueActiveCount(report: SystemHealthReport) {
 }
 
 function queueIssueCount(report: SystemHealthReport) {
-  return report.queues.article.FAILED + report.queues.article.staleRunning
-    + report.queues.publicContent.FAILED + report.queues.publicContent.staleRunning;
+  return report.queues.article.failedLast24Hours + report.queues.article.staleRunning
+    + report.queues.publicContent.failedLast24Hours + report.queues.publicContent.staleRunning;
 }
 
 export function SystemHealthPanel({ report, locale }: { report: SystemHealthReport; locale: Locale }) {
@@ -153,12 +153,14 @@ export function SystemHealthPanel({ report, locale }: { report: SystemHealthRepo
           </div>
           <DetailRow label={`${text.articleQueue} ${text.queued}`} value={String(report.queues.article.QUEUED)} />
           <DetailRow label={`${text.articleQueue} ${text.running}`} value={String(report.queues.article.RUNNING)} />
-          <DetailRow label={`${text.articleQueue} ${text.failedJobs}`} value={String(report.queues.article.FAILED)} />
+          <DetailRow label={`${text.articleQueue} ${text.recentFailures}`} value={String(report.queues.article.failedLast24Hours)} />
           <DetailRow label={`${text.articleQueue} ${text.staleRunning}`} value={String(report.queues.article.staleRunning)} />
+          <DetailRow label={`${text.articleQueue} ${text.historicalFailures}`} value={String(report.queues.article.FAILED)} />
           <DetailRow label={`${text.publicQueue} ${text.queued}`} value={String(report.queues.publicContent.QUEUED)} />
           <DetailRow label={`${text.publicQueue} ${text.running}`} value={String(report.queues.publicContent.RUNNING)} />
-          <DetailRow label={`${text.publicQueue} ${text.failedJobs}`} value={String(report.queues.publicContent.FAILED)} />
+          <DetailRow label={`${text.publicQueue} ${text.recentFailures}`} value={String(report.queues.publicContent.failedLast24Hours)} />
           <DetailRow label={`${text.publicQueue} ${text.staleRunning}`} value={String(report.queues.publicContent.staleRunning)} />
+          <DetailRow label={`${text.publicQueue} ${text.historicalFailures}`} value={String(report.queues.publicContent.FAILED)} />
           <ErrorLine value={report.queues.error} />
         </Card>
       </div>
