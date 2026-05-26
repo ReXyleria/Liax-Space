@@ -100,6 +100,14 @@ function collectEditorTocItems(activeEditor: Editor): EditorTocItem[] {
   return items;
 }
 
+function isEmptyEditorDocument(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return true;
+  }
+  const node = value as { type?: unknown; content?: unknown };
+  return node.type === "doc" && (!Array.isArray(node.content) || node.content.length === 0);
+}
+
 export function BlockEditor({
   title,
   locale = "zh-CN",
@@ -127,6 +135,8 @@ export function BlockEditor({
   const slashMenuRef = useRef(CLOSED_SLASH_MENU);
   const filteredCommandsRef = useRef<BlockCommand[]>([]);
   const editorOverlayRef = useRef<HTMLDivElement>(null);
+  const shouldUseInitialHtml = Boolean(initialHtml.trim()) && isEmptyEditorDocument(initialJson);
+  const initialContent = shouldUseInitialHtml ? initialHtml : (initialJson || initialHtml);
   const [html, setHtml] = useState(initialHtml);
   const [json, setJson] = useState(() => safeJsonString(initialJson));
   const [status, setStatus] = useState<"idle" | "saved" | "unsaved">("idle");
@@ -230,7 +240,7 @@ export function BlockEditor({
 
   const editor = useEditor({
     extensions,
-    content: initialJson ? initialJson : initialHtml,
+    content: initialContent,
     immediatelyRender: false,
     onUpdate({ editor: activeEditor }) {
       queueContentSync(activeEditor);
@@ -352,12 +362,12 @@ export function BlockEditor({
   }, [editor, slashMenu.open, syncSlashMenu]);
 
   useEffect(() => {
-    if (!editor || html) {
+    if (!editor || (!shouldUseInitialHtml && html)) {
       return;
     }
     setHtml(editor.getHTML());
     setJson(safeJsonString(editor.getJSON()));
-  }, [editor, html]);
+  }, [editor, html, shouldUseInitialHtml]);
 
   useEffect(() => {
     if (!editor) {

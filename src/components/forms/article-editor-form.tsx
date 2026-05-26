@@ -254,6 +254,21 @@ function parseJsonDraft(value: string) {
   }
 }
 
+function isEmptyEditorDocument(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return true;
+  }
+  const node = value as { type?: unknown; content?: unknown };
+  return node.type === "doc" && (!Array.isArray(node.content) || node.content.length === 0);
+}
+
+function editorInitialValue(html: string, json: unknown) {
+  return {
+    html,
+    json: html.trim() && isEmptyEditorDocument(json) ? undefined : json
+  };
+}
+
 function createShortUuid() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID().replaceAll("-", "").slice(0, 16).toLowerCase();
@@ -323,10 +338,7 @@ export function ArticleEditorForm({
   const [pinned, setPinned] = useState(article?.pinned ?? false);
   const [featured, setFeatured] = useState(article?.featured ?? false);
   const [pendingDraft, setPendingDraft] = useState<ArticleDraft | null>(null);
-  const [editorInitial, setEditorInitial] = useState({
-    html: article?.contentHtml ?? "",
-    json: article?.contentJson
-  });
+  const [editorInitial, setEditorInitial] = useState(() => editorInitialValue(article?.contentHtml ?? "", article?.contentJson));
   const [editorKey, setEditorKey] = useState(0);
   const initialSelectedTags = article?.tags.flatMap((tag) => (tag?.name ? [tag.name] : [])) ?? [];
   const [selectedTags, setSelectedTags] = useState(initialSelectedTags);
@@ -420,7 +432,7 @@ export function ArticleEditorForm({
     setPinned(draft.pinned);
     setFeatured(draft.featured);
     setPublishedAt(draft.publishedAt);
-    setEditorInitial({ html: draft.contentHtml, json: parseJsonDraft(draft.contentJson) });
+    setEditorInitial(editorInitialValue(draft.contentHtml, parseJsonDraft(draft.contentJson)));
     setStatus(draft.status);
     updateSourceLocale(draft.sourceLocale === "en-US" ? "en-US" : "zh-CN");
     setVisibility(draft.visibility);

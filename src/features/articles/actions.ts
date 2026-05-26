@@ -22,6 +22,7 @@ import {
 import { generateArticleSeo } from "@/features/articles/seo-service";
 import { enqueueArticleTranslationJobs } from "@/features/articles/translation-jobs";
 import { normalizeTranslationLocale } from "@/features/articles/translation-service";
+import { importMarkdownArticle, MarkdownImportError } from "@/features/articles/markdown-import";
 import { articleMutationSchema, articleMetaSchema } from "@/features/articles/validators";
 
 export type ArticleActionState = {
@@ -36,6 +37,10 @@ export type ArticleSeoActionState = {
   message: string;
   seoTitle?: string;
   seoDescription?: string;
+};
+
+export type MarkdownImportActionState = ArticleActionState & {
+  imageFailureCount?: number;
 };
 
 function parseBoolean(value: FormDataEntryValue | null, defaultValue = false) {
@@ -142,6 +147,20 @@ function actionText(locale: Locale) {
         articleLinkUsedField: "这个文章链接已被使用，请换一个链接或留空。",
         saveFailed: "文章保存失败，请稍后再试。",
         articleSaved: "文章已保存。"
+      };
+}
+
+function markdownImportText(locale: Locale) {
+  return locale === "en"
+    ? {
+        imported: "Markdown article imported.",
+        importedWithImageFailures: (count: number) => `Markdown article imported, but ${count} image(s) could not be localized.`,
+        importFailed: "Markdown import failed."
+      }
+    : {
+        imported: "Markdown 文章已导入。",
+        importedWithImageFailures: (count: number) => `Markdown 文章已导入，但有 ${count} 张图片未能本地化。`,
+        importFailed: "Markdown 导入失败。"
       };
 }
 
@@ -319,6 +338,51 @@ export async function generateArticleSeoAction(formData: FormData): Promise<Arti
     return {
       ok: false,
       message: error instanceof Error ? error.message : "AI SEO 生成失败。"
+    };
+  }
+}
+
+export async function importMarkdownArticleAction(
+  _previousState: MarkdownImportActionState,
+  formData: FormData
+): Promise<MarkdownImportActionState> {
+  const locale = await getConsoleLocale();
+  const text = markdownImportText(locale);
+
+  try {
+    const user = await requireUser();
+    assertPermission(canManageArticles(user), "You do not have permission to import Markdown articles.");
+    const result = await importMarkdownArticle(user, {
+      file: formData.get("markdownFile"),
+      fallbackSourceLocale: String(formData.get("fallbackSourceLocale") ?? "zh-CN")
+    });
+    const imageFailureCount = result.imageFailures.length;
+
+    revalidatePath("/console/articles");
+    return {
+      ok: true,
+      message: imageFailureCount ? text.importedWithImageFailures(imageFailureCount) : text.imported,
+      fieldErrors: {},
+      redirectTo: `/console/articles/${result.article.id}/edit`,
+      imageFailureCount
+    };
+  } catch (error) {
+    if (error instanceof MarkdownImportError) {
+      return {
+        ok: false,
+        message: error.message,
+        fieldErrors: error.field ? { [error.field]: [error.message] } : {}
+      };
+    }
+
+    if (error instanceof ZodError) {
+      return actionErrorState(error, locale);
+    }
+
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : text.importFailed,
+      fieldErrors: {}
     };
   }
 }
