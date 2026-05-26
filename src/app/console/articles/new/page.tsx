@@ -1,6 +1,5 @@
 import { ArticleEditorForm } from "@/components/forms/article-editor-form";
 import type { PreviewSiteSettings } from "@/components/forms/article-preview-overlay";
-import { MarkdownImportCard } from "@/components/forms/markdown-import-card";
 import { getAllTags } from "@/features/articles/service";
 import { getPreviewSiteSettings } from "@/features/settings/preview-site";
 import { requireConsolePermission } from "@/lib/console-guard";
@@ -83,15 +82,12 @@ export default async function NewArticlePage() {
     );
 
     return (
-      <div className="space-y-6">
-        <MarkdownImportCard locale={locale} />
-        <ArticleEditorForm
-          locale={locale}
-          tagOptions={tagsResult.value}
-          site={siteResult.value}
-          warnings={warnings}
-        />
-      </div>
+      <ArticleEditorForm
+        locale={locale}
+        tagOptions={tagsResult.value}
+        site={siteResult.value}
+        warnings={warnings}
+      />
     );
   } catch (error) {
     if (!isNextNavigationError(error)) {

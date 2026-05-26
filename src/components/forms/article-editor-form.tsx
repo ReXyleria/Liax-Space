@@ -1,9 +1,19 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useActionState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type ChangeEvent,
+  type DragEvent
+} from "react";
 import { useRouter } from "next/navigation";
 import { ArticleStatus, ContentVisibility } from "@prisma/client";
-import { AlertTriangle, History, Save, Send, Settings, Sparkles } from "lucide-react";
+import { AlertTriangle, FileUp, History, Save, Send, Settings, Sparkles } from "lucide-react";
 import { BlockEditor } from "@/components/editor/block-editor/block-editor";
 import { EditorToc } from "@/components/editor/editor-toc";
 import { ArticleEditorErrorBoundary } from "@/components/forms/article-editor-error-boundary";
@@ -23,9 +33,11 @@ import { ImageUploadField } from "@/components/forms/image-upload-field";
 import {
   createArticleAction,
   generateArticleSeoAction,
+  importMarkdownArticleAction,
   restoreArticleVersionAction,
   updateArticleAction,
-  type ArticleActionState
+  type ArticleActionState,
+  type MarkdownImportActionState
 } from "@/features/articles/actions";
 import { contentVisibilityOptions } from "@/lib/content-visibility";
 import type { Locale } from "@/lib/i18n-messages";
@@ -90,6 +102,9 @@ function labels(locale: Locale) {
         settings: "Settings",
         publish: "Publish",
         updatePublish: "Update and publish",
+        importMarkdown: "Import Markdown",
+        importingMarkdown: "Importing...",
+        dropMarkdown: "Drop Markdown file to import",
         draftDetected: "Detected a local draft from",
         restoreDraft: "Restore draft",
         ignore: "Ignore",
@@ -154,6 +169,9 @@ function labels(locale: Locale) {
         settings: "设置",
         publish: "发布",
         updatePublish: "更新并发布",
+        importMarkdown: "导入Markdown",
+        importingMarkdown: "导入中...",
+        dropMarkdown: "松开导入 Markdown 文件",
         draftDetected: "检测到本地草稿，保存时间：",
         restoreDraft: "恢复草稿",
         ignore: "忽略",
@@ -214,6 +232,12 @@ const initialArticleActionState: ArticleActionState = {
   fieldErrors: {}
 };
 
+const initialMarkdownImportActionState: MarkdownImportActionState = {
+  ok: false,
+  message: "",
+  fieldErrors: {}
+};
+
 function visibilityOptions(locale: Locale) {
   return contentVisibilityOptions(locale);
   /*
@@ -269,6 +293,10 @@ function editorInitialValue(html: string, json: unknown) {
   };
 }
 
+function isFileDrag(event: DragEvent<HTMLElement>) {
+  return Array.from(event.dataTransfer.types).includes("Files");
+}
+
 function createShortUuid() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID().replaceAll("-", "").slice(0, 16).toLowerCase();
@@ -311,6 +339,7 @@ export function ArticleEditorForm({
   const articleVisibilityOptions = visibilityOptions(locale);
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const markdownInputRef = useRef<HTMLInputElement>(null);
   const returnToListRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | null>(null);
   const action = article ? updateArticleAction.bind(null, article.id) : createArticleAction;
@@ -319,6 +348,10 @@ export function ArticleEditorForm({
     action,
     initialArticleActionState
   );
+  const [markdownImportState, markdownImportAction, isMarkdownImportActionPending] = useActionState<
+    MarkdownImportActionState,
+    FormData
+  >(importMarkdownArticleAction, initialMarkdownImportActionState);
   const [title, setTitle] = useState(article?.title ?? "");
   const [slug, setSlug] = useState(article?.slug ?? createShortUuid);
   const [status, setStatus] = useState<string>(article?.status ?? ArticleStatus.DRAFT);
@@ -351,10 +384,13 @@ export function ArticleEditorForm({
   const [restoreError, setRestoreError] = useState("");
   const [isRestoring, startRestoreTransition] = useTransition();
   const [isGeneratingSeo, startSeoTransition] = useTransition();
+  const [isMarkdownImportTransitionPending, startMarkdownImportTransition] = useTransition();
   const [submitLocked, setSubmitLocked] = useState(false);
   const [seoMessage, setSeoMessage] = useState("");
   const [seoError, setSeoError] = useState("");
   const [seoTarget, setSeoTarget] = useState<"zh-CN" | "en-US" | null>(null);
+  const [isMarkdownDragActive, setMarkdownDragActive] = useState(false);
+  const isImportingMarkdown = isMarkdownImportActionPending || isMarkdownImportTransitionPending;
 
   const tagSelectOptions = useMemo(
     () => Array.from(new Set([...tagOptions.map((tag) => tag.name), ...selectedTags]))
@@ -477,6 +513,67 @@ export function ArticleEditorForm({
     }
 
     submitWithStatus(ArticleStatus.PUBLISHED, true);
+  }
+
+  function submitMarkdownFile(file: File) {
+    if (isImportingMarkdown) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set("markdownFile", file);
+    formData.set("fallbackSourceLocale", sourceLocale);
+    startMarkdownImportTransition(() => {
+      markdownImportAction(formData);
+    });
+  }
+
+  function handleMarkdownFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) {
+      submitMarkdownFile(file);
+    }
+    event.target.value = "";
+  }
+
+  function handleMarkdownDragEnter(event: DragEvent<HTMLFormElement>) {
+    if (!isFileDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    setMarkdownDragActive(true);
+  }
+
+  function handleMarkdownDragOver(event: DragEvent<HTMLFormElement>) {
+    if (!isFileDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setMarkdownDragActive(true);
+  }
+
+  function handleMarkdownDragLeave(event: DragEvent<HTMLFormElement>) {
+    if (!isFileDrag(event)) {
+      return;
+    }
+    const relatedTarget = event.relatedTarget;
+    if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) {
+      return;
+    }
+    setMarkdownDragActive(false);
+  }
+
+  function handleMarkdownDrop(event: DragEvent<HTMLFormElement>) {
+    if (!isFileDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    setMarkdownDragActive(false);
+    const file = Array.from(event.dataTransfer.files)[0];
+    if (file) {
+      submitMarkdownFile(file);
+    }
   }
 
   async function loadVersions() {
@@ -611,6 +708,13 @@ export function ArticleEditorForm({
   }, [draftKey, router, state.ok, state.redirectTo]);
 
   useEffect(() => {
+    if (markdownImportState.ok && markdownImportState.redirectTo) {
+      router.push(markdownImportState.redirectTo);
+      router.refresh();
+    }
+  }, [markdownImportState.ok, markdownImportState.redirectTo, router]);
+
+  useEffect(() => {
     if (!isPending) {
       setSubmitLocked(false);
     }
@@ -646,12 +750,23 @@ export function ArticleEditorForm({
 
   return (
     <>
+      {isMarkdownDragActive ? (
+        <div className="pointer-events-none fixed inset-0 z-[120] grid place-items-center bg-background/70 backdrop-blur-sm">
+          <div className="rounded-lg border bg-card px-5 py-4 text-sm font-medium text-foreground shadow-lg">
+            {text.dropMarkdown}
+          </div>
+        </div>
+      ) : null}
       <form
         ref={formRef}
         action={formAction}
         className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px]"
         onInput={scheduleDraftSave}
         onChange={scheduleDraftSave}
+        onDragEnterCapture={handleMarkdownDragEnter}
+        onDragOverCapture={handleMarkdownDragOver}
+        onDragLeaveCapture={handleMarkdownDragLeave}
+        onDropCapture={handleMarkdownDrop}
       >
         <input type="hidden" name="status" value={status} readOnly />
         <input type="hidden" name="sourceLocale" value={sourceLocale} readOnly />
@@ -676,6 +791,13 @@ export function ArticleEditorForm({
         {pinned ? <input type="hidden" name="pinned" value="on" readOnly /> : null}
         {featured ? <input type="hidden" name="featured" value="on" readOnly /> : null}
         <input ref={returnToListRef} type="hidden" name="returnToList" defaultValue="0" />
+        <input
+          ref={markdownInputRef}
+          type="file"
+          accept=".md,.markdown,text/markdown,text/plain"
+          className="sr-only"
+          onChange={handleMarkdownFileChange}
+        />
         <div className="space-y-6">
           {showSourceLocaleControl ? (
             <Card className="p-4">
@@ -777,6 +899,16 @@ export function ArticleEditorForm({
                     <Send className="mr-2 h-4 w-4" />
                     {isPublished ? text.updatePublish : text.publish}
                   </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="px-3 text-xs"
+                    onClick={() => markdownInputRef.current?.click()}
+                    disabled={isImportingMarkdown}
+                  >
+                    <FileUp className="mr-2 h-4 w-4" />
+                    {isImportingMarkdown ? text.importingMarkdown : text.importMarkdown}
+                  </Button>
                 </div>
               </div>
               {state.message ? (
@@ -784,6 +916,12 @@ export function ArticleEditorForm({
                   {state.message}
                 </p>
               ) : null}
+              {markdownImportState.message ? (
+                <p className={markdownImportState.ok ? "mt-3 text-sm text-emerald-600" : "mt-3 text-sm text-destructive"}>
+                  {markdownImportState.message}
+                </p>
+              ) : null}
+              <FieldError messages={markdownImportState.fieldErrors.markdownFile} />
             </CardHeader>
             <CardContent className="pt-6">
               <ArticleEditorErrorBoundary>
