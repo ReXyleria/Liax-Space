@@ -45,7 +45,7 @@ TZ=Asia/Shanghai
 
 ### 可选：构建私有 Node 22 镜像
 
-Dockerfile 默认使用 Chainguard 公开可拉取的 `cgr.dev/chainguard/node:latest-dev` 和 `cgr.dev/chainguard/node:latest`，避免版本化 tag 不存在导致构建失败。如果你的 Chainguard 组织仓库开通了 Node 22 版本化镜像，可以在构建时覆盖：
+Dockerfile 默认使用 Chainguard 公开可拉取的 `cgr.dev/chainguard/node:latest-dev` 和 `cgr.dev/chainguard/node:latest`，避免版本化 tag 不存在导致构建失败。GitHub Actions 发布 Docker Hub 和 GHCR 镜像时也使用这些公开默认镜像，普通发布不需要配置 `CHAINGUARD_*` repository variables 或 secrets。如果你的 Chainguard 组织仓库开通了 Node 22 版本化镜像，可以在构建时覆盖：
 
 ```bash
 docker buildx build \
