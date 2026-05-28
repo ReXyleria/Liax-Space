@@ -26,6 +26,18 @@ type ArticleContentValue = {
   updatedAtLabel?: string;
 };
 
+type LongArticleContentValue = {
+  meta: {
+    locale: ArticleLanguage;
+    blockCount: number;
+    htmlLength: number;
+  };
+  initialBlocks: Array<{
+    blockIndex: number;
+    html: string;
+  }>;
+};
+
 type TranslationProgressState = {
   status?: ArticleTranslationJobStatus;
   progress: number;
@@ -101,12 +113,14 @@ export function ArticleLanguageWorkspace({
   tagOptions,
   site,
   contents,
+  longContent,
   locale = "zh-CN"
 }: {
   article: NonNullable<ArticleFormValue>;
   tagOptions: Array<{ name: string }>;
   site: PreviewSiteSettings;
   contents: ArticleContentValue[];
+  longContent?: LongArticleContentValue | null;
   locale?: Locale;
 }) {
   const text = labels(locale);
@@ -266,6 +280,7 @@ export function ArticleLanguageWorkspace({
         showSourceLocaleControl={false}
         tagOptions={tagOptions}
         site={site}
+        longContent={longContent?.meta.locale === sourceLocale ? longContent : null}
       />
     </div>
   );

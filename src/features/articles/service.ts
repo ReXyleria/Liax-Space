@@ -25,6 +25,12 @@ import {
   resolveArticleContentDisplay,
   type ArticleContentLocale
 } from "@/features/articles/content-service";
+import {
+  ARTICLE_CONTENT_BLOCK_INITIAL_LIMIT,
+  getLongArticleContentMeta,
+  replaceArticleContentBlocks,
+  type PreparedArticleContentBlocks
+} from "@/features/articles/long-content";
 import { getTranslationConfig } from "@/features/settings/translation-settings";
 import {
   getPublicContentTranslationMap,
@@ -78,6 +84,51 @@ const publicArticleListSelect = {
 
 type PublicArticleListRow = Prisma.ArticleGetPayload<{ select: typeof publicArticleListSelect }>;
 type PublicArticle = ReturnType<typeof mapPublicArticleListItem>;
+
+const consoleArticleListSelect = {
+  id: true,
+  title: true,
+  slug: true,
+  summary: true,
+  cover: true,
+  status: true,
+  visibility: true,
+  allowComments: true,
+  pinned: true,
+  featured: true,
+  seoTitle: true,
+  seoDescription: true,
+  sourceLocale: true,
+  publishedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+  rawImportMeta: true,
+  tags: { include: { tag: true } },
+  contents: {
+    select: {
+      locale: true,
+      title: true,
+      summary: true,
+      seoTitle: true,
+      seoDescription: true,
+      contentStatus: true,
+      contentHash: true,
+      generatedFromLocale: true,
+      generatedAt: true,
+      error: true,
+      updatedAt: true
+    }
+  }
+} satisfies Prisma.ArticleSelect;
+
+type ConsoleArticleListRow = Prisma.ArticleGetPayload<{ select: typeof consoleArticleListSelect }>;
+
+type ArticleCreateOptions = {
+  contentBlocks?: PreparedArticleContentBlocks | null;
+  rawImportMeta?: Prisma.InputJsonValue;
+};
+
 
 function scheduleArticleSitePush(articleId: string) {
   void pushArticleUrlAfterPublish(articleId).catch((error) => {
@@ -207,6 +258,7 @@ function mapArticle(article: ArticleWithRelations, locale?: string | null, trans
   const requestContentLocale = locale ? normalizeArticleContentLocale(localeToUrlLocale(locale)) : null;
   const display = resolveArticleContentDisplay(article, requestContentLocale, { allowFallback: !requestContentLocale });
   const { tags, contents, ...rest } = article;
+  const longContentMeta = getLongArticleContentMeta(rest.rawImportMeta);
   const normalizedLocale = requestContentLocale;
   const sourceLocale = normalizeArticleContentLocale(article.sourceLocale);
   const normalizedTargetLocale = normalizeArticleContentLocale(translationTargetLocale);
@@ -234,6 +286,7 @@ function mapArticle(article: ArticleWithRelations, locale?: string | null, trans
     translationTargetLocale: normalizedTargetLocale,
     translationReady,
     languageStatuses,
+    longContentMeta,
     contents: contents.map(serializeContent),
     counterpartLocale,
     counterpartTranslationTitle: counterpartContent?.title ?? null,
@@ -297,6 +350,108 @@ function mapPublicArticleListItem(article: PublicArticleListRow, locale?: string
     translationError: requestedLocale && !display
       ? requestedContent?.error ?? "Requested article content is unavailable."
       : null,
+    tags: article.tags.map((item) => item.tag).filter(isDefined)
+  };
+}
+
+type ConsoleListContent = Array<{
+  locale: string;
+  title: string;
+  summary: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  contentStatus: ArticleContentStatus;
+  contentHash?: string | null;
+  generatedFromLocale?: string | null;
+  generatedAt?: Date | null;
+  error: string | null;
+  updatedAt?: Date;
+}>;
+
+function findConsoleListContent(contents: ConsoleListContent, locale: ArticleContentLocale) {
+  return contents.find((content) => normalizeArticleContentLocale(content.locale) === locale) ?? null;
+}
+
+function listLanguageStatus(
+  article: { title: string; contents: ConsoleListContent },
+  locale: ArticleContentLocale,
+  sourceLocale: ArticleContentLocale
+) {
+  const content = findConsoleListContent(article.contents, locale);
+  const hasBodyMarker = Boolean(content?.title.trim());
+
+  if (locale === sourceLocale) {
+    return {
+      locale,
+      isSource: true,
+      ready: hasBodyMarker || Boolean(article.title.trim()),
+      status: content?.contentStatus ?? ArticleContentStatus.READY,
+      error: content?.error ?? null
+    };
+  }
+
+  return {
+    locale,
+    isSource: false,
+    ready: Boolean(
+      content &&
+      (content.contentStatus === ArticleContentStatus.READY || content.contentStatus === ArticleContentStatus.STALE) &&
+      hasBodyMarker
+    ),
+    status: content?.contentStatus ?? null,
+    error: content?.error ?? null
+  };
+}
+
+function mapConsoleArticleListItem(article: ConsoleArticleListRow, translationTargetLocale = "en-US") {
+  const sourceLocale = normalizeArticleContentLocale(article.sourceLocale);
+  const normalizedTargetLocale = normalizeArticleContentLocale(translationTargetLocale);
+  const counterpartLocale = otherArticleContentLocale(sourceLocale);
+  const targetContent = findConsoleListContent(article.contents, normalizedTargetLocale);
+  const counterpartContent = findConsoleListContent(article.contents, counterpartLocale);
+  const translationReady =
+    normalizedTargetLocale === sourceLocale ||
+    Boolean(
+      targetContent &&
+      (targetContent.contentStatus === ArticleContentStatus.READY || targetContent.contentStatus === ArticleContentStatus.STALE) &&
+      targetContent.title.trim()
+    );
+
+  return {
+    id: article.id,
+    title: article.title,
+    slug: article.slug,
+    summary: article.summary,
+    cover: article.cover,
+    contentHtml: "",
+    status: article.status,
+    visibility: article.visibility,
+    allowComments: article.allowComments,
+    pinned: article.pinned,
+    featured: article.featured,
+    seoTitle: article.seoTitle,
+    seoDescription: article.seoDescription,
+    sourceLocale,
+    translationTargetLocale: normalizedTargetLocale,
+    translationReady,
+    languageStatuses: {
+      "zh-CN": listLanguageStatus(article, "zh-CN", sourceLocale),
+      "en-US": listLanguageStatus(article, "en-US", sourceLocale)
+    },
+    counterpartLocale,
+    counterpartTranslationTitle: counterpartContent?.title ?? null,
+    counterpartTranslationSummary: counterpartContent?.summary ?? null,
+    counterpartTranslationContentHtml: null,
+    counterpartTranslationSeoTitle: counterpartContent?.seoTitle ?? null,
+    counterpartTranslationSeoDescription: counterpartContent?.seoDescription ?? null,
+    targetTranslationStatus: targetContent?.contentStatus ?? null,
+    targetTranslationTitle: normalizedTargetLocale === sourceLocale ? article.title : targetContent?.title ?? null,
+    targetTranslationSummary: normalizedTargetLocale === sourceLocale ? article.summary : targetContent?.summary ?? null,
+    targetTranslationContentHtml: null,
+    targetTranslationSeoTitle: normalizedTargetLocale === sourceLocale ? article.seoTitle : targetContent?.seoTitle ?? null,
+    targetTranslationSeoDescription: normalizedTargetLocale === sourceLocale ? article.seoDescription : targetContent?.seoDescription ?? null,
+    publishedAt: article.publishedAt?.toISOString() ?? null,
+    createdAt: article.createdAt,
     tags: article.tags.map((item) => item.tag).filter(isDefined)
   };
 }
@@ -584,6 +739,109 @@ export async function getPublishedArticleBySlug(slug: string, user: CurrentUser 
   }
 
   return withDatabase(async () => {
+    const baseArticle = await db.article.findFirst({
+      where: {
+        slug,
+        status: ArticleStatus.PUBLISHED,
+        deletedAt: null
+      },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        summary: true,
+        cover: true,
+        status: true,
+        visibility: true,
+        allowComments: true,
+        pinned: true,
+        featured: true,
+        viewCount: true,
+        seoTitle: true,
+        seoDescription: true,
+        sourceLocale: true,
+        publishedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        rawImportMeta: true,
+        author: { select: { nickname: true } },
+        tags: { include: { tag: true } },
+        contents: {
+          select: {
+            locale: true,
+            title: true,
+            summary: true,
+            seoTitle: true,
+            seoDescription: true,
+            contentStatus: true,
+            error: true
+          }
+        }
+      }
+    });
+
+    if (!baseArticle) {
+      return { article: null, canView: false, error: null as string | null };
+    }
+
+    const longContentMeta = getLongArticleContentMeta(baseArticle.rawImportMeta);
+    const requestContentLocale = locale ? normalizeArticleContentLocale(localeToUrlLocale(locale)) : null;
+    const canUseLongSource =
+      longContentMeta &&
+      (!requestContentLocale || requestContentLocale === longContentMeta.locale);
+
+    if (canUseLongSource) {
+      const initialBlocks = await db.articleContentBlock.findMany({
+        where: {
+          articleId: baseArticle.id,
+          locale: longContentMeta.locale
+        },
+        select: {
+          blockIndex: true,
+          html: true
+        },
+        orderBy: { blockIndex: "asc" },
+        take: ARTICLE_CONTENT_BLOCK_INITIAL_LIMIT
+      });
+      const longArticle = {
+        id: baseArticle.id,
+        title: baseArticle.title,
+        slug: baseArticle.slug,
+        summary: baseArticle.summary,
+        cover: baseArticle.cover,
+        status: baseArticle.status,
+        visibility: baseArticle.visibility,
+        allowComments: baseArticle.allowComments,
+        pinned: baseArticle.pinned,
+        featured: baseArticle.featured,
+        viewCount: baseArticle.viewCount,
+        seoTitle: baseArticle.seoTitle,
+        seoDescription: baseArticle.seoDescription,
+        sourceLocale: normalizeArticleContentLocale(baseArticle.sourceLocale),
+        publishedAt: baseArticle.publishedAt?.toISOString() ?? null,
+        createdAt: baseArticle.createdAt,
+        updatedAt: baseArticle.updatedAt,
+        author: baseArticle.author,
+        tags: baseArticle.tags.map((item) => item.tag).filter(isDefined),
+        contentHtml: initialBlocks.map((block) => block.html).join(""),
+        contentJson: null,
+        translationLocale: requestContentLocale,
+        translationStatus: null,
+        translationError: null,
+        longContentMeta,
+        longContent: {
+          meta: longContentMeta,
+          initialBlocks
+        }
+      };
+
+      if (!canViewArticle(user, baseArticle)) {
+        return { article: longArticle, canView: false, error: null as string | null };
+      }
+
+      return { article: longArticle, canView: true, error: null as string | null };
+    }
+
     const article = await db.article.findFirst({
       where: {
         slug,
@@ -605,6 +863,58 @@ export async function getPublishedArticleBySlug(slug: string, user: CurrentUser 
   }, { article: null, canView: false, error: "Failed to load article." });
 }
 
+export async function getPublishedArticleContentBlocks(
+  user: CurrentUser | null,
+  input: { articleId: string; locale: string; after?: number; limit?: number }
+) {
+  if (!isDatabaseConfigured()) {
+    return { blocks: [], error: "DATABASE_URL is not configured." };
+  }
+
+  return withDatabase(async () => {
+    const article = await db.article.findFirst({
+      where: {
+        id: input.articleId,
+        status: ArticleStatus.PUBLISHED,
+        deletedAt: null
+      },
+      select: {
+        id: true,
+        visibility: true,
+        rawImportMeta: true
+      }
+    });
+
+    if (!article || !canViewArticle(user, article)) {
+      return { blocks: [], error: "Article not found." };
+    }
+
+    const meta = getLongArticleContentMeta(article.rawImportMeta);
+    const locale = normalizeArticleContentLocale(input.locale);
+    if (!meta || meta.locale !== locale) {
+      return { blocks: [], error: "Article content blocks are unavailable." };
+    }
+
+    const after = Math.max(-1, Math.trunc(input.after ?? -1));
+    const limit = Math.max(1, Math.min(8, Math.trunc(input.limit ?? ARTICLE_CONTENT_BLOCK_INITIAL_LIMIT)));
+    const blocks = await db.articleContentBlock.findMany({
+      where: {
+        articleId: article.id,
+        locale,
+        blockIndex: { gt: after }
+      },
+      select: {
+        blockIndex: true,
+        html: true
+      },
+      orderBy: { blockIndex: "asc" },
+      take: limit
+    });
+
+    return { blocks, error: null as string | null };
+  }, { blocks: [], error: "Failed to load article content blocks." });
+}
+
 export async function listConsoleArticles(user: CurrentUser) {
   assertPermission(canManageArticles(user), "You do not have permission to manage articles.");
 
@@ -617,13 +927,13 @@ export async function listConsoleArticles(user: CurrentUser) {
     const translationTargetLocale = normalizeArticleContentLocale(config?.targetLang ?? "en-US");
     const articles = await db.article.findMany({
       where: { deletedAt: null },
-      include: articleInclude,
+      select: consoleArticleListSelect,
       orderBy: [{ pinned: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
       take: 100
     });
 
     return {
-      articles: articles.map((article) => mapArticle(article, null, translationTargetLocale)),
+      articles: articles.map((article) => mapConsoleArticleListItem(article, translationTargetLocale)),
       error: null as string | null
     };
   }, { articles: [], error: "Failed to load console articles." });
@@ -636,12 +946,167 @@ export async function getConsoleArticle(user: CurrentUser, id: string) {
     return null;
   }
 
+  const baseArticle = await db.article.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      summary: true,
+      cover: true,
+      status: true,
+      visibility: true,
+      allowComments: true,
+      pinned: true,
+      featured: true,
+      viewCount: true,
+      seoTitle: true,
+      seoDescription: true,
+      sourceLocale: true,
+      publishedAt: true,
+      createdAt: true,
+      updatedAt: true,
+      rawImportMeta: true,
+      author: { select: { nickname: true } },
+      tags: { include: { tag: true } },
+      contents: {
+        select: {
+          id: true,
+          locale: true,
+          title: true,
+          summary: true,
+          seoTitle: true,
+          seoDescription: true,
+          contentStatus: true,
+          contentHash: true,
+          generatedFromLocale: true,
+          generatedAt: true,
+          error: true,
+          updatedAt: true
+        }
+      }
+    }
+  });
+
+  if (!baseArticle) {
+    return null;
+  }
+
+  const longContentMeta = getLongArticleContentMeta(baseArticle.rawImportMeta);
+  if (longContentMeta) {
+    const initialBlocks = await db.articleContentBlock.findMany({
+      where: {
+        articleId: baseArticle.id,
+        locale: longContentMeta.locale
+      },
+      select: {
+        blockIndex: true,
+        html: true
+      },
+      orderBy: { blockIndex: "asc" },
+      take: ARTICLE_CONTENT_BLOCK_INITIAL_LIMIT
+    });
+    const sourceLocale = normalizeArticleContentLocale(baseArticle.sourceLocale);
+    const counterpartLocale = otherArticleContentLocale(sourceLocale);
+    const languageStatuses = {
+      "zh-CN": listLanguageStatus(baseArticle, "zh-CN", sourceLocale),
+      "en-US": listLanguageStatus(baseArticle, "en-US", sourceLocale)
+    };
+
+    return {
+      id: baseArticle.id,
+      title: baseArticle.title,
+      slug: baseArticle.slug,
+      summary: baseArticle.summary,
+      cover: baseArticle.cover,
+      contentHtml: "",
+      contentJson: null,
+      status: baseArticle.status,
+      visibility: baseArticle.visibility,
+      allowComments: baseArticle.allowComments,
+      pinned: baseArticle.pinned,
+      featured: baseArticle.featured,
+      viewCount: baseArticle.viewCount,
+      seoTitle: baseArticle.seoTitle,
+      seoDescription: baseArticle.seoDescription,
+      sourceLocale,
+      publishedAt: baseArticle.publishedAt?.toISOString() ?? null,
+      createdAt: baseArticle.createdAt,
+      updatedAt: baseArticle.updatedAt,
+      author: baseArticle.author,
+      tags: baseArticle.tags.map((item) => item.tag).filter(isDefined),
+      contents: baseArticle.contents.map((content) => ({
+        id: content.id,
+        locale: normalizeArticleContentLocale(content.locale),
+        title: content.title,
+        summary: content.summary,
+        seoTitle: content.seoTitle,
+        seoDescription: content.seoDescription,
+        contentHtml: "",
+        contentJson: null,
+        contentStatus: content.contentStatus,
+        contentHash: content.contentHash,
+        generatedFromLocale: content.generatedFromLocale,
+        generatedAt: content.generatedAt?.toISOString() ?? null,
+        error: content.error,
+        updatedAtLabel: content.updatedAt.toISOString()
+      })),
+      languageStatuses,
+      counterpartLocale,
+      longContentMeta,
+      longContent: {
+        meta: longContentMeta,
+        initialBlocks
+      }
+    };
+  }
+
   const article = await db.article.findUnique({
     where: { id },
     include: articleInclude
   });
 
   return article ? mapArticle(article) : null;
+}
+
+export async function getConsoleArticleContentBlocks(
+  user: CurrentUser,
+  input: { articleId: string; locale: string; after?: number; limit?: number }
+) {
+  assertPermission(canManageArticles(user), "You do not have permission to manage articles.");
+
+  if (!isDatabaseConfigured()) {
+    return { blocks: [], error: "DATABASE_URL is not configured." };
+  }
+
+  const article = await db.article.findUnique({
+    where: { id: input.articleId },
+    select: { id: true, rawImportMeta: true }
+  });
+  if (!article) {
+    return { blocks: [], error: "Article not found." };
+  }
+
+  const meta = getLongArticleContentMeta(article.rawImportMeta);
+  const locale = normalizeArticleContentLocale(input.locale);
+  if (!meta || meta.locale !== locale) {
+    return { blocks: [], error: "Article content blocks are unavailable." };
+  }
+
+  const after = Math.max(-1, Math.trunc(input.after ?? -1));
+  const limit = Math.max(1, Math.min(8, Math.trunc(input.limit ?? ARTICLE_CONTENT_BLOCK_INITIAL_LIMIT)));
+  const blocks = await db.articleContentBlock.findMany({
+    where: {
+      articleId: article.id,
+      locale,
+      blockIndex: { gt: after }
+    },
+    select: { blockIndex: true, html: true },
+    orderBy: { blockIndex: "asc" },
+    take: limit
+  });
+
+  return { blocks, error: null as string | null };
 }
 
 async function syncTags(articleId: string, tagNames: string[]) {
@@ -733,7 +1198,7 @@ async function syncArticleMediaReferences(articleId: string, html: string, cover
   });
 }
 
-export async function createArticle(user: CurrentUser, input: unknown) {
+export async function createArticle(user: CurrentUser, input: unknown, options: ArticleCreateOptions = {}) {
   assertPermission(canManageArticles(user), "You do not have permission to create articles.");
   if (!isDatabaseConfigured()) {
     throw new Error("DATABASE_URL is not configured.");
@@ -760,6 +1225,7 @@ export async function createArticle(user: CurrentUser, input: unknown) {
         seoTitle: parsed.seoTitle,
         seoDescription: parsed.seoDescription,
         sourceLocale,
+        rawImportMeta: options.rawImportMeta,
         authorId: user.id,
         publishedAt: parsed.status === ArticleStatus.PUBLISHED ? (parsed.publishedAt ?? new Date()) : (parsed.publishedAt ?? null)
       }
@@ -774,8 +1240,12 @@ export async function createArticle(user: CurrentUser, input: unknown) {
       seoDescription: parsed.seoDescription
     });
 
+    if (options.contentBlocks?.blocks.length) {
+      await replaceArticleContentBlocks(tx, created.id, sourceLocale, options.contentBlocks.blocks);
+    }
+
     return created;
-  });
+  }, { timeout: 60_000 });
 
   await syncTags(article.id, parsed.tagNames);
   await syncArticleMediaReferences(article.id, sanitizedHtml, parsed.cover);
@@ -943,7 +1413,10 @@ export async function setArticleStatus(user: CurrentUser, id: string, status: Ar
     throw new Error("DATABASE_URL is not configured.");
   }
 
-  const existing = await db.article.findUnique({ where: { id }, include: { contents: true } });
+  const existing = await db.article.findUnique({
+    where: { id },
+    select: { id: true, slug: true, status: true, publishedAt: true, rawImportMeta: true }
+  });
   if (!existing) {
     throw new Error("Article not found.");
   }
@@ -959,7 +1432,9 @@ export async function setArticleStatus(user: CurrentUser, id: string, status: Ar
     }
   });
 
-  scheduleArticleTranslationSync(article);
+  if (!getLongArticleContentMeta(existing.rawImportMeta)) {
+    scheduleArticleTranslationSync(article);
+  }
   if (article.status === ArticleStatus.PUBLISHED) {
     scheduleArticleSitePush(article.id);
   }
@@ -994,7 +1469,18 @@ export async function updateArticleMeta(user: CurrentUser, id: string, input: un
     throw new Error("DATABASE_URL is not configured.");
   }
   const parsed = articleMetaSchema.parse(input);
-  const existing = await db.article.findUnique({ where: { id }, include: { contents: true } });
+  const existing = await db.article.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      publishedAt: true,
+      status: true,
+      sourceLocale: true,
+      rawImportMeta: true
+    }
+  });
   if (!existing) {
     throw new Error("Article not found.");
   }
@@ -1019,18 +1505,36 @@ export async function updateArticleMeta(user: CurrentUser, id: string, input: un
   });
 
   const sourceLocale = normalizeArticleContentLocale(existing.sourceLocale);
-  const sourceContent = findArticleContent(existing.contents, sourceLocale);
-  await db.$transaction((tx) => upsertReadyArticleContent(tx, id, sourceLocale, {
-    title: sourceContent?.title ?? existing.title,
-    summary: parsed.summary,
-    contentHtml: sourceContent?.contentHtml ?? existing.contentHtml,
-    contentJson: sourceContent?.contentJson ?? existing.contentJson,
-    seoTitle: parsed.seoTitle,
-    seoDescription: parsed.seoDescription
-  }, existing.contents));
+  const longContentMeta = getLongArticleContentMeta(existing.rawImportMeta);
+  if (longContentMeta) {
+    await db.articleContent.updateMany({
+      where: { articleId: id, locale: sourceLocale },
+      data: {
+        summary: parsed.summary,
+        seoTitle: parsed.seoTitle,
+        seoDescription: parsed.seoDescription
+      }
+    });
+  } else {
+    const existingWithContent = await db.article.findUnique({ where: { id }, include: { contents: true } });
+    if (!existingWithContent) {
+      throw new Error("Article not found.");
+    }
+    const sourceContent = findArticleContent(existingWithContent.contents, sourceLocale);
+    await db.$transaction((tx) => upsertReadyArticleContent(tx, id, sourceLocale, {
+      title: sourceContent?.title ?? existingWithContent.title,
+      summary: parsed.summary,
+      contentHtml: sourceContent?.contentHtml ?? existingWithContent.contentHtml,
+      contentJson: sourceContent?.contentJson ?? existingWithContent.contentJson,
+      seoTitle: parsed.seoTitle,
+      seoDescription: parsed.seoDescription
+    }, existingWithContent.contents));
+    await syncArticleMediaReferences(article.id, existingWithContent.contentHtml, parsed.cover);
+  }
   await syncTags(article.id, parsed.tagNames);
-  await syncArticleMediaReferences(article.id, existing.contentHtml, parsed.cover);
-  scheduleArticleTranslationSync(article);
+  if (!longContentMeta) {
+    scheduleArticleTranslationSync(article);
+  }
   if (existing.status === ArticleStatus.PUBLISHED) {
     scheduleArticleSitePush(article.id);
   }

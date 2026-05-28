@@ -55,11 +55,40 @@ export async function isTranslationConfigured() {
   return config.isConfigured;
 }
 
-export async function listArticleTranslations(user: CurrentUser, articleId: string) {
+export async function listArticleTranslations(
+  user: CurrentUser,
+  articleId: string,
+  options: { includeBody?: boolean } = {}
+) {
   assertPermission(canManageArticles(user), "You do not have permission to view article translations.");
 
   if (!isDatabaseConfigured()) {
     return [];
+  }
+
+  if (options.includeBody === false) {
+    return db.articleContent.findMany({
+      where: { articleId },
+      select: {
+        id: true,
+        articleId: true,
+        locale: true,
+        title: true,
+        summary: true,
+        contentHtml: false,
+        contentJson: false,
+        seoTitle: true,
+        seoDescription: true,
+        contentStatus: true,
+        contentHash: true,
+        generatedFromLocale: true,
+        generatedAt: true,
+        error: true,
+        createdAt: true,
+        updatedAt: true
+      },
+      orderBy: { updatedAt: "desc" }
+    });
   }
 
   return db.articleContent.findMany({

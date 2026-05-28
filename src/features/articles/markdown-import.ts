@@ -3,8 +3,14 @@ import { marked } from "marked";
 import type { CurrentUser } from "@/lib/auth";
 import { isImportableImageSource, importImageSource } from "@/lib/remote-image-import";
 import { createArticle } from "@/features/articles/service";
+import {
+  buildLongArticleContentMeta,
+  longArticleRawImportMeta,
+  prepareArticleContentBlocks,
+  shouldUseArticleContentBlocks
+} from "@/features/articles/long-content";
 
-const MARKDOWN_MAX_SIZE = 2 * 1024 * 1024;
+const MARKDOWN_MAX_SIZE = 20 * 1024 * 1024;
 const EMPTY_EDITOR_DOC = { type: "doc", content: [] };
 
 type ArticleImportLocale = "zh-CN" | "en-US";
@@ -231,7 +237,7 @@ function validateMarkdownFile(file: unknown): asserts file is File {
     throw new MarkdownImportError("Markdown file is empty.", "markdownFile");
   }
   if (file.size > MARKDOWN_MAX_SIZE) {
-    throw new MarkdownImportError("Markdown file cannot exceed 2 MB.", "markdownFile");
+    throw new MarkdownImportError("Markdown file cannot exceed 20 MB.", "markdownFile");
   }
 }
 
@@ -261,7 +267,22 @@ export async function importMarkdownArticle(
     breaks: false,
     gfm: true
   });
-  const { html: contentHtml, failures } = await localizeHtmlImages(renderedHtml, user.id);
+  const sourceLocale = normalizeSourceLocale(firstString(metadata.sourceLocale), input.fallbackSourceLocale);
+  const { html: localizedHtml, failures } = await localizeHtmlImages(renderedHtml, user.id);
+  const contentBlocks = shouldUseArticleContentBlocks(localizedHtml)
+    ? prepareArticleContentBlocks(localizedHtml)
+    : null;
+  const contentHtml = contentBlocks?.html ?? localizedHtml;
+  const rawImportMeta = contentBlocks
+    ? longArticleRawImportMeta(buildLongArticleContentMeta({
+        locale: sourceLocale,
+        blocks: contentBlocks.blocks,
+        toc: contentBlocks.toc,
+        htmlLength: contentHtml.length,
+        markdownLength: rawMarkdown.length,
+        sourceFileName: input.file.name
+      }))
+    : undefined;
 
   const article = await createArticle(user, {
     title,
@@ -277,9 +298,12 @@ export async function importMarkdownArticle(
     featured: false,
     seoTitle: firstString(metadata.seoTitle),
     seoDescription: firstString(metadata.seoDescription),
-    sourceLocale: normalizeSourceLocale(firstString(metadata.sourceLocale), input.fallbackSourceLocale),
+    sourceLocale,
     publishedAt: parsePublishedAt(firstString(metadata.publishedAt)),
     tagNames: stringList(metadata.tags)
+  }, {
+    contentBlocks,
+    rawImportMeta
   });
 
   return { article, imageFailures: failures };

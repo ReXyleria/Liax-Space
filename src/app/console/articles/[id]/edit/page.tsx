@@ -19,16 +19,19 @@ export default async function EditArticlePage({
     getConsoleLocale(),
     requireConsolePermission(canManageArticles, `/console/articles/${id}/edit`)
   ]);
-  const [article, tagOptions, contents, site] = await Promise.all([
-    getConsoleArticle(user, id),
-    getAllTags(),
-    listArticleTranslations(user, id),
-    getPreviewSiteSettings()
-  ]);
+  const article = await getConsoleArticle(user, id);
 
   if (!article) {
     notFound();
   }
+
+  const longContent = "longContent" in article ? article.longContent : null;
+  const isLongArticle = Boolean(longContent);
+  const [tagOptions, contents, site] = await Promise.all([
+    getAllTags(),
+    listArticleTranslations(user, id, { includeBody: !isLongArticle }),
+    getPreviewSiteSettings()
+  ]);
 
   const articleFormValue = {
     id: article.id,
@@ -63,13 +66,14 @@ export default async function EditArticlePage({
         summary: content.summary,
         seoTitle: content.seoTitle,
         seoDescription: content.seoDescription,
-        contentHtml: content.contentHtml,
-        contentJson: content.contentJson,
+        contentHtml: "contentHtml" in content && typeof content.contentHtml === "string" ? content.contentHtml : "",
+        contentJson: "contentJson" in content ? content.contentJson : null,
         contentStatus: content.contentStatus,
         error: content.error,
         contentHash: content.contentHash,
         updatedAtLabel: content.updatedAt.toISOString()
       }))}
+      longContent={longContent}
     />
   );
 }

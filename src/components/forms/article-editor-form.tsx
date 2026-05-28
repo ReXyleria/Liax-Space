@@ -17,6 +17,7 @@ import { AlertTriangle, FileUp, History, Save, Send, Settings, Sparkles } from "
 import { BlockEditor } from "@/components/editor/block-editor/block-editor";
 import { EditorToc } from "@/components/editor/editor-toc";
 import { ArticleEditorErrorBoundary } from "@/components/forms/article-editor-error-boundary";
+import { ArticleContentBlocks } from "@/components/public/article-content-blocks";
 import type {
   ArticlePreviewDraft,
   PreviewSiteSettings
@@ -33,8 +34,9 @@ import { ImageUploadField } from "@/components/forms/image-upload-field";
 import {
   createArticleAction,
   generateArticleSeoAction,
-  importMarkdownArticleAction,
+  publishArticleAction,
   restoreArticleVersionAction,
+  updateArticleSettingsAction,
   updateArticleAction,
   type ArticleActionState,
   type MarkdownImportActionState
@@ -87,6 +89,20 @@ type ArticleVersionValue = {
   tagNames: string[];
   createdAt: string;
   createdByName: string;
+};
+
+type LongArticleContentValue = {
+  meta: {
+    locale: "zh-CN" | "en-US";
+    blockCount: number;
+    htmlLength: number;
+    markdownLength?: number;
+    sourceFileName?: string;
+  };
+  initialBlocks: Array<{
+    blockIndex: number;
+    html: string;
+  }>;
 };
 
 function labels(locale: Locale) {
@@ -152,6 +168,9 @@ function labels(locale: Locale) {
         sourceLanguageDescription: "Chinese and English use the same editor; switching changes the stored source language.",
         chineseLanguage: "Chinese",
         englishLanguage: "English",
+        longContentTitle: "Long article preview",
+        longContentDescription: "The body is loaded in sections so this page stays responsive. Use settings and publish controls here; re-import Markdown to replace the body.",
+        longContentStats: (blocks: number, sizeMb: string) => `${blocks} sections / ${sizeMb} MB`,
         statusLabels: {
           [ArticleStatus.DRAFT]: "Draft",
           [ArticleStatus.PUBLISHED]: "Published",
@@ -218,6 +237,9 @@ function labels(locale: Locale) {
         sourceLanguageDescription: "中文和 English 使用同一个编辑器；切换后会改变保存的原文语言。",
         chineseLanguage: "中文",
         englishLanguage: "English",
+        longContentTitle: "长文预览",
+        longContentDescription: "正文会按分段加载，避免后台卡死。这里可修改设置和发布状态；如需替换正文，请重新导入 Markdown。",
+        longContentStats: (blocks: number, sizeMb: string) => `${blocks} 个分段 / ${sizeMb} MB`,
         statusLabels: {
           [ArticleStatus.DRAFT]: "草稿",
           [ArticleStatus.PUBLISHED]: "已发布",
@@ -321,6 +343,7 @@ export function ArticleEditorForm({
   versions: initialVersions = [],
   site,
   warnings = [],
+  longContent = null,
   locale = "zh-CN"
 }: {
   article?: ArticleFormValue | null;
@@ -332,6 +355,7 @@ export function ArticleEditorForm({
   versions?: ArticleVersionValue[];
   site: PreviewSiteSettings;
   warnings?: string[];
+  longContent?: LongArticleContentValue | null;
   locale?: Locale;
 }) {
   const text = labels(locale);
@@ -342,16 +366,19 @@ export function ArticleEditorForm({
   const markdownInputRef = useRef<HTMLInputElement>(null);
   const returnToListRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | null>(null);
-  const action = article ? updateArticleAction.bind(null, article.id) : createArticleAction;
+  const isLongContent = Boolean(longContent);
+  const action = article
+    ? isLongContent
+      ? updateArticleSettingsAction.bind(null, article.id)
+      : updateArticleAction.bind(null, article.id)
+    : createArticleAction;
   const draftKey = `article-draft:${article?.id ?? "new"}`;
   const [state, formAction, isPending] = useActionState<ArticleActionState, FormData>(
     action,
     initialArticleActionState
   );
-  const [markdownImportState, markdownImportAction, isMarkdownImportActionPending] = useActionState<
-    MarkdownImportActionState,
-    FormData
-  >(importMarkdownArticleAction, initialMarkdownImportActionState);
+  const [markdownImportState, setMarkdownImportState] = useState<MarkdownImportActionState>(initialMarkdownImportActionState);
+  const [isMarkdownImportActionPending, setMarkdownImportActionPending] = useState(false);
   const [title, setTitle] = useState(article?.title ?? "");
   const [slug, setSlug] = useState(article?.slug ?? createShortUuid);
   const [status, setStatus] = useState<string>(article?.status ?? ArticleStatus.DRAFT);
@@ -384,13 +411,12 @@ export function ArticleEditorForm({
   const [restoreError, setRestoreError] = useState("");
   const [isRestoring, startRestoreTransition] = useTransition();
   const [isGeneratingSeo, startSeoTransition] = useTransition();
-  const [isMarkdownImportTransitionPending, startMarkdownImportTransition] = useTransition();
   const [submitLocked, setSubmitLocked] = useState(false);
   const [seoMessage, setSeoMessage] = useState("");
   const [seoError, setSeoError] = useState("");
   const [seoTarget, setSeoTarget] = useState<"zh-CN" | "en-US" | null>(null);
   const [isMarkdownDragActive, setMarkdownDragActive] = useState(false);
-  const isImportingMarkdown = isMarkdownImportActionPending || isMarkdownImportTransitionPending;
+  const isImportingMarkdown = isMarkdownImportActionPending;
 
   const tagSelectOptions = useMemo(
     () => Array.from(new Set([...tagOptions.map((tag) => tag.name), ...selectedTags]))
@@ -398,6 +424,9 @@ export function ArticleEditorForm({
     [selectedTags, tagOptions]
   );
   const collectDraft = useCallback((): ArticleDraft | null => {
+    if (isLongContent) {
+      return null;
+    }
     const form = formRef.current;
     if (!form) {
       return null;
@@ -436,10 +465,14 @@ export function ArticleEditorForm({
     status,
     summary,
     title,
-    visibility
+    visibility,
+    isLongContent
   ]);
 
   const scheduleDraftSave = useCallback(() => {
+    if (isLongContent) {
+      return;
+    }
     if (saveTimer.current) {
       window.clearTimeout(saveTimer.current);
     }
@@ -449,7 +482,7 @@ export function ArticleEditorForm({
         window.localStorage.setItem(draftKey, JSON.stringify(draft));
       }
     }, 450);
-  }, [collectDraft, draftKey]);
+  }, [collectDraft, draftKey, isLongContent]);
 
   const updateSourceLocale = useCallback((nextLocale: "zh-CN" | "en-US") => {
     setSourceLocale(nextLocale);
@@ -512,10 +545,23 @@ export function ArticleEditorForm({
       return;
     }
 
+    if (isLongContent && status !== ArticleStatus.PUBLISHED) {
+      const formData = new FormData();
+      formData.set("id", article.id);
+      setSubmitLocked(true);
+      void publishArticleAction(formData)
+        .then(() => {
+          router.push("/console/articles");
+          router.refresh();
+        })
+        .finally(() => setSubmitLocked(false));
+      return;
+    }
+
     submitWithStatus(ArticleStatus.PUBLISHED, true);
   }
 
-  function submitMarkdownFile(file: File) {
+  async function submitMarkdownFile(file: File) {
     if (isImportingMarkdown) {
       return;
     }
@@ -523,15 +569,39 @@ export function ArticleEditorForm({
     const formData = new FormData();
     formData.set("markdownFile", file);
     formData.set("fallbackSourceLocale", sourceLocale);
-    startMarkdownImportTransition(() => {
-      markdownImportAction(formData);
-    });
+    setMarkdownImportActionPending(true);
+    setMarkdownImportState(initialMarkdownImportActionState);
+    try {
+      const response = await fetch("/api/console/articles/markdown-import", {
+        method: "POST",
+        body: formData
+      });
+      const payload = (await response.json().catch(() => null)) as MarkdownImportActionState | null;
+      const nextState = payload ?? {
+        ok: false,
+        message: response.ok ? text.importingMarkdown : text.importMarkdown,
+        fieldErrors: {}
+      };
+      setMarkdownImportState(nextState);
+      if (response.ok && nextState.ok && nextState.redirectTo) {
+        router.push(nextState.redirectTo);
+        router.refresh();
+      }
+    } catch (error) {
+      setMarkdownImportState({
+        ok: false,
+        message: error instanceof Error ? error.message : text.importMarkdown,
+        fieldErrors: {}
+      });
+    } finally {
+      setMarkdownImportActionPending(false);
+    }
   }
 
   function handleMarkdownFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (file) {
-      submitMarkdownFile(file);
+      void submitMarkdownFile(file);
     }
     event.target.value = "";
   }
@@ -572,7 +642,7 @@ export function ArticleEditorForm({
     setMarkdownDragActive(false);
     const file = Array.from(event.dataTransfer.files)[0];
     if (file) {
-      submitMarkdownFile(file);
+      void submitMarkdownFile(file);
     }
   }
 
@@ -683,6 +753,9 @@ export function ArticleEditorForm({
   }
 
   useEffect(() => {
+    if (isLongContent) {
+      return;
+    }
     const raw = window.localStorage.getItem(draftKey);
     if (!raw) {
       return;
@@ -695,7 +768,7 @@ export function ArticleEditorForm({
     } catch {
       window.localStorage.removeItem(draftKey);
     }
-  }, [draftKey]);
+  }, [draftKey, isLongContent]);
 
   useEffect(() => {
     if (state.ok) {
@@ -706,13 +779,6 @@ export function ArticleEditorForm({
       router.refresh();
     }
   }, [draftKey, router, state.ok, state.redirectTo]);
-
-  useEffect(() => {
-    if (markdownImportState.ok && markdownImportState.redirectTo) {
-      router.push(markdownImportState.redirectTo);
-      router.refresh();
-    }
-  }, [markdownImportState.ok, markdownImportState.redirectTo, router]);
 
   useEffect(() => {
     if (!isPending) {
@@ -747,6 +813,7 @@ export function ArticleEditorForm({
   const isSubmittingArticle = isPending || submitLocked;
   const statusText = text.statusLabels[status as ArticleStatus] ?? status;
   const dateLocale = locale === "en" ? "en-US" : "zh-CN";
+  const longContentSizeMb = longContent ? (longContent.meta.htmlLength / 1024 / 1024).toFixed(1) : "0";
 
   return (
     <>
@@ -924,26 +991,56 @@ export function ArticleEditorForm({
               <FieldError messages={markdownImportState.fieldErrors.markdownFile} />
             </CardHeader>
             <CardContent className="pt-6">
-              <ArticleEditorErrorBoundary>
-                <BlockEditor
-                  key={editorKey}
-                  title={title}
-                  locale={sourceLocale === "en-US" ? "en" : "zh-CN"}
-                  initialHtml={editorInitial.html}
-                  initialJson={editorInitial.json}
-                  onTitleChange={setTitle}
-                  onContentChange={scheduleDraftSave}
-                />
-              </ArticleEditorErrorBoundary>
-              <FieldError messages={state.fieldErrors.title} />
-              <FieldError messages={state.fieldErrors.contentHtml ?? state.fieldErrors.contentJson} />
+              {isLongContent && longContent ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border bg-muted/25 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium">{text.longContentTitle}</p>
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                          {text.longContentDescription}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-background px-3 py-1 text-xs text-muted-foreground">
+                        {text.longContentStats(longContent.meta.blockCount, longContentSizeMb)}
+                      </span>
+                    </div>
+                  </div>
+                  <ArticleContentBlocks
+                    articleId={article?.id ?? ""}
+                    contentLocale={longContent.meta.locale}
+                    initialBlocks={longContent.initialBlocks}
+                    blockCount={longContent.meta.blockCount}
+                    locale={locale}
+                    endpointBase="/api/console/articles"
+                  />
+                </div>
+              ) : (
+                <>
+                  <ArticleEditorErrorBoundary>
+                    <BlockEditor
+                      key={editorKey}
+                      title={title}
+                      locale={sourceLocale === "en-US" ? "en" : "zh-CN"}
+                      initialHtml={editorInitial.html}
+                      initialJson={editorInitial.json}
+                      onTitleChange={setTitle}
+                      onContentChange={scheduleDraftSave}
+                    />
+                  </ArticleEditorErrorBoundary>
+                  <FieldError messages={state.fieldErrors.title} />
+                  <FieldError messages={state.fieldErrors.contentHtml ?? state.fieldErrors.contentJson} />
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        <aside className="space-y-6">
-          <EditorToc />
-        </aside>
+        {isLongContent ? <aside /> : (
+          <aside className="space-y-6">
+            <EditorToc />
+          </aside>
+        )}
 
         <Dialog
           open={settingsOpen}

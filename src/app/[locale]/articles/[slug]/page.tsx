@@ -5,19 +5,19 @@ import { ArticleStatus } from "@prisma/client";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { t } from "@/lib/i18n";
 import { getIndexableArticleLocaleUrls } from "@/features/articles/indexing";
-import { buildMetaDescription, stripHtmlForSeo } from "@/lib/seo";
+import { buildMetaDescription } from "@/lib/seo";
 import { getSiteConfig, resolveAbsoluteUrl } from "@/lib/site";
 import { articleHref, localizedPath, urlLocaleToLocale } from "@/lib/locale-url";
 import { MotionItem, MotionList, MotionPage } from "@/components/animations/reveal";
 import { PublicShell } from "@/components/layout/public-shell";
 import { ArticleToc, type TocItem } from "@/components/public/article-toc";
+import { ArticleContentBlocks } from "@/components/public/article-content-blocks";
 import { SafeHtml } from "@/components/public/safe-html";
 import { Card } from "@/components/ui/card";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { CommentForm } from "@/components/forms/comment-form";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublishedArticleBySlug } from "@/features/articles/service";
-import { resolveArticleDisplayTranslation } from "@/features/articles/translation-service";
 import { listArticleComments } from "@/features/comments/service";
 import { formatDate } from "@/lib/utils";
 
@@ -56,13 +56,21 @@ export async function generateMetadata({
       title: true,
       slug: true,
       summary: true,
-      contentHtml: true,
       seoTitle: true,
       seoDescription: true,
       sourceLocale: true,
       status: true,
       deletedAt: true,
-      contents: true,
+      contents: {
+        select: {
+          locale: true,
+          title: true,
+          summary: true,
+          seoTitle: true,
+          seoDescription: true,
+          contentStatus: true
+        }
+      },
       cover: true
     }
   });
@@ -74,10 +82,24 @@ export async function generateMetadata({
     };
   }
 
-  const display = resolveArticleDisplayTranslation(article, locale, { allowFallback: false });
+  const requestedContentLocale = urlLocale === "en-US" ? "en-US" : "zh-CN";
+  const sourceLocale = article.sourceLocale === "en-US" ? "en-US" : "zh-CN";
+  const requestedContent = article.contents.find((content) => (
+    (content.locale === "en-US" ? "en-US" : "zh-CN") === requestedContentLocale
+  ));
+  const canUseRequestedContent = Boolean(
+    requestedContent &&
+    (requestedContent.contentStatus === "READY" || requestedContent.contentStatus === "STALE") &&
+    requestedContent.title.trim()
+  );
+  const display = canUseRequestedContent
+    ? requestedContent
+    : requestedContentLocale === sourceLocale
+      ? article
+      : null;
   const localeUrls = getIndexableArticleLocaleUrls(article, site.url);
   const languages = Object.fromEntries(localeUrls.map((item) => [item.locale, item.url]));
-  if (display.status === "missing") {
+  if (!display) {
     return {
       title: site.title,
       description: buildMetaDescription(null, site.subtitle, locale),
@@ -92,7 +114,7 @@ export async function generateMetadata({
   }
 
   const title = display.seoTitle || display.title;
-  const summary = buildMetaDescription(display.seoDescription, display.summary || stripHtmlForSeo(display.contentHtml), locale);
+  const summary = buildMetaDescription(display.seoDescription, display.summary, locale);
   const url = resolveAbsoluteUrl(site.url, articleHref(locale, slug));
 
   return {
@@ -233,7 +255,9 @@ export default async function ArticleDetailPage({
   }
 
   const comments = await listArticleComments(article.id);
-  const prepared = prepareArticleHtml(article.contentHtml);
+  const longContent = "longContent" in article ? article.longContent : null;
+  const prepared = longContent ? null : prepareArticleHtml(article.contentHtml);
+  const tocItems = longContent ? longContent.meta.toc : prepared?.toc ?? [];
 
   return (
     <PublicShell locale={locale} autoHideHeader>
@@ -272,7 +296,17 @@ export default async function ArticleDetailPage({
               </MotionItem>
               <MotionItem>
                 <div className="px-0 py-2">
-                  <SafeHtml html={prepared.html} />
+                  {longContent ? (
+                    <ArticleContentBlocks
+                      articleId={article.id}
+                      contentLocale={longContent.meta.locale}
+                      initialBlocks={longContent.initialBlocks}
+                      blockCount={longContent.meta.blockCount}
+                      locale={locale}
+                    />
+                  ) : (
+                    <SafeHtml html={prepared?.html ?? ""} />
+                  )}
                 </div>
               </MotionItem>
             </article>
@@ -312,7 +346,7 @@ export default async function ArticleDetailPage({
               </div>
             </section>
           </div>
-          <ArticleToc items={prepared.toc} />
+          <ArticleToc items={tocItems} />
         </main>
       </MotionPage>
     </PublicShell>

@@ -372,6 +372,7 @@ model Article {
   allowedIdentities ArticleAllowedIdentity[]
   versions          ArticleVersion[]
   contents          ArticleContent[]
+  contentBlocks     ArticleContentBlock[]
   translations      ArticleTranslation[]
   translationJobs   ArticleTranslationJob[]
   translationChunks ArticleTranslationChunk[]
@@ -408,6 +409,25 @@ model ArticleContent {
   @@index([locale, contentStatus])
   @@index([contentHash])
   @@index([generatedFromLocale])
+}
+
+model ArticleContentBlock {
+  id         String   @id @default(cuid())
+  articleId  String
+  locale     String
+  blockIndex Int
+  anchorId   String?  @db.VarChar(191)
+  title      String?  @db.Text
+  level      Int?
+  html       String   @db.LongText
+  textLength Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  article    Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, locale, blockIndex])
+  @@index([articleId, locale])
+  @@index([articleId, locale, anchorId])
 }
 
 model ArticleTranslation {
