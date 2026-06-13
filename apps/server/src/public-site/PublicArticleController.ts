@@ -9,6 +9,8 @@ import { AppError } from "../common/AppError.js";
 import { errorCodes } from "../common/errorCodes.js";
 import { logger } from "../common/logger.js";
 import { storagePaths } from "../config/paths.js";
+import { GuestbookRepository } from "../guestbook/GuestbookRepository.js";
+import type { CreateGuestbookEntryInput, GuestbookEntry } from "../guestbook/guestbook.types.js";
 import { MomentRepository } from "../moments/MomentRepository.js";
 import type { Moment } from "../moments/moments.types.js";
 import { renderLanguageSwitchScript } from "../renderer/TemplateRenderer.js";
@@ -78,6 +80,29 @@ function readBearerToken(authorizationHeader: unknown): string | null {
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function readBodyString(body: unknown, key: string): string {
+  if (!body || typeof body !== "object") {
+    return "";
+  }
+
+  const value = (body as Record<string, unknown>)[key];
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value) && typeof value[0] === "string") {
+    return value[0];
+  }
+
+  return "";
+}
+
+function readBodyBoolean(body: unknown, key: string): boolean {
+  const value = readBodyString(body, key).trim().toLowerCase();
+  return value === "1" || value === "true" || value === "on" || value === "yes";
 }
 
 function renderHomeLanguageSwitch(prefix: LocalePrefix): string {
@@ -933,6 +958,155 @@ ${moments.map((moment) => {
       </div>`;
 }
 
+type GuestbookFormValues = {
+  authorName: string;
+  email: string;
+  content: string;
+  notifyOnly: boolean;
+};
+
+type GuestbookFormState = {
+  errors?: string[];
+  submitted?: "public" | "private";
+  values?: Partial<GuestbookFormValues>;
+};
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+
+function readGuestbookSubmitted(value: unknown): "public" | "private" | undefined {
+  const submitted = Array.isArray(value) ? value[0] : value;
+  return submitted === "public" || submitted === "private" ? submitted : undefined;
+}
+
+function parseGuestbookForm(body: unknown, locale: ArticleLocale): {
+  errors: string[];
+  input: CreateGuestbookEntryInput | null;
+  values: GuestbookFormValues;
+} {
+  const isZh = locale === "zh-CN";
+  const authorName = readBodyString(body, "authorName").trim();
+  const email = readBodyString(body, "email").trim().toLowerCase();
+  const content = readBodyString(body, "content").trim();
+  const notifyOnly = readBodyBoolean(body, "notifyOnly");
+  const errors: string[] = [];
+
+  if (!authorName) {
+    errors.push(isZh ? "请填写昵称。" : "Name is required.");
+  } else if (authorName.length > 80) {
+    errors.push(isZh ? "昵称不能超过 80 个字符。" : "Name must be 80 characters or fewer.");
+  }
+
+  if (email && (email.length > 255 || !emailPattern.test(email))) {
+    errors.push(isZh ? "请填写有效邮箱，或留空。" : "Enter a valid email address, or leave it blank.");
+  }
+
+  if (!content) {
+    errors.push(isZh ? "请填写留言内容。" : "Message is required.");
+  } else if (content.length > 1000) {
+    errors.push(isZh ? "留言不能超过 1000 个字符。" : "Message must be 1000 characters or fewer.");
+  }
+
+  const values = { authorName, content, email, notifyOnly };
+
+  if (errors.length > 0) {
+    return { errors, input: null, values };
+  }
+
+  return {
+    errors,
+    input: {
+      authorName,
+      content,
+      email: email || null,
+      isPublic: !notifyOnly,
+      locale,
+      notifyOnly
+    },
+    values
+  };
+}
+
+function renderGuestbookStatus(locale: ArticleLocale, state: GuestbookFormState): string {
+  const isZh = locale === "zh-CN";
+
+  if (state.errors?.length) {
+    return `<div class="liax-guestbook-alert liax-guestbook-alert--error" role="alert">
+          <strong>${isZh ? "提交失败" : "Submission failed"}</strong>
+          <ul>
+${state.errors.map((error) => `            <li>${escapeHtml(error)}</li>`).join("\n")}
+          </ul>
+        </div>`;
+  }
+
+  if (state.submitted === "public") {
+    return `<p class="liax-guestbook-alert" role="status">${isZh ? "留言已发布。" : "Your message is now public."}</p>`;
+  }
+
+  if (state.submitted === "private") {
+    return `<p class="liax-guestbook-alert" role="status">${isZh ? "留言已提交给站主，不会公开展示。" : "Your private message has been submitted and will not be shown publicly."}</p>`;
+  }
+
+  return "";
+}
+
+function renderGuestbookEntries(locale: ArticleLocale, entries: GuestbookEntry[]): string {
+  const isZh = locale === "zh-CN";
+
+  if (entries.length === 0) {
+    return `<p class="liax-section-empty">${isZh ? "暂无公开留言。" : "No public messages yet."}</p>`;
+  }
+
+  return `<div class="liax-guestbook-list" aria-label="${isZh ? "公开留言" : "Public messages"}">
+${entries.map((entry) => {
+  const dateLabel = entry.createdAt.toISOString().slice(0, 10);
+
+  return `        <article class="liax-guestbook-entry">
+          <header>
+            <strong>${escapeHtml(entry.authorName)}</strong>
+            <time datetime="${escapeHtml(entry.createdAt.toISOString())}">${escapeHtml(dateLabel)}</time>
+          </header>
+          <p>${escapeHtml(entry.content)}</p>
+        </article>`;
+}).join("\n")}
+      </div>`;
+}
+
+export function renderGuestbookBody(
+  locale: ArticleLocale,
+  prefix: LocalePrefix,
+  entries: GuestbookEntry[],
+  state: GuestbookFormState = {}
+): string {
+  const isZh = locale === "zh-CN";
+  const values = state.values ?? {};
+  const notifyOnlyChecked = values.notifyOnly ? " checked" : "";
+
+  return `<p class="liax-section-description">${escapeHtml(isZh ? "邮箱不会在前台公开。公开留言会自动通过并展示；重要留言可选择只发送给站主。" : "Email addresses are never shown publicly. Public messages are displayed immediately; important notes can be sent only to the site owner.")}</p>
+      ${renderGuestbookStatus(locale, state)}
+      <form class="liax-guestbook-form" action="/${prefix}/guestbook" method="post">
+        <label>
+          <span>${isZh ? "昵称" : "Name"}</span>
+          <input name="authorName" autocomplete="name" maxlength="80" required value="${escapeHtml(values.authorName ?? "")}">
+        </label>
+        <label>
+          <span>${isZh ? "邮箱" : "Email"}</span>
+          <input name="email" autocomplete="email" maxlength="255" type="email" value="${escapeHtml(values.email ?? "")}">
+        </label>
+        <label class="liax-guestbook-form__message">
+          <span>${isZh ? "留言" : "Message"}</span>
+          <textarea name="content" maxlength="1000" required rows="6">${escapeHtml(values.content ?? "")}</textarea>
+        </label>
+        <label class="liax-guestbook-form__notify">
+          <input name="notifyOnly" type="checkbox" value="true"${notifyOnlyChecked}>
+          <span>${isZh ? "仅发送给站主" : "Only send to the site owner"}</span>
+        </label>
+        <p class="liax-guestbook-form__help">${escapeHtml(isZh ? "勾选后这条留言不会在前台公开展示，会作为私密留言保存给站主查看。" : "When checked, this message is saved as private and will not appear on the public page.")}</p>
+        <button type="submit">${isZh ? "提交留言" : "Submit message"}</button>
+      </form>
+      <h2 class="liax-guestbook-list-title">${isZh ? "公开留言" : "Public messages"}</h2>
+      ${renderGuestbookEntries(locale, entries)}`;
+}
+
 function renderAccountBody(locale: ArticleLocale): string {
   const isZh = locale === "zh-CN";
 
@@ -1454,6 +1628,141 @@ export function renderPublicSectionPage(
       font-weight: 760;
     }
 
+    .liax-guestbook-form {
+      display: grid;
+      gap: 16px;
+      max-width: 760px;
+      margin-top: 24px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 20px;
+    }
+
+    .liax-guestbook-form label {
+      display: grid;
+      gap: 8px;
+      color: var(--color-text);
+      font-weight: 760;
+    }
+
+    .liax-guestbook-form input,
+    .liax-guestbook-form textarea {
+      box-sizing: border-box;
+      width: 100%;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
+      color: var(--color-text);
+      font: inherit;
+      line-height: 1.5;
+      padding: 12px 14px;
+    }
+
+    .liax-guestbook-form textarea {
+      min-height: 140px;
+      resize: vertical;
+    }
+
+    .liax-guestbook-form__notify {
+      display: flex;
+      grid-template-columns: none;
+      align-items: center;
+      gap: 10px;
+      font-weight: 760;
+    }
+
+    .liax-guestbook-form__notify input {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: var(--color-accent);
+    }
+
+    .liax-guestbook-form__help {
+      margin: -6px 0 0;
+      max-width: none;
+      color: #6f6a5d;
+      font-size: 14px;
+    }
+
+    .liax-guestbook-form button {
+      justify-self: start;
+      border: 0;
+      border-radius: 8px;
+      background: var(--color-primary);
+      color: var(--color-primary-text);
+      cursor: pointer;
+      font: inherit;
+      font-weight: 800;
+      padding: 12px 18px;
+    }
+
+    .liax-guestbook-alert {
+      box-sizing: border-box;
+      max-width: 760px;
+      margin: 18px 0 0;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: #eef5e7;
+      padding: 14px 16px;
+    }
+
+    .liax-guestbook-alert--error {
+      background: #fff0ec;
+      border-color: #d79682;
+    }
+
+    .liax-guestbook-alert strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .liax-guestbook-alert ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .liax-guestbook-list-title {
+      margin: 34px 0 14px;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .liax-guestbook-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .liax-guestbook-entry {
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 18px;
+    }
+
+    .liax-guestbook-entry header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px 16px;
+      margin-bottom: 10px;
+    }
+
+    .liax-guestbook-entry time {
+      color: #6f6a5d;
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .liax-guestbook-entry p {
+      max-width: none;
+      margin: 0;
+      white-space: pre-wrap;
+    }
+
     .liax-tag-detail-card {
       display: grid;
       gap: 6px;
@@ -1662,6 +1971,7 @@ export class PublicArticleController {
     private readonly searchService = new SearchService(),
     private readonly momentRepository = new MomentRepository(),
     private readonly settingsRepository = new SettingsRepository(),
+    private readonly guestbookRepository = new GuestbookRepository(),
     private readonly jwtService = new JwtService()
   ) {}
 
@@ -1711,12 +2021,51 @@ export class PublicArticleController {
       return;
     }
 
+    if (section === "guestbook") {
+      const entries = await this.guestbookRepository.listPublicEntries({ locale, limit: 50 });
+      response.status(200).type("html").send(renderPublicSectionPage(
+        locale,
+        prefix,
+        section,
+        renderGuestbookBody(locale, prefix, entries, { submitted: readGuestbookSubmitted(request.query.submitted) })
+      ));
+      return;
+    }
+
     if (section === "account") {
       response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderAccountBody(locale)));
       return;
     }
 
     response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section));
+  };
+
+  postGuestbook = async (request: Request, response: Response): Promise<void> => {
+    const prefix = request.params.localePrefix;
+
+    if (prefix !== "zh" && prefix !== "en") {
+      throw notFoundError();
+    }
+
+    const locale = localePrefixMap[prefix];
+    const parsed = parseGuestbookForm(request.body, locale);
+
+    if (!parsed.input) {
+      const entries = await this.guestbookRepository.listPublicEntries({ locale, limit: 50 });
+      response.status(400).type("html").send(renderPublicSectionPage(
+        locale,
+        prefix,
+        "guestbook",
+        renderGuestbookBody(locale, prefix, entries, {
+          errors: parsed.errors,
+          values: parsed.values
+        })
+      ));
+      return;
+    }
+
+    const entry = await this.guestbookRepository.createEntry(parsed.input);
+    response.redirect(303, `/${prefix}/guestbook?submitted=${entry.notifyOnly ? "private" : "public"}`);
   };
 
   getTagDetail = async (request: Request, response: Response): Promise<void> => {

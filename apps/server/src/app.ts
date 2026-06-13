@@ -107,6 +107,7 @@ export function createApp() {
   }));
   app.use("/admin/articles/:articleId/:locale/versions", express.json({ limit: articleVersionJsonBodyLimit }));
   app.use(express.json({ limit: defaultJsonBodyLimit }));
+  app.use(express.urlencoded({ extended: false, limit: defaultJsonBodyLimit }));
   app.use("/setup", setupRoutes);
   app.use("/auth", authRoutes);
   app.use(searchRoutes);

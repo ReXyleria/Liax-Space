@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { renderHomePage, renderPublicSectionPage } from "./PublicArticleController.js";
+import { renderGuestbookBody, renderHomePage, renderPublicSectionPage } from "./PublicArticleController.js";
 
 describe("public home page rendering", () => {
   it("renders contact items without a separate contact title", () => {
@@ -102,5 +102,26 @@ describe("public section page rendering", () => {
 
     assert.match(html, /Page not found · Liax Space/);
     assert.match(html, /does not automatically fall back to another language/);
+  });
+
+  it("renders the public guestbook form and hides entry email addresses", () => {
+    const html = renderGuestbookBody("zh-CN", "zh", [{
+      authorName: "访客",
+      content: "你好",
+      createdAt: new Date("2026-06-13T08:00:00.000Z"),
+      deletedAt: null,
+      email: "visitor@example.test",
+      id: 1,
+      isPublic: true,
+      locale: "zh-CN",
+      notifyOnly: false
+    }]);
+
+    assert.match(html, /邮箱不会在前台公开/);
+    assert.match(html, /仅发送给站主/);
+    assert.match(html, /提交留言/);
+    assert.match(html, /访客/);
+    assert.match(html, /你好/);
+    assert.doesNotMatch(html, /visitor@example\.test/);
   });
 });
