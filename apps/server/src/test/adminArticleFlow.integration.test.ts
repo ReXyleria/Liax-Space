@@ -165,6 +165,15 @@ class MemoryUserRepository {
     return user ? cloneUser(user) : null;
   }
 
+  async findByEmailOrUsername(identifier: string): Promise<UserRecord | null> {
+    const normalizedIdentifier = identifier.trim().toLowerCase();
+    const user = [...this.users.values()].find((item) => (
+      item.email.toLowerCase() === normalizedIdentifier || item.username.toLowerCase() === normalizedIdentifier
+    ));
+
+    return user ? cloneUser(user) : null;
+  }
+
   async findAdminUser(): Promise<UserRecord | null> {
     const user = [...this.users.values()].find((item) => item.role === "admin");
     return user ? cloneUser(user) : null;
@@ -689,6 +698,27 @@ describe("admin article integration flow", () => {
     assert.ok(login.token.length > 20);
   });
 
+  it("logs in with a username identifier", async () => {
+    const state = new TestState();
+    const services = await createServices(state);
+
+    await prepareSetupToken();
+    const admin = await services.setupService.initializeAdmin({
+      email: "admin@example.test",
+      password: "correct-password",
+      setupToken,
+      username: "rexyleria"
+    });
+    const login = await services.authService.login({
+      email: "rexyleria",
+      password: "correct-password"
+    });
+
+    assert.equal(login.totpRequired, false);
+    assert.equal(login.user.id, admin.id);
+    assert.equal(login.user.username, "rexyleria");
+  });
+
   it("rejects login with invalid credentials", async () => {
     const state = new TestState();
     const services = await createServices(state);
@@ -1054,6 +1084,7 @@ describe("admin article integration flow", () => {
     };
     const controller = new modules.PublicArticleController(
       translationRepository as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

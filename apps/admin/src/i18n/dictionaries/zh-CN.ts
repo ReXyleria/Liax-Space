@@ -213,6 +213,7 @@ export const zhCNDictionary = {
   "article.visualContent": "可视化内容",
   "article.yes": "是",
   "auth.email": "邮箱",
+  "auth.identifier": "用户名或邮箱",
   "auth.login": "登录",
   "auth.logout": "退出登录",
   "auth.password": "密码",

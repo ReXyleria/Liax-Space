@@ -52,13 +52,13 @@ export function LoginPage(): ReactElement {
         </div>
         <form className="liax-card__body" onSubmit={(event) => void handleSubmit(event)}>
           <label className="admin-form-field">
-            <span>{t("auth.email")}</span>
+            <span>{t("auth.identifier")}</span>
             <input
-              autoComplete="email"
+              autoComplete="username"
               disabled={isTotpStep}
               onChange={(event) => setEmail(event.target.value)}
               required
-              type="email"
+              type="text"
               value={email}
             />
           </label>

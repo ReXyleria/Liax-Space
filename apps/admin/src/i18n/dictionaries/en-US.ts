@@ -215,6 +215,7 @@ export const enUSDictionary = {
   "article.visualContent": "Visual content",
   "article.yes": "Yes",
   "auth.email": "Email",
+  "auth.identifier": "Username or email",
   "auth.login": "Log in",
   "auth.logout": "Log out",
   "auth.password": "Password",

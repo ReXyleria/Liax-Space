@@ -97,6 +97,21 @@ export class UserRepository {
     return rows[0] ? mapUserRow(rows[0]) : null;
   }
 
+  async findByEmailOrUsername(identifier: string): Promise<UserRecord | null> {
+    const pool = getDatabasePool();
+    const normalizedIdentifier = identifier.trim().toLowerCase();
+    const [rows] = await pool.execute<UserRow[]>(
+      `SELECT ${userColumns}
+       FROM users
+       WHERE LOWER(email) = ? OR LOWER(username) = ?
+       ORDER BY id ASC
+       LIMIT 1`,
+      [normalizedIdentifier, normalizedIdentifier]
+    );
+
+    return rows[0] ? mapUserRow(rows[0]) : null;
+  }
+
   async findAdminUser(): Promise<UserRecord | null> {
     const pool = getDatabasePool();
     const [rows] = await pool.execute<UserRow[]>(

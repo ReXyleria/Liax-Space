@@ -33,11 +33,11 @@ export class AuthController {
   ) {}
 
   login = async (request: Request, response: Response): Promise<void> => {
-    const email = readStringField(request.body, "email").trim().toLowerCase();
+    const identifier = readStringField(request.body, "email").trim().toLowerCase();
 
     try {
       const result = await this.authService.login({
-        email,
+        email: identifier,
         password: readStringField(request.body, "password")
       });
 
@@ -46,7 +46,7 @@ export class AuthController {
         entityId: result.user.id,
         entityType: "user",
         metadata: {
-          email,
+          identifier,
           method: "password",
           secondFactorRequired: result.totpRequired
         },
@@ -60,7 +60,7 @@ export class AuthController {
         action: "auth.login_failed",
         entityType: "auth",
         metadata: {
-          email,
+          identifier,
           method: "password"
         },
         request,

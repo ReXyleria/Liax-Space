@@ -38,7 +38,7 @@ function normalizeEmail(email: string): string {
 }
 
 function loginFailedError(): AppError {
-  return new AppError("Invalid email or password.", {
+  return new AppError("Invalid username, email, or password.", {
     code: errorCodes.unauthorized,
     statusCode: 401
   });
@@ -73,13 +73,13 @@ export class AuthService {
   }
 
   async login(input: LoginInput): Promise<LoginResult> {
-    const email = normalizeEmail(input.email);
+    const identifier = normalizeEmail(input.email);
 
-    if (!email || !input.password) {
+    if (!identifier || !input.password) {
       throw loginFailedError();
     }
 
-    const userRecord = await this.userRepository.findByEmail(email);
+    const userRecord = await this.userRepository.findByEmailOrUsername(identifier);
 
     if (!userRecord || userRecord.disabledAt) {
       throw loginFailedError();
