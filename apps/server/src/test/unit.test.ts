@@ -1,4 +1,5 @@
 import "./testEnv.js";
+import "../app.test.js";
 import "../auth/PasswordService.test.js";
 import "../config/env.test.js";
 import "../common/sha256.test.js";
@@ -7,6 +8,7 @@ import "../common/fs/ensureDir.test.js";
 import "../jobs/CleanupUnusedAttachmentsJob.test.js";
 import "../settings/SiteSettingsService.test.js";
 import "../public-site/PublicArticleController.test.js";
+import "../public-site/public.routes.test.js";
 import "../search/search.routes.test.js";
 import "../renderer/AttachmentResolver.test.js";
 import "../renderer/HtmlSanitizer.test.js";

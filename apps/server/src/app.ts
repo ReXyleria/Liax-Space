@@ -59,6 +59,9 @@ export function createApp() {
 
   app.disable("x-powered-by");
   app.use(requestIdMiddleware);
+  app.get("/", (_request, response) => {
+    response.redirect(302, "/zh");
+  });
   app.get("/favicon.ico", (_request, response) => {
     response.status(204).end();
   });
