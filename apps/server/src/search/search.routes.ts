@@ -110,7 +110,7 @@ function renderPublicSidebar(localePrefix: "zh" | "en", isZh: boolean, query: st
     </div>`;
 }
 
-function renderPublicSearchPage(localePrefix: "zh" | "en", query: string, results: SearchResult[]): string {
+export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string, results: SearchResult[]): string {
   const isZh = localePrefix === "zh";
   const title = isZh ? "搜索" : "Search";
   const empty = isZh ? "没有找到匹配结果。" : "No matching results found.";
@@ -482,6 +482,10 @@ function renderPublicSearchPage(localePrefix: "zh" | "en", query: string, result
     }
 
     .liax-search-back {
+      display: flex;
+      width: max-content;
+      max-width: 100%;
+      align-items: center;
       min-height: 40px;
       border: 1px solid var(--color-primary);
       border-radius: 999px;
@@ -489,6 +493,7 @@ function renderPublicSearchPage(localePrefix: "zh" | "en", query: string, result
       color: var(--color-primary-text);
       font: inherit;
       font-weight: 760;
+      margin-bottom: 18px;
       padding: 8px 14px;
       text-decoration: none;
     }
