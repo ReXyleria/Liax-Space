@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactElement } from "re
 import { articleApi, type ArticleLocale, type ArticleTranslation } from "../api/articleApi";
 import { roleApi, type AdminRoleDefinition } from "../api/roleApi";
 import { type ArticleVersion, versionApi } from "../api/versionApi";
+import { largeMarkdownDocumentThreshold } from "../components/MarkdownEditor";
 import { PublishPanel } from "../components/PublishPanel";
 import { VisualContentView } from "../components/VisualContentView";
 import { VersionList } from "../components/VersionList";
@@ -31,6 +32,18 @@ function replaceVersion(versions: ArticleVersion[], nextVersion: ArticleVersion)
   return sortVersions(nextVersions);
 }
 
+function formatBytes(value: number): string {
+  if (value >= 1024 * 1024) {
+    return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  if (value >= 1024) {
+    return `${Math.round(value / 1024)} KB`;
+  }
+
+  return `${value} B`;
+}
+
 export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPageProps): ReactElement {
   const t = useT();
   const [translation, setTranslation] = useState<ArticleTranslation | null>(null);
@@ -55,7 +68,7 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
     try {
       const [articleDetail, versionsResponse] = await Promise.all([
         articleApi.getArticle(articleId),
-        versionApi.listVersions(articleId, locale)
+        versionApi.listVersionSummaries(articleId, locale)
       ]);
       const rolesResponse = await roleApi.listRoles();
       const activeTranslation = findTranslation(articleDetail.translations, locale);
@@ -80,6 +93,18 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
   }, [loadVersions]);
 
   async function handleSelectVersion(version: ArticleVersion): Promise<void> {
+    if (version.mdContent !== undefined) {
+      setSelectedVersion(version);
+      return;
+    }
+
+    if ((version.contentSizeBytes ?? 0) >= largeMarkdownDocumentThreshold) {
+      setSelectedVersion(version);
+      setMessage(t("article.largeVersionPreviewSkipped"));
+      setErrorMessage(null);
+      return;
+    }
+
     setIsBusy(true);
     setMessage(null);
     setErrorMessage(null);
@@ -213,8 +238,24 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
               </div>
             </div>
             <div className="liax-card__body">
-              {selectedVersion ? (
+              {selectedVersion && selectedVersion.mdContent !== undefined ? (
                 <VisualContentView value={selectedVersion.mdContent} />
+              ) : selectedVersion ? (
+                <div className="admin-version-content-placeholder">
+                  <p className="admin-muted-text">
+                    {t("article.versionContentNotLoaded")}
+                  </p>
+                  {selectedVersion.contentSizeBytes !== undefined ? (
+                    <p className="admin-muted-text">
+                      {t("article.versionSize")}: {formatBytes(selectedVersion.contentSizeBytes)}
+                    </p>
+                  ) : null}
+                  {(selectedVersion.contentSizeBytes ?? 0) < largeMarkdownDocumentThreshold ? (
+                    <button className="liax-button" disabled={isBusy} onClick={() => void handleSelectVersion(selectedVersion)} type="button">
+                      {t("article.loadVersionPreview")}
+                    </button>
+                  ) : null}
+                </div>
               ) : (
                 <p className="admin-muted-text">{t("article.noVersions")}</p>
               )}

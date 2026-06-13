@@ -7,7 +7,7 @@ import { sha256 } from "../common/sha256.js";
 import { AttachmentResolver } from "../renderer/AttachmentResolver.js";
 import { ArticleVersionRepository } from "./ArticleVersionRepository.js";
 import { normalizeMarkdown } from "./normalizeMarkdown.js";
-import type { ArticleVersion, ArticleVersionLocale } from "./versions.types.js";
+import type { ArticleVersion, ArticleVersionLocale, ArticleVersionSummary } from "./versions.types.js";
 
 export type SaveArticleVersionInput = {
   articleId: number;
@@ -31,6 +31,13 @@ export type RollbackArticleVersionInput = {
 
 export type RollbackArticleVersionResult = {
   version: ArticleVersion;
+};
+
+export type ImportMarkdownVersionInput = {
+  articleId: number;
+  locale: unknown;
+  mdContent: string;
+  createdBy: number;
 };
 
 function validationError(message: string): AppError {
@@ -86,6 +93,27 @@ function parseMarkdown(value: unknown): string {
   }
 
   return value;
+}
+
+export function summarizeArticleVersion(version: ArticleVersion): ArticleVersionSummary {
+  return {
+    articleId: version.articleId,
+    contentHash: version.contentHash,
+    contentSizeBytes: Buffer.byteLength(version.mdContent, "utf8"),
+    createdAt: version.createdAt,
+    createdBy: version.createdBy,
+    customRuleVersion: version.customRuleVersion,
+    htmlPath: version.htmlPath,
+    id: version.id,
+    isPinned: version.isPinned,
+    isPublishedSnapshot: version.isPublishedSnapshot,
+    locale: version.locale,
+    renderHash: version.renderHash,
+    rendererVersion: version.rendererVersion,
+    renderStatus: version.renderStatus,
+    templateVersion: version.templateVersion,
+    versionNo: version.versionNo
+  };
 }
 
 function parsePositiveInteger(value: unknown, fieldName: string): number {
@@ -162,6 +190,22 @@ export class ArticleVersionService {
     };
   }
 
+  async importMarkdownVersion(input: ImportMarkdownVersionInput): Promise<SaveArticleVersionResult> {
+    assertPositiveId(input.articleId, "articleId");
+    assertPositiveId(input.createdBy, "createdBy");
+
+    const locale = parseLocale(input.locale);
+    const latestVersion = await this.versionRepository.findLatestByArticleAndLocale(input.articleId, locale);
+
+    return this.saveVersion({
+      articleId: input.articleId,
+      baseVersionId: latestVersion?.id ?? null,
+      createdBy: input.createdBy,
+      locale,
+      mdContent: input.mdContent
+    });
+  }
+
   async listVersions(articleId: number, localeValue: unknown): Promise<ArticleVersion[]> {
     assertPositiveId(articleId, "articleId");
 
@@ -169,6 +213,15 @@ export class ArticleVersionService {
     await this.requireArticleAndTranslation(articleId, locale);
 
     return this.versionRepository.listByArticleAndLocale(articleId, locale);
+  }
+
+  async listVersionSummaries(articleId: number, localeValue: unknown): Promise<ArticleVersionSummary[]> {
+    assertPositiveId(articleId, "articleId");
+
+    const locale = parseLocale(localeValue);
+    await this.requireArticleAndTranslation(articleId, locale);
+
+    return this.versionRepository.listSummariesByArticleAndLocale(articleId, locale);
   }
 
   async getVersion(articleId: number, localeValue: unknown, versionId: number): Promise<ArticleVersion> {

@@ -57,6 +57,10 @@ function joinUrl(baseUrl: string, path: string): string {
   return `${baseUrl}${normalizedPath}`;
 }
 
+export function buildApiUrl(path: string): string {
+  return joinUrl(readApiBaseUrl(), path);
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

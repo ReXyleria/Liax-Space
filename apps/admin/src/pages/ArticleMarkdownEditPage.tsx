@@ -4,8 +4,14 @@ import { articleApi, type ArticleLocale, type ArticleTranslation } from "../api/
 import { attachmentApi } from "../api/attachmentApi";
 import { ApiError } from "../api/httpClient";
 import { translationApi } from "../api/translationApi";
-import { versionApi } from "../api/versionApi";
-import { extractHeadingsFromMarkdown, MarkdownEditor, type EditorHeading } from "../components/MarkdownEditor";
+import { type ArticleVersionSummary, versionApi } from "../api/versionApi";
+import {
+  extractHeadingsFromMarkdown,
+  largeMarkdownDocumentThreshold,
+  MarkdownEditor,
+  shouldUsePlainMarkdownEditor,
+  type EditorHeading
+} from "../components/MarkdownEditor";
 import { AdminLayout } from "../layout/AdminLayout";
 import { useT } from "../i18n/useT";
 
@@ -26,12 +32,28 @@ function oppositeLocale(locale: ArticleLocale): ArticleLocale {
   return locale === "zh-CN" ? "en-US" : "zh-CN";
 }
 
+function formatBytes(value: number): string {
+  if (value >= 1024 * 1024) {
+    return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  if (value >= 1024) {
+    return `${Math.round(value / 1024)} KB`;
+  }
+
+  return `${value} B`;
+}
+
 export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEditPageProps): ReactElement {
   const t = useT();
   const [translation, setTranslation] = useState<ArticleTranslation | null>(null);
   const [baseVersionId, setBaseVersionId] = useState<number | null>(null);
   const [mdContent, setMdContent] = useState("");
+  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
+  const [importedVersionSummary, setImportedVersionSummary] = useState<ArticleVersionSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
@@ -41,9 +63,11 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const mdContentRef = useRef("");
   const autoSaveTimerRef = useRef<number | null>(null);
   const suppressNextAutoSaveRef = useRef(false);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const sourceLocale = oppositeLocale(locale);
   const pageTitle = useMemo(() => `${t("article.markdownTitle")} #${articleId} - ${locale}`, [articleId, locale, t]);
-  const headings = useMemo(() => extractHeadingsFromMarkdown(mdContent), [mdContent]);
+  const headings = useMemo(() => shouldUsePlainMarkdownEditor(mdContent) ? [] : extractHeadingsFromMarkdown(mdContent), [mdContent]);
+  const isEditorLockedByImport = importedVersionSummary !== null;
 
   useEffect(() => {
     let isMounted = true;
@@ -57,16 +81,24 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
         const articleDetail = await articleApi.getArticle(articleId);
         const activeTranslation = findTranslation(articleDetail.translations, locale);
         const versionsResponse = activeTranslation
-          ? await versionApi.listVersions(articleId, locale)
+          ? await versionApi.listVersionSummaries(articleId, locale)
           : { versions: [] };
         const latestVersion = versionsResponse.versions[0] ?? null;
+        const shouldLoadLatestContent = latestVersion
+          ? (latestVersion.contentSizeBytes ?? 0) < largeMarkdownDocumentThreshold
+          : false;
+        const fullVersion = latestVersion && shouldLoadLatestContent
+          ? (await versionApi.getVersion(articleId, locale, latestVersion.id)).version
+          : null;
+        const nextMarkdown = fullVersion?.mdContent ?? "";
 
         if (isMounted) {
           setTranslation(activeTranslation);
           setBaseVersionId(latestVersion?.id ?? null);
-          setMdContent(latestVersion?.mdContent ?? "");
-          mdContentRef.current = latestVersion?.mdContent ?? "";
-          lastSavedContentRef.current = latestVersion?.mdContent ?? "";
+          setImportedVersionSummary(latestVersion && !shouldLoadLatestContent ? latestVersion as ArticleVersionSummary : null);
+          setMdContent(nextMarkdown);
+          mdContentRef.current = nextMarkdown;
+          lastSavedContentRef.current = nextMarkdown;
         }
       } catch (error) {
         if (isMounted) {
@@ -92,7 +124,15 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       autoSaveTimerRef.current = null;
     }
 
-    if (isLoading || isSaving || isAutoSaving || !translation || mdContent === lastSavedContentRef.current || suppressNextAutoSaveRef.current) {
+    if (
+      isEditorLockedByImport ||
+      isLoading ||
+      isSaving ||
+      isAutoSaving ||
+      !translation ||
+      mdContent === lastSavedContentRef.current ||
+      suppressNextAutoSaveRef.current
+    ) {
       return;
     }
 
@@ -105,7 +145,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
         window.clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [baseVersionId, isAutoSaving, isLoading, isSaving, mdContent, translation]);
+  }, [baseVersionId, isAutoSaving, isEditorLockedByImport, isLoading, isSaving, mdContent, translation]);
 
   async function saveContent(options: { auto: boolean }): Promise<void> {
     if (!translation) {
@@ -129,9 +169,11 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       });
 
       setBaseVersionId(response.version.id);
-      setMdContent(response.version.mdContent);
-      mdContentRef.current = response.version.mdContent;
-      lastSavedContentRef.current = response.version.mdContent;
+      const savedMarkdown = response.version.mdContent ?? mdContentRef.current;
+
+      setMdContent(savedMarkdown);
+      mdContentRef.current = savedMarkdown;
+      lastSavedContentRef.current = savedMarkdown;
       setMessage(options.auto
         ? t("article.autoSaved")
         : response.unchanged ? t("article.markdownUnchanged") : t("article.markdownSaved"));
@@ -151,11 +193,17 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   }
 
   async function handleSave(): Promise<void> {
+    if (isEditorLockedByImport) {
+      setErrorMessage(t("article.importEditorLocked"));
+      return;
+    }
+
     await saveContent({ auto: false });
   }
 
   function handleEditorChange(value: string): void {
     suppressNextAutoSaveRef.current = false;
+    setImportedVersionSummary(null);
     mdContentRef.current = value;
     setMdContent(value);
   }
@@ -177,6 +225,11 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   }
 
   async function handleTranslateContent(): Promise<void> {
+    if (isEditorLockedByImport) {
+      setErrorMessage(t("article.importEditorLocked"));
+      return;
+    }
+
     setIsTranslating(true);
     setMessage(null);
     setErrorMessage(null);
@@ -184,15 +237,16 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
     try {
       const versionsResponse = await versionApi.listVersions(articleId, sourceLocale);
       const latestSourceVersion = versionsResponse.versions[0] ?? null;
+      const latestSourceMarkdown = latestSourceVersion?.mdContent ?? "";
 
-      if (!latestSourceVersion || !latestSourceVersion.mdContent.trim()) {
+      if (!latestSourceVersion || !latestSourceMarkdown.trim()) {
         setErrorMessage(t("article.translateSourceMissing"));
         return;
       }
 
       const response = await translationApi.translate({
         fields: {
-          content: latestSourceVersion.mdContent
+          content: latestSourceMarkdown
         },
         sourceLocale,
         targetLocale: locale
@@ -223,6 +277,46 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("attachment.uploadFailed"));
       throw error;
+    }
+  }
+
+  async function handleImportMarkdownFile(): Promise<void> {
+    if (!translation) {
+      setErrorMessage(t("article.markdownNeedsMetadata"));
+      return;
+    }
+
+    if (!selectedImportFile) {
+      setErrorMessage(t("article.importFileRequired"));
+      return;
+    }
+
+    setIsImporting(true);
+    setImportProgress(0);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await versionApi.importMarkdownFile(articleId, locale, selectedImportFile, setImportProgress);
+
+      suppressNextAutoSaveRef.current = true;
+      setBaseVersionId(response.version.id);
+      setImportedVersionSummary(response.version);
+      setSelectedImportFile(null);
+      setMessage(
+        response.unchanged
+          ? t("article.importUnchanged")
+          : t("article.importSaved")
+      );
+
+      if (importFileInputRef.current) {
+        importFileInputRef.current.value = "";
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("article.importFailed"));
+    } finally {
+      setIsImporting(false);
+      setImportProgress(null);
     }
   }
 
@@ -261,20 +355,59 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                 ) : null}
 
                 <MarkdownEditor
-                  disabled={isSaving || isTranslating}
+                  disabled={isSaving || isTranslating || isImporting || isEditorLockedByImport}
                   onChange={handleEditorChange}
                   onDraftChange={(value) => {
                     suppressNextAutoSaveRef.current = false;
+                    setImportedVersionSummary(null);
                     mdContentRef.current = value;
                   }}
                   onUploadImage={handlePasteImage}
                   value={mdContent}
                 />
 
+                <section className="admin-markdown-import" aria-label={t("article.importTitle")}>
+                  <div>
+                    <h3>{t("article.importTitle")}</h3>
+                    <p>{t("article.importHelp")}</p>
+                  </div>
+                  <label className="admin-form-field admin-markdown-import__file">
+                    <span>{t("article.importFile")}</span>
+                    <input
+                      accept=".md,.markdown,.mdown,.txt,text/markdown,text/plain"
+                      disabled={isImporting || !translation}
+                      onChange={(event) => setSelectedImportFile(event.target.files?.[0] ?? null)}
+                      ref={importFileInputRef}
+                      type="file"
+                    />
+                  </label>
+                  <button
+                    className="liax-button"
+                    disabled={isImporting || !selectedImportFile || !translation}
+                    onClick={() => void handleImportMarkdownFile()}
+                    type="button"
+                  >
+                    {isImporting ? t("article.importing") : t("article.importAction")}
+                  </button>
+                  {selectedImportFile ? (
+                    <p className="admin-muted-text">{selectedImportFile.name} · {formatBytes(selectedImportFile.size)}</p>
+                  ) : null}
+                  {typeof importProgress === "number" ? (
+                    <div className="admin-markdown-import__progress" aria-label={t("article.importProgress")}>
+                      <span style={{ width: `${importProgress}%` }} />
+                    </div>
+                  ) : null}
+                  {importedVersionSummary ? (
+                    <p className="admin-success-text">
+                      {t("article.importLoadedSummary")} {t("article.versionNo")} {importedVersionSummary.versionNo} · {formatBytes(importedVersionSummary.contentSizeBytes)}
+                    </p>
+                  ) : null}
+                </section>
+
                 <div className="admin-form-actions">
                   <button
                     className="liax-button"
-                    disabled={isTranslating}
+                    disabled={isTranslating || isEditorLockedByImport}
                     onClick={() => void handleTranslateContent()}
                     type="button"
                   >
@@ -282,7 +415,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                   </button>
                   <button
                     className="liax-button liax-button--primary"
-                    disabled={isSaving || !translation}
+                    disabled={isSaving || !translation || isEditorLockedByImport}
                     onClick={() => void handleSave()}
                     type="button"
                   >

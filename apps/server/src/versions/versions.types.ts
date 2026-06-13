@@ -26,6 +26,10 @@ export type ArticleVersion = {
   isPinned: boolean;
 };
 
+export type ArticleVersionSummary = Omit<ArticleVersion, "mdContent"> & {
+  contentSizeBytes: number;
+};
+
 export type CreateArticleVersionInput = {
   articleId: number;
   locale: ArticleVersionLocale;

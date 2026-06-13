@@ -19,6 +19,18 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
+function formatBytes(value: number): string {
+  if (value >= 1024 * 1024) {
+    return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  if (value >= 1024) {
+    return `${Math.round(value / 1024)} KB`;
+  }
+
+  return `${value} B`;
+}
+
 export function VersionList({
   versions,
   selectedVersionId,
@@ -74,6 +86,12 @@ export function VersionList({
                 <dt>{t("article.pinned")}</dt>
                 <dd>{version.isPinned ? t("article.yes") : t("article.no")}</dd>
               </div>
+              {version.contentSizeBytes !== undefined ? (
+                <div>
+                  <dt>{t("article.versionSize")}</dt>
+                  <dd>{formatBytes(version.contentSizeBytes)}</dd>
+                </div>
+              ) : null}
             </dl>
 
             <div className="admin-version-actions">

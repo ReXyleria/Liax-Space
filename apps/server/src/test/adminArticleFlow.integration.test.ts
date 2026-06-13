@@ -9,7 +9,7 @@ import type { Attachment, CreateAttachmentInput } from "../attachments/attachmen
 import { AppError } from "../common/AppError.js";
 import { errorCodes } from "../common/errorCodes.js";
 import type { UserRecord } from "../users/users.types.js";
-import type { ArticleVersion, ArticleVersionLocale, CreateArticleVersionInput, ReplaceVersionAttachmentsInput, UpdatePublishedRenderResultInput, UpdateRenderStatusInput } from "../versions/versions.types.js";
+import type { ArticleVersion, ArticleVersionLocale, ArticleVersionSummary, CreateArticleVersionInput, ReplaceVersionAttachmentsInput, UpdatePublishedRenderResultInput, UpdateRenderStatusInput } from "../versions/versions.types.js";
 
 type TestModules = {
   AttachmentService: typeof import("../attachments/AttachmentService.js").AttachmentService;
@@ -496,6 +496,34 @@ class MemoryVersionRepository {
       .map(cloneVersion);
   }
 
+  async listSummariesByArticleAndLocale(articleId: number, locale: ArticleVersionLocale): Promise<ArticleVersionSummary[]> {
+    return [...this.versions.values()]
+      .filter((version) => version.articleId === articleId && version.locale === locale)
+      .sort((left, right) => right.versionNo - left.versionNo)
+      .map((version) => {
+        const clonedVersion = cloneVersion(version);
+
+        return {
+          articleId: clonedVersion.articleId,
+          contentHash: clonedVersion.contentHash,
+          contentSizeBytes: Buffer.byteLength(clonedVersion.mdContent, "utf8"),
+          createdAt: clonedVersion.createdAt,
+          createdBy: clonedVersion.createdBy,
+          customRuleVersion: clonedVersion.customRuleVersion,
+          htmlPath: clonedVersion.htmlPath,
+          id: clonedVersion.id,
+          isPinned: clonedVersion.isPinned,
+          isPublishedSnapshot: clonedVersion.isPublishedSnapshot,
+          locale: clonedVersion.locale,
+          renderHash: clonedVersion.renderHash,
+          rendererVersion: clonedVersion.rendererVersion,
+          renderStatus: clonedVersion.renderStatus,
+          templateVersion: clonedVersion.templateVersion,
+          versionNo: clonedVersion.versionNo
+        };
+      });
+  }
+
   async getNextVersionNo(articleId: number, locale: ArticleVersionLocale): Promise<number> {
     const versions = await this.listByArticleAndLocale(articleId, locale);
     return (versions[0]?.versionNo ?? 0) + 1;
@@ -847,6 +875,42 @@ describe("admin article integration flow", () => {
         return true;
       }
     );
+  });
+
+  it("imports a 12MB markdown file as a version and lists it without loading the body", async () => {
+    const state = new TestState();
+    const services = await createServices(state);
+
+    await prepareSetupToken();
+    const admin = await services.setupService.initializeAdmin({
+      email: "admin@example.test",
+      password: "correct-password",
+      setupToken,
+      username: "admin"
+    });
+    const article = await services.articleService.createArticle(admin.id, {});
+    await services.articleService.createTranslation(article.id, {
+      locale: "zh-CN",
+      slug: "large-import",
+      title: "大文件导入"
+    });
+
+    const largeMarkdown = `# Large Import\n\n${"A long paragraph for server import.\n\n".repeat(Math.ceil((12 * 1024 * 1024) / 37))}`;
+    const result = await services.versionService.importMarkdownVersion({
+      articleId: article.id,
+      createdBy: admin.id,
+      locale: "zh-CN",
+      mdContent: largeMarkdown
+    });
+    const summaries = await services.versionService.listVersionSummaries(article.id, "zh-CN");
+
+    assert.equal(result.unchanged, false);
+    assert.equal(result.version.versionNo, 1);
+    assert.equal(result.version.mdContent, largeMarkdown.replace(/\r\n/g, "\n").trimEnd());
+    assert.equal(summaries.length, 1);
+    assert.equal(summaries[0].id, result.version.id);
+    assert.equal(summaries[0].contentSizeBytes, Buffer.byteLength(result.version.mdContent, "utf8"));
+    assert.equal(Object.hasOwn(summaries[0], "mdContent"), false);
   });
 
   it("keeps the existing published HTML pointer when publish fails", async () => {

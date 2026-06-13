@@ -4,6 +4,7 @@ import { getDatabasePool } from "../database/connection.js";
 import type {
   ArticleVersion,
   ArticleVersionLocale,
+  ArticleVersionSummary,
   CreateArticleVersionInput,
   FindVersionsForCleanupInput,
   ReplaceVersionAttachmentsInput,
@@ -18,6 +19,25 @@ type ArticleVersionRow = RowDataPacket & {
   locale: ArticleVersionLocale;
   version_no: number;
   md_content: string;
+  content_hash: string;
+  render_hash: string | null;
+  html_path: string | null;
+  render_status: string;
+  renderer_version: string | null;
+  template_version: string | null;
+  custom_rule_version: string | null;
+  created_by: number;
+  created_at: Date;
+  is_published_snapshot: number | boolean;
+  is_pinned: number | boolean;
+};
+
+type ArticleVersionSummaryRow = RowDataPacket & {
+  id: number;
+  article_id: number;
+  locale: ArticleVersionLocale;
+  version_no: number;
+  content_size_bytes: number;
   content_hash: string;
   render_hash: string | null;
   html_path: string | null;
@@ -50,6 +70,25 @@ const versionColumns = [
   "is_pinned"
 ].join(", ");
 
+const versionSummaryColumns = [
+  "id",
+  "article_id",
+  "locale",
+  "version_no",
+  "OCTET_LENGTH(md_content) AS content_size_bytes",
+  "content_hash",
+  "render_hash",
+  "html_path",
+  "render_status",
+  "renderer_version",
+  "template_version",
+  "custom_rule_version",
+  "created_by",
+  "created_at",
+  "is_published_snapshot",
+  "is_pinned"
+].join(", ");
+
 function mapArticleVersionRow(row: ArticleVersionRow): ArticleVersion {
   return {
     id: row.id,
@@ -57,6 +96,27 @@ function mapArticleVersionRow(row: ArticleVersionRow): ArticleVersion {
     locale: row.locale,
     versionNo: row.version_no,
     mdContent: row.md_content,
+    contentHash: row.content_hash,
+    renderHash: row.render_hash,
+    htmlPath: row.html_path,
+    renderStatus: row.render_status,
+    rendererVersion: row.renderer_version,
+    templateVersion: row.template_version,
+    customRuleVersion: row.custom_rule_version,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    isPublishedSnapshot: Boolean(row.is_published_snapshot),
+    isPinned: Boolean(row.is_pinned)
+  };
+}
+
+function mapArticleVersionSummaryRow(row: ArticleVersionSummaryRow): ArticleVersionSummary {
+  return {
+    id: row.id,
+    articleId: row.article_id,
+    locale: row.locale,
+    versionNo: row.version_no,
+    contentSizeBytes: Number(row.content_size_bytes),
     contentHash: row.content_hash,
     renderHash: row.render_hash,
     htmlPath: row.html_path,
@@ -139,6 +199,19 @@ export class ArticleVersionRepository {
     );
 
     return rows.map(mapArticleVersionRow);
+  }
+
+  async listSummariesByArticleAndLocale(articleId: number, locale: ArticleVersionLocale): Promise<ArticleVersionSummary[]> {
+    const pool = getDatabasePool();
+    const [rows] = await pool.execute<ArticleVersionSummaryRow[]>(
+      `SELECT ${versionSummaryColumns}
+       FROM article_versions
+       WHERE article_id = ? AND locale = ?
+       ORDER BY version_no DESC`,
+      [articleId, locale]
+    );
+
+    return rows.map(mapArticleVersionSummaryRow);
   }
 
   async getNextVersionNo(articleId: number, locale: ArticleVersionLocale): Promise<number> {

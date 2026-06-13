@@ -561,6 +561,47 @@ canvas {
   min-width: 0;
 }
 
+.admin-markdown-import {
+  align-items: end;
+  background: color-mix(in srgb, var(--color-surface-muted) 72%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.8fr) auto;
+  margin-top: 18px;
+  padding: 16px;
+}
+
+.admin-markdown-import h3 {
+  font-size: 1rem;
+  margin: 0 0 6px;
+}
+
+.admin-markdown-import p {
+  margin: 0;
+}
+
+.admin-markdown-import__file {
+  margin: 0;
+}
+
+.admin-markdown-import__progress {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  grid-column: 1 / -1;
+  height: 10px;
+  overflow: hidden;
+}
+
+.admin-markdown-import__progress span {
+  background: var(--color-accent);
+  display: block;
+  height: 100%;
+  transition: width 160ms ease;
+}
+
 .admin-visual-editor {
   display: grid;
   gap: 8px;
@@ -1196,6 +1237,15 @@ canvas {
 
 .admin-selected-version {
   min-width: 0;
+}
+
+.admin-version-content-placeholder {
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 18px;
 }
 
 .admin-settings-grid,
@@ -2333,6 +2383,11 @@ canvas {
   .admin-editor-toc-panel {
     position: static;
     max-height: none;
+  }
+
+  .admin-markdown-import {
+    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 
   .admin-version-workspace {
