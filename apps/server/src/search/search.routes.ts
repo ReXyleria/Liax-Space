@@ -133,9 +133,9 @@ function renderPublicSearchPage(localePrefix: "zh" | "en", query: string, result
     .liax-public-header {
       box-sizing: border-box;
       display: grid;
-      grid-template-columns: minmax(190px, 0.72fr) auto minmax(280px, 0.72fr);
+      grid-template-columns: minmax(190px, 1fr) minmax(0, auto) minmax(48px, 1fr);
       align-items: center;
-      gap: 20px;
+      gap: clamp(16px, 3vw, 32px);
       width: 100%;
       height: 76px;
       min-height: 76px;
@@ -191,14 +191,26 @@ function renderPublicSearchPage(localePrefix: "zh" | "en", query: string, result
       min-width: 0;
     }
 
+    .liax-public-header__center {
+      display: grid;
+      grid-template-columns: 44px minmax(0, auto);
+      align-items: center;
+      gap: 14px;
+    }
+
     .liax-public-menu {
       flex: 1 1 auto;
+      position: relative;
+      z-index: 1;
     }
 
     .liax-language-switch {
       flex: 0 0 auto;
       flex-wrap: nowrap;
       justify-content: center;
+      position: relative;
+      z-index: 2;
+      width: 44px;
     }
 
     .liax-public-menu a {
@@ -391,7 +403,7 @@ function renderPublicSearchPage(localePrefix: "zh" | "en", query: string, result
 
     @media (max-width: 860px) {
       .liax-public-header {
-        grid-template-columns: auto auto auto;
+        grid-template-columns: auto minmax(0, auto) auto;
         height: 76px;
         min-height: 76px;
         gap: 14px;
@@ -404,6 +416,10 @@ function renderPublicSearchPage(localePrefix: "zh" | "en", query: string, result
         align-items: center;
         flex: 0 0 auto;
         flex-direction: row;
+      }
+
+      .liax-public-header__center {
+        grid-template-columns: 44px minmax(0, auto);
       }
 
       .liax-public-menu {
@@ -442,9 +458,6 @@ function renderPublicSearchPage(localePrefix: "zh" | "en", query: string, result
         </nav>
       </div>
       <div class="liax-public-header__tools">
-        <form class="liax-public-search-form" action="/${localePrefix}/search" method="get" role="search">
-          <input class="liax-public-search" aria-label="${title}" name="q" type="search" placeholder="${title}" value="${escapeHtml(query)}">
-        </form>
         <a class="liax-public-avatar" href="/${localePrefix}/account" aria-label="User">A</a>
       </div>
     </header>

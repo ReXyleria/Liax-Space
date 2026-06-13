@@ -23,14 +23,6 @@ ${links}
     </nav>`;
 }
 
-function renderPublicSearchForm(localePrefix: string, locale: string): string {
-  const label = locale === "zh-CN" ? "搜索" : "Search";
-
-  return `<form class="liax-public-search-form" action="/${localePrefix}/search" method="get" role="search">
-          <input class="liax-public-search" aria-label="${label}" name="q" type="search" placeholder="${label}">
-        </form>`;
-}
-
 export function renderLanguageSwitchScript(): string {
   return `<script>
 (() => {
@@ -514,9 +506,9 @@ export class TemplateRenderer {
     .liax-public-header {
       box-sizing: border-box;
       display: grid;
-      grid-template-columns: minmax(190px, 0.72fr) auto minmax(280px, 0.72fr);
+      grid-template-columns: minmax(190px, 1fr) minmax(0, auto) minmax(48px, 1fr);
       align-items: center;
-      gap: 20px;
+      gap: clamp(16px, 3vw, 32px);
       width: 100%;
       height: 76px;
       min-height: 76px;
@@ -560,7 +552,11 @@ export class TemplateRenderer {
     }
 
     .liax-public-header__center {
+      display: grid;
+      grid-template-columns: 44px minmax(0, auto);
       justify-content: center;
+      align-items: center;
+      gap: 14px;
     }
 
     .liax-public-menu {
@@ -568,6 +564,8 @@ export class TemplateRenderer {
       flex-wrap: nowrap;
       justify-content: center;
       min-width: 0;
+      position: relative;
+      z-index: 1;
     }
 
     .liax-public-menu a {
@@ -594,6 +592,9 @@ export class TemplateRenderer {
       flex-wrap: nowrap;
       gap: 8px;
       justify-content: center;
+      position: relative;
+      z-index: 2;
+      width: 44px;
     }
 
     .liax-public-header__tools {
@@ -796,7 +797,7 @@ export class TemplateRenderer {
       }
 
       .liax-public-header {
-        grid-template-columns: auto auto auto;
+        grid-template-columns: auto minmax(0, auto) auto;
         height: 76px;
         min-height: 76px;
         gap: 14px;
@@ -814,6 +815,10 @@ export class TemplateRenderer {
         align-items: center;
         flex: 0 0 auto;
         flex-direction: row;
+      }
+
+      .liax-public-header__center {
+        grid-template-columns: 44px minmax(0, auto);
       }
 
       .liax-public-brand {
@@ -917,7 +922,6 @@ ${languageSwitchHtml}
         </nav>
       </div>
       <div class="liax-public-header__tools">
-        ${renderPublicSearchForm(localePrefix, input.locale ?? "en-US")}
         <a class="liax-public-avatar" href="/${localePrefix}/account" aria-label="User">A</a>
       </div>
     </header>

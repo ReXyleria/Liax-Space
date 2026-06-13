@@ -143,19 +143,20 @@ npm run build
 
 生产镜像会把后台构建产物打进 server 镜像，后台入口为 `/console`，API 仍为 `/admin/*`，公开站点仍使用 `/zh` 和 `/en`。
 
-Docker 本地检查：
+Docker / Tencent 测试部署检查：
 
 ```text
 npm run check:docker-context
 npm run check:acceptance
 npm run check:install
 docker compose config
-docker compose up --build
+docker compose pull
+docker compose up -d
 ```
 
-本地 compose 的 `.env` 只放数据库账号密码。Dockerfile 使用明确版本的官方 Node slim 镜像，不需要额外基础镜像变量。
+当前 `docker-compose.yml` 的 app 服务固定使用 Docker Hub 测试镜像 `rexyleria/liax-space:test`，不是 `:main`，也不是在服务器上重新 build。`pull_policy: always` 会在启动前拉取最新测试镜像。本地 compose 的 `.env` 只放数据库账号密码；`.env.example` 只是本地占位示例，不进入 Git 或 Docker context。
 
-`npm run check:docker-context` 会检查 Dockerfile、compose、两个发布 workflow、`.dockerignore`、部署文档、`.env.example` 和生产 dist 边界。运行镜像不应携带 `.env`、测试文件、文档、旧日志、截图或开发脚本。
+`npm run check:docker-context` 会检查 Dockerfile、compose、两个发布 workflow、`.dockerignore`、部署文档和生产 dist 边界。运行镜像不应携带 `.env`、`.env.example`、测试文件、文档、旧日志、截图或开发脚本。
 
 `npm run check:acceptance` 会检查当前仓库是否保留了关键用户流程、视觉动画、后台设置、公开首页、Docker 发布和新手部署路径的直接验收证据。
 

@@ -231,6 +231,21 @@ function checkCompose(): CheckResult[] {
       "Compose must define mysql and app services."
     ],
     [
+      content.includes("image: rexyleria/liax-space:test"),
+      "Compose app service uses the Docker Hub test image tag.",
+      "Compose app service must use image: rexyleria/liax-space:test for Tencent testing."
+    ],
+    [
+      content.includes("pull_policy: always"),
+      "Compose always pulls the current test image before starting.",
+      "Compose app service should use pull_policy: always for Tencent test deployment."
+    ],
+    [
+      !content.includes("build:") && !content.includes(":main"),
+      "Compose does not build locally and does not reference a main tag.",
+      "Compose must not build locally or reference a :main tag for Tencent testing."
+    ],
+    [
       !content.includes("NODE_DEV_IMAGE") &&
         !content.includes("NODE_RUNTIME_IMAGE"),
       "Compose does not require external Node image build args.",
@@ -379,7 +394,9 @@ function checkDeploymentGuide(): CheckResult[] {
   const requiredTerms = [
     "docker compose version",
     "docker compose config",
-    "docker compose up --build -d",
+    "docker compose pull",
+    "docker compose up -d",
+    "rexyleria/liax-space:test",
     "npm run check:docker-context",
     "npm run check:acceptance",
     "npm run check:install",

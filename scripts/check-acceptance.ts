@@ -189,7 +189,9 @@ const checks: Check[] = [
   checkOptionalText(
     "docs/docker-compose-deployment-guide.md",
     [
-      "docker compose up --build -d",
+      "docker compose pull",
+      "docker compose up -d",
+      "rexyleria/liax-space:test",
       "npm run check:acceptance",
       "createSetupToken.js",
       "runBackup.js",

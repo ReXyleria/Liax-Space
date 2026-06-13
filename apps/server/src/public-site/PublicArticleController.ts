@@ -93,14 +93,6 @@ function renderHomeLanguageSwitch(prefix: LocalePrefix): string {
       </nav>`;
 }
 
-function renderPublicSearchForm(prefix: LocalePrefix, isZh: boolean): string {
-  const label = isZh ? "搜索" : "Search";
-
-  return `<form class="liax-public-search-form" action="/${prefix}/search" method="get" role="search">
-          <input class="liax-public-search" aria-label="${label}" name="q" type="search" placeholder="${label}">
-        </form>`;
-}
-
 function readStringSetting(settings: SiteSettings, key: string, fallback: string): string {
   const value = settings[key];
 
@@ -267,9 +259,9 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
 
     .liax-public-header {
       display: grid;
-      grid-template-columns: minmax(190px, 0.72fr) auto minmax(280px, 0.72fr);
+      grid-template-columns: minmax(190px, 1fr) minmax(0, auto) minmax(48px, 1fr);
       align-items: center;
-      gap: 20px;
+      gap: clamp(16px, 3vw, 32px);
       box-sizing: border-box;
       width: 100%;
       height: 76px;
@@ -313,12 +305,19 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
     }
 
     .liax-public-header__center {
+      display: grid;
+      grid-template-columns: 44px minmax(0, auto);
       justify-content: center;
+      align-items: center;
+      gap: 14px;
       min-width: 0;
     }
 
     .liax-language-switch {
-      flex: 0 0 auto;
+      position: relative;
+      z-index: 2;
+      justify-content: center;
+      width: 44px;
     }
 
     .liax-public-menu {
@@ -327,6 +326,8 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
       justify-content: center;
       gap: 10px;
       min-width: 0;
+      position: relative;
+      z-index: 1;
     }
 
     .liax-public-menu a {
@@ -519,8 +520,8 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
         grid-template-columns: 1fr;
       }
 
-      .liax-public-header {
-        grid-template-columns: auto auto auto;
+    .liax-public-header {
+        grid-template-columns: auto minmax(0, auto) auto;
         height: 76px;
         min-height: 76px;
         gap: 14px;
@@ -538,6 +539,10 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
         align-items: center;
         flex: 0 0 auto;
         flex-direction: row;
+      }
+
+      .liax-public-header__center {
+        grid-template-columns: 44px minmax(0, auto);
       }
 
       .liax-public-menu {
@@ -651,7 +656,6 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
         </nav>
       </div>
       <div class="liax-public-header__tools">
-        ${renderPublicSearchForm(prefix, isZh)}
         <a class="liax-public-avatar" href="/${prefix}/account" aria-label="User">A</a>
       </div>
     </header>
@@ -864,9 +868,9 @@ export function renderPublicSectionPage(
     .liax-public-header {
       box-sizing: border-box;
       display: grid;
-      grid-template-columns: minmax(190px, 0.72fr) auto minmax(280px, 0.72fr);
+      grid-template-columns: minmax(190px, 1fr) minmax(0, auto) minmax(48px, 1fr);
       align-items: center;
-      gap: 20px;
+      gap: clamp(16px, 3vw, 32px);
       width: 100%;
       height: 76px;
       min-height: 76px;
@@ -937,13 +941,24 @@ export function renderPublicSectionPage(
     }
 
     .liax-public-header__center {
+      display: grid;
+      grid-template-columns: 44px minmax(0, auto);
+      align-items: center;
+      gap: 14px;
       min-width: 0;
     }
 
     .liax-language-switch {
-      flex: 0 0 auto;
+      position: relative;
+      z-index: 2;
+      width: 44px;
       flex-wrap: nowrap;
       justify-content: center;
+    }
+
+    .liax-public-menu {
+      position: relative;
+      z-index: 1;
     }
 
     .liax-public-header__tools {
@@ -1220,7 +1235,7 @@ export function renderPublicSectionPage(
 
     @media (max-width: 860px) {
       .liax-public-header {
-        grid-template-columns: auto auto auto;
+        grid-template-columns: auto minmax(0, auto) auto;
         height: 76px;
         min-height: 76px;
         gap: 14px;
@@ -1238,6 +1253,10 @@ export function renderPublicSectionPage(
         align-items: center;
         flex: 0 0 auto;
         flex-direction: row;
+      }
+
+      .liax-public-header__center {
+        grid-template-columns: 44px minmax(0, auto);
       }
 
       .liax-public-menu {
@@ -1337,7 +1356,6 @@ export function renderPublicSectionPage(
         </nav>
       </div>
       <div class="liax-public-header__tools">
-        ${renderPublicSearchForm(prefix, isZh)}
         <a class="liax-public-avatar" href="/${prefix}/account" aria-label="User">A</a>
       </div>
     </header>
