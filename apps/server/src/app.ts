@@ -7,7 +7,9 @@ import { attachmentRoutes } from "./attachments/attachments.routes.js";
 import { auditRoutes } from "./audit/audit.routes.js";
 import { authRoutes } from "./auth/auth.routes.js";
 import { categoryRoutes } from "./categories/categories.routes.js";
+import { AppError } from "./common/AppError.js";
 import { asyncHandler } from "./common/asyncHandler.js";
+import { errorCodes } from "./common/errorCodes.js";
 import { errorHandler } from "./common/errorHandler.js";
 import { requestIdMiddleware } from "./common/requestId.js";
 import { env } from "./config/env.js";
@@ -50,6 +52,13 @@ function mountAdminStatic(app: express.Express): void {
   app.get(["/console", "/console/*"], (_request, response) => {
     response.setHeader("Cache-Control", "no-store");
     response.sendFile(adminIndexHtml);
+  });
+}
+
+function createApiNotFoundError(): AppError {
+  return new AppError("API route not found.", {
+    code: errorCodes.notFound,
+    statusCode: 404
   });
 }
 
@@ -125,6 +134,10 @@ export function createApp() {
       database
     });
   }));
+
+  app.use(["/admin", "/admin/*", "/auth", "/auth/*", "/setup", "/setup/*"], (_request, _response, next) => {
+    next(createApiNotFoundError());
+  });
 
   app.use(publicRoutes);
 
