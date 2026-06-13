@@ -93,6 +93,47 @@ function renderHomeLanguageSwitch(prefix: LocalePrefix): string {
       </nav>`;
 }
 
+function renderPublicMenuLinks(prefix: LocalePrefix, isZh: boolean): string {
+  return `<a href="/${prefix}">${isZh ? "首页" : "Home"}</a>
+          <a href="/${prefix}/posts">${isZh ? "文章" : "Articles"}</a>
+          <a href="/${prefix}/tags">${isZh ? "标签" : "Tags"}</a>
+          <a href="/${prefix}/moments">${isZh ? "瞬间" : "Moments"}</a>
+          <a href="/${prefix}/guestbook">${isZh ? "留言" : "Guestbook"}</a>
+          <a href="/${prefix}/archives">${isZh ? "归档" : "Archives"}</a>`;
+}
+
+function renderPublicSearchForm(prefix: LocalePrefix, isZh: boolean, variant: "inline" | "sidebar"): string {
+  const label = isZh ? "搜索" : "Search";
+
+  return `<form class="liax-public-search-form liax-public-search-form--${variant}" action="/${prefix}/search" method="get" role="search">
+          <input class="liax-public-search" aria-label="${label}" name="q" type="search" placeholder="${label}">
+        </form>`;
+}
+
+function renderPublicMenuToggle(isZh: boolean): string {
+  const label = isZh ? "展开导航" : "Open navigation";
+
+  return `<button class="liax-public-menu-toggle" type="button" aria-label="${label}" aria-expanded="false" data-public-sidebar-toggle>
+          <span aria-hidden="true"></span>
+          <span aria-hidden="true"></span>
+          <span aria-hidden="true"></span>
+        </button>`;
+}
+
+function renderPublicSidebar(prefix: LocalePrefix, isZh: boolean): string {
+  const closeLabel = isZh ? "关闭导航" : "Close navigation";
+
+  return `<div class="liax-public-sidebar-layer" aria-hidden="true" inert data-public-sidebar-layer>
+      <button class="liax-public-sidebar-backdrop" type="button" aria-label="${closeLabel}" data-public-sidebar-close></button>
+      <aside class="liax-public-sidebar" aria-label="${closeLabel}">
+        ${renderPublicSearchForm(prefix, isZh, "sidebar")}
+        <nav class="liax-public-sidebar-menu" aria-label="Primary">
+          ${renderPublicMenuLinks(prefix, isZh)}
+        </nav>
+      </aside>
+    </div>`;
+}
+
 function readStringSetting(settings: SiteSettings, key: string, fallback: string): string {
   const value = settings[key];
 
@@ -355,6 +396,10 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
       text-underline-offset: 0.18em;
     }
 
+    .liax-public-header__tools {
+      justify-content: flex-end;
+    }
+
     .liax-button {
       display: inline-flex;
       min-height: 36px;
@@ -390,6 +435,10 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
       font-weight: 720;
     }
 
+    .liax-public-search-form--inline {
+      display: flex;
+    }
+
     .liax-public-search {
       box-sizing: border-box;
       width: min(200px, 20vw);
@@ -404,6 +453,104 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
       display: flex;
       gap: 8px;
       align-items: center;
+    }
+
+    .liax-public-menu-toggle {
+      display: none;
+      width: 38px;
+      height: 38px;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .liax-public-menu-toggle span {
+      display: block;
+      width: 4px;
+      height: 4px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .liax-public-sidebar-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483644;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 220ms ease;
+      visibility: hidden;
+    }
+
+    .liax-public-sidebar-layer.is-open {
+      opacity: 1;
+      pointer-events: auto;
+      visibility: visible;
+    }
+
+    .liax-public-sidebar-backdrop {
+      position: absolute;
+      inset: 0;
+      border: 0;
+      background: rgba(20, 20, 19, 0.18);
+      backdrop-filter: blur(10px);
+      cursor: default;
+      padding: 0;
+    }
+
+    .liax-public-sidebar {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-end: 0;
+      display: grid;
+      align-content: start;
+      gap: 18px;
+      box-sizing: border-box;
+      width: min(360px, calc(100vw - 36px));
+      border-left: 1px solid var(--color-border);
+      background: var(--color-page);
+      box-shadow: -18px 0 44px rgba(20, 20, 19, 0.14);
+      padding: 24px;
+      transform: translateX(100%);
+      transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .liax-public-sidebar-layer.is-open .liax-public-sidebar {
+      transform: translateX(0);
+    }
+
+    .liax-public-search-form--sidebar,
+    .liax-public-sidebar-menu {
+      display: grid;
+      gap: 10px;
+    }
+
+    .liax-public-search-form--sidebar .liax-public-search {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .liax-public-sidebar-menu a {
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
+      color: var(--color-text);
+      font-weight: 760;
+      padding: 12px 14px;
+      text-decoration: none;
+    }
+
+    .liax-public-sidebar-menu a:hover,
+    .liax-public-sidebar-menu a:focus-visible {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+      outline: 0;
     }
 
     .liax-public-avatar {
@@ -542,20 +689,11 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
       }
 
       .liax-public-header__center {
-        grid-template-columns: 44px minmax(0, auto);
+        grid-template-columns: 44px;
       }
 
       .liax-public-menu {
-        flex-wrap: nowrap;
-        justify-content: center;
-      }
-
-      .liax-public-search {
-        width: 118px;
-      }
-
-      .liax-public-search-form {
-        width: auto;
+        display: none;
       }
 
       main {
@@ -574,6 +712,16 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
 
       .liax-home-footer {
         display: grid;
+      }
+    }
+
+    @media (max-width: 1080px) {
+      .liax-public-search-form--inline {
+        display: none;
+      }
+
+      .liax-public-menu-toggle {
+        display: inline-flex;
       }
     }
 
@@ -634,6 +782,11 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
       .liax-home-footer {
         animation: none;
       }
+
+      .liax-public-sidebar-layer,
+      .liax-public-sidebar {
+        transition: none;
+      }
     }
   </style>
 </head>
@@ -647,18 +800,16 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
       <div class="liax-public-header__center">
         ${switchHtml}
         <nav class="liax-public-menu" aria-label="Primary">
-          <a href="/${prefix}">${isZh ? "首页" : "Home"}</a>
-          <a href="/${prefix}/posts">${isZh ? "文章" : "Articles"}</a>
-          <a href="/${prefix}/tags">${isZh ? "标签" : "Tags"}</a>
-          <a href="/${prefix}/moments">${isZh ? "瞬间" : "Moments"}</a>
-          <a href="/${prefix}/guestbook">${isZh ? "留言" : "Guestbook"}</a>
-          <a href="/${prefix}/archives">${isZh ? "归档" : "Archives"}</a>
+          ${renderPublicMenuLinks(prefix, isZh)}
         </nav>
       </div>
       <div class="liax-public-header__tools">
+        ${renderPublicSearchForm(prefix, isZh, "inline")}
+        ${renderPublicMenuToggle(isZh)}
         <a class="liax-public-avatar" href="/${prefix}/account" aria-label="User">A</a>
       </div>
     </header>
+    ${renderPublicSidebar(prefix, isZh)}
     <main>
       <section>
         <div class="liax-home-author">${isZh ? "作者" : "Author"} · Liax</div>
@@ -965,7 +1116,12 @@ export function renderPublicSectionPage(
       justify-content: flex-end;
     }
 
+    .liax-public-search-form--inline {
+      display: flex;
+    }
+
     .liax-public-search {
+      box-sizing: border-box;
       width: min(220px, 22vw);
       border: 1px solid var(--color-border);
       border-radius: 999px;
@@ -978,6 +1134,104 @@ export function renderPublicSectionPage(
       display: flex;
       gap: 8px;
       align-items: center;
+    }
+
+    .liax-public-menu-toggle {
+      display: none;
+      width: 38px;
+      height: 38px;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .liax-public-menu-toggle span {
+      display: block;
+      width: 4px;
+      height: 4px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .liax-public-sidebar-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483644;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 220ms ease;
+      visibility: hidden;
+    }
+
+    .liax-public-sidebar-layer.is-open {
+      opacity: 1;
+      pointer-events: auto;
+      visibility: visible;
+    }
+
+    .liax-public-sidebar-backdrop {
+      position: absolute;
+      inset: 0;
+      border: 0;
+      background: rgba(20, 20, 19, 0.18);
+      backdrop-filter: blur(10px);
+      cursor: default;
+      padding: 0;
+    }
+
+    .liax-public-sidebar {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-end: 0;
+      display: grid;
+      align-content: start;
+      gap: 18px;
+      box-sizing: border-box;
+      width: min(360px, calc(100vw - 36px));
+      border-left: 1px solid var(--color-border);
+      background: var(--color-page);
+      box-shadow: -18px 0 44px rgba(20, 20, 19, 0.14);
+      padding: 24px;
+      transform: translateX(100%);
+      transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .liax-public-sidebar-layer.is-open .liax-public-sidebar {
+      transform: translateX(0);
+    }
+
+    .liax-public-search-form--sidebar,
+    .liax-public-sidebar-menu {
+      display: grid;
+      gap: 10px;
+    }
+
+    .liax-public-search-form--sidebar .liax-public-search {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .liax-public-sidebar-menu a {
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
+      color: var(--color-text);
+      font-weight: 760;
+      padding: 12px 14px;
+      text-decoration: none;
+    }
+
+    .liax-public-sidebar-menu a:hover,
+    .liax-public-sidebar-menu a:focus-visible {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+      outline: 0;
     }
 
     .liax-public-avatar {
@@ -1256,25 +1510,27 @@ export function renderPublicSectionPage(
       }
 
       .liax-public-header__center {
-        grid-template-columns: 44px minmax(0, auto);
+        grid-template-columns: 44px;
       }
 
       .liax-public-menu {
-        flex-wrap: nowrap;
-      }
-
-      .liax-public-search {
-        width: 118px;
-      }
-
-      .liax-public-search-form {
-        width: auto;
+        display: none;
       }
 
       .liax-section-card {
         width: calc(100% - 36px);
         margin: 18px auto 40px;
         padding: 24px;
+      }
+    }
+
+    @media (max-width: 1080px) {
+      .liax-public-search-form--inline {
+        display: none;
+      }
+
+      .liax-public-menu-toggle {
+        display: inline-flex;
       }
     }
 
@@ -1334,6 +1590,11 @@ export function renderPublicSectionPage(
       .liax-section-card {
         animation: none;
       }
+
+      .liax-public-sidebar-layer,
+      .liax-public-sidebar {
+        transition: none;
+      }
     }
   </style>
 </head>
@@ -1347,18 +1608,16 @@ export function renderPublicSectionPage(
       <div class="liax-public-header__center">
         ${switchHtml}
         <nav class="liax-public-menu" aria-label="Primary">
-          <a href="/${prefix}">${isZh ? "首页" : "Home"}</a>
-          <a href="/${prefix}/posts">${isZh ? "文章" : "Articles"}</a>
-          <a href="/${prefix}/tags">${isZh ? "标签" : "Tags"}</a>
-          <a href="/${prefix}/moments">${isZh ? "瞬间" : "Moments"}</a>
-          <a href="/${prefix}/guestbook">${isZh ? "留言" : "Guestbook"}</a>
-          <a href="/${prefix}/archives">${isZh ? "归档" : "Archives"}</a>
+          ${renderPublicMenuLinks(prefix, isZh)}
         </nav>
       </div>
       <div class="liax-public-header__tools">
+        ${renderPublicSearchForm(prefix, isZh, "inline")}
+        ${renderPublicMenuToggle(isZh)}
         <a class="liax-public-avatar" href="/${prefix}/account" aria-label="User">A</a>
       </div>
     </header>
+    ${renderPublicSidebar(prefix, isZh)}
     <main class="liax-section-card">
       <h1>${escapeHtml(label)}</h1>
       ${bodyHtml ?? `<p>${escapeHtml(description)}</p>`}

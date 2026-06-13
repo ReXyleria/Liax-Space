@@ -12,7 +12,10 @@ type SwitchTarget = {
 };
 
 const languageButtonSelector = "[data-locale-target]";
-const searchInputSelector = ".liax-public-search-form .liax-public-search";
+const sidebarLayerSelector = "[data-public-sidebar-layer]";
+const sidebarToggleSelector = "[data-public-sidebar-toggle]";
+const sidebarCloseSelector = "[data-public-sidebar-close]";
+const searchInputSelector = "[data-public-search-overlay-trigger]";
 const adminLocaleStorageKey = "liax.admin.locale";
 const localeCookieKey = "liax.locale";
 const publicLocaleStorageKey = "liax.public.locale";
@@ -20,6 +23,31 @@ const overlayDurationMs = 900;
 
 let isSwitchingLanguage = false;
 let activeSearchOverlay: HTMLElement | null = null;
+
+function setSidebarOpen(layer: HTMLElement, isOpen: boolean): void {
+  layer.classList.toggle("is-open", isOpen);
+  layer.setAttribute("aria-hidden", isOpen ? "false" : "true");
+  if (isOpen) {
+    layer.removeAttribute("inert");
+  } else {
+    layer.setAttribute("inert", "");
+  }
+  document.querySelectorAll<HTMLElement>(sidebarToggleSelector).forEach((toggle) => {
+    toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  });
+
+  if (isOpen) {
+    window.setTimeout(() => {
+      layer.querySelector<HTMLInputElement>(".liax-public-sidebar .liax-public-search")?.focus();
+    }, prefersReducedMotion() ? 0 : 180);
+  }
+}
+
+function closeSidebars(): void {
+  document.querySelectorAll<HTMLElement>(sidebarLayerSelector).forEach((layer) => {
+    setSidebarOpen(layer, false);
+  });
+}
 
 function writeLocalePreference(locale: string): void {
   try {
@@ -208,6 +236,8 @@ function replacePageFromTarget(targetDocument: Document): void {
   const targetMain = readTargetMain(targetDocument);
   const currentFooter = document.querySelector<HTMLElement>(".liax-public-footer");
   const targetFooter = targetDocument.querySelector<HTMLElement>(".liax-public-footer");
+  const currentSidebar = document.querySelector<HTMLElement>(sidebarLayerSelector);
+  const targetSidebar = targetDocument.querySelector<HTMLElement>(sidebarLayerSelector);
 
   if (currentHeader && targetHeader) {
     currentHeader.replaceWith(targetHeader.cloneNode(true));
@@ -221,6 +251,10 @@ function replacePageFromTarget(targetDocument: Document): void {
 
   if (currentFooter && targetFooter) {
     currentFooter.replaceWith(targetFooter.cloneNode(true));
+  }
+
+  if (currentSidebar && targetSidebar) {
+    currentSidebar.replaceWith(targetSidebar.cloneNode(true));
   }
 
   updateHeadFromTarget(targetDocument);
@@ -513,6 +547,32 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && activeSearchOverlay) {
     event.preventDefault();
     closeSearchOverlay();
+  }
+
+  if (event.key === "Escape") {
+    closeSidebars();
+  }
+});
+
+document.addEventListener("click", (event) => {
+  const toggle = event.target instanceof Element ? event.target.closest<HTMLElement>(sidebarToggleSelector) : null;
+
+  if (toggle) {
+    event.preventDefault();
+    const layer = document.querySelector<HTMLElement>(sidebarLayerSelector);
+
+    if (layer) {
+      setSidebarOpen(layer, layer.getAttribute("aria-hidden") !== "false");
+    }
+
+    return;
+  }
+
+  const close = event.target instanceof Element ? event.target.closest<HTMLElement>(sidebarCloseSelector) : null;
+
+  if (close) {
+    event.preventDefault();
+    closeSidebars();
   }
 });
 

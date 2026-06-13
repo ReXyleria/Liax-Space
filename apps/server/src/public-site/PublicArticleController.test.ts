@@ -66,7 +66,9 @@ describe("public home page rendering", () => {
     assert.match(html, /data-language-switch-placeholder="true"/);
     assert.match(html, /document\.documentElement\.clientWidth/);
     assert.match(html, /class="liax-public-avatar"/);
-    assert.doesNotMatch(html, /<form class="liax-public-search-form"/);
+    assert.match(html, /class="liax-public-search-form liax-public-search-form--inline"/);
+    assert.match(html, /class="liax-public-search-form liax-public-search-form--sidebar"/);
+    assert.match(html, /data-public-sidebar-toggle/);
     assert.doesNotMatch(html, /background-image:\s*url\(/i);
     assert.doesNotMatch(html, /linear-gradient\([^)]*(blue|purple|violet)/i);
   });
