@@ -66,9 +66,13 @@ describe("public home page rendering", () => {
     assert.match(html, /data-language-switch-placeholder="true"/);
     assert.match(html, /document\.documentElement\.clientWidth/);
     assert.match(html, /class="liax-public-avatar"/);
+    assert.match(html, /<a class="liax-public-avatar" href="\/console" aria-label="Console"/);
+    assert.match(html, /data-public-search-overlay-trigger/);
     assert.match(html, /class="liax-public-search-form liax-public-search-form--inline"/);
     assert.match(html, /class="liax-public-search-form liax-public-search-form--sidebar"/);
+    assert.match(html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\)/);
     assert.match(html, /data-public-sidebar-toggle/);
+    assert.doesNotMatch(html, /href="\/en\/account"/);
     assert.doesNotMatch(html, /background-image:\s*url\(/i);
     assert.doesNotMatch(html, /linear-gradient\([^)]*(blue|purple|violet)/i);
   });
@@ -83,6 +87,9 @@ describe("public section page rendering", () => {
     assert.match(html, /<link rel="alternate" hreflang="zh-CN" href="\/zh\/posts">/);
     assert.match(html, /Articles · Liax Space/);
     assert.match(html, /data-language-switch-placeholder="true"/);
+    assert.match(html, /<a class="liax-public-avatar" href="\/console" aria-label="Console"/);
+    assert.match(html, /data-public-search-overlay-trigger/);
+    assert.match(html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\)/);
   });
 
   it("states that missing public pages do not fallback to another language", () => {

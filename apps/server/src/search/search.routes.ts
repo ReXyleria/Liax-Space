@@ -82,7 +82,7 @@ function renderPublicSearchForm(localePrefix: "zh" | "en", isZh: boolean, varian
   const title = isZh ? "搜索" : "Search";
 
   return `<form class="liax-public-search-form liax-public-search-form--${variant}" action="/${localePrefix}/search" method="get" role="search">
-          <input class="liax-public-search" aria-label="${title}" name="q" type="search" placeholder="${title}" value="${escapeHtml(query)}">
+          <input class="liax-public-search" aria-label="${title}" data-public-search-overlay-trigger name="q" type="search" placeholder="${title}" value="${escapeHtml(query)}">
         </form>`;
 }
 
@@ -174,15 +174,15 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
     .liax-public-header {
       box-sizing: border-box;
       display: grid;
-      grid-template-columns: minmax(190px, 1fr) minmax(0, auto) minmax(48px, 1fr);
+      grid-template-columns: max-content minmax(0, 1fr) max-content;
       align-items: center;
-      gap: clamp(16px, 3vw, 32px);
+      gap: clamp(12px, 2vw, 24px);
       width: 100%;
       height: 76px;
       min-height: 76px;
       border-bottom: 1px solid var(--color-border);
       background: var(--color-surface);
-      padding: 12px clamp(20px, 4vw, 48px);
+      padding: 12px clamp(18px, 3vw, 40px);
       scrollbar-width: none;
     }
 
@@ -197,7 +197,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
     .liax-language-switch {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
     .liax-public-brand {
@@ -228,7 +228,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
     .liax-public-header__center,
     .liax-public-menu {
       flex-wrap: nowrap;
-      justify-content: center;
+      justify-content: end;
       min-width: 0;
     }
 
@@ -236,7 +236,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
       display: grid;
       grid-template-columns: 44px minmax(0, auto);
       align-items: center;
-      gap: 14px;
+      gap: 10px;
     }
 
     .liax-public-menu {
@@ -256,10 +256,11 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
 
     .liax-public-menu a {
       color: var(--color-text);
-      flex: 0 0 clamp(56px, 7vw, 84px);
+      flex: 0 0 auto;
       display: inline-flex;
       justify-content: center;
-      width: clamp(56px, 7vw, 84px);
+      width: auto;
+      padding: 6px 7px;
       font-size: 14px;
       font-weight: 760;
       text-decoration: none;
@@ -283,7 +284,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
 
     .liax-public-search {
       box-sizing: border-box;
-      width: min(220px, 22vw);
+      width: min(210px, 20vw);
       border: 1px solid var(--color-border);
       border-radius: 999px;
       background: var(--color-surface-muted);
@@ -441,9 +442,10 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
 
     .liax-search-page {
       box-sizing: border-box;
-      max-width: 980px;
+      width: min(1440px, calc(100% - clamp(32px, 6vw, 96px)));
+      max-width: none;
       margin: 0 auto;
-      padding: 32px 24px 56px;
+      padding: 24px 0 48px;
     }
 
     .liax-search-card,
@@ -551,12 +553,12 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
 
     @media (max-width: 860px) {
       .liax-public-header {
-        grid-template-columns: auto minmax(0, auto) auto;
+        grid-template-columns: max-content minmax(0, 1fr) max-content;
         height: 76px;
         min-height: 76px;
-        gap: 14px;
+        gap: 10px;
         overflow-x: auto;
-        padding: 10px 16px;
+        padding: 10px 14px;
       }
 
       .liax-public-header__center,
@@ -568,6 +570,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
 
       .liax-public-header__center {
         grid-template-columns: 44px;
+        justify-content: end;
       }
 
       .liax-public-menu {
@@ -614,7 +617,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
       <div class="liax-public-header__tools">
         ${renderPublicSearchForm(localePrefix, isZh, "inline", query)}
         ${renderPublicMenuToggle(isZh)}
-        <a class="liax-public-avatar" href="/${localePrefix}/account" aria-label="User">A</a>
+        <a class="liax-public-avatar" href="/console" aria-label="Console">A</a>
       </div>
     </header>
     ${renderPublicSidebar(localePrefix, isZh, query)}
@@ -623,7 +626,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
         <a class="liax-search-back" href="/${localePrefix}">Liax Space</a>
         <h1>${title}</h1>
         <form class="liax-search-form" action="/${localePrefix}/search" method="get" role="search">
-          <input aria-label="${title}" name="q" type="search" value="${escapeHtml(query)}">
+          <input aria-label="${title}" data-public-search-overlay-trigger name="q" type="search" value="${escapeHtml(query)}">
         </form>
         <h2>${resultLabel}</h2>
         ${results.length === 0 ? `<p class="liax-search-empty">${empty}</p>` : `<div class="liax-search-results">

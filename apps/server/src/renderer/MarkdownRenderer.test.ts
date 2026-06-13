@@ -70,11 +70,15 @@ describe("MarkdownRenderer", () => {
     assert.match(headerRule, /height: 76px;/);
     assert.match(headerRule, /border-bottom: 1px solid var\(--color-border\);/);
     assert.doesNotMatch(headerRule, /border-radius/);
-    assert.match(result.html, /width: min\(960px, calc\(100% - 48px\)\);/);
+    assert.match(result.html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\);/);
     assert.match(result.html, /class="liax-button liax-language-icon-button"/);
     assert.doesNotMatch(result.html, /liax-button--brand liax-language-icon-button/);
-    assert.match(result.html, /<a class="liax-public-avatar" href="\/zh\/account"/);
+    assert.match(result.html, /<a class="liax-public-avatar" href="\/console" aria-label="Console"/);
     assert.match(result.html, /publicSearchOverlay/);
+    assert.match(result.html, /data-public-search-overlay-trigger/);
+    assert.match(result.html, /padding: "clamp\(72px, 16vh, 150px\) 24px 24px"/);
+    assert.match(result.html, /backdropFilter: "blur\(18px\)"/);
+    assert.match(result.html, /clip-path \$\{durationMs\}ms cubic-bezier\(0\.2, 0\.9, 0\.2, 1\)/);
     assert.match(result.html, /liax\.admin\.locale/);
     assert.match(result.html, /liax\.public\.locale/);
     assert.match(result.html, /window\.localStorage\?\.setItem\(adminLocaleStorageKey, locale\)/);

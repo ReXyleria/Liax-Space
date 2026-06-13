@@ -24,4 +24,13 @@ describe("public search page rendering", () => {
     assert.match(html, /\.liax-search-back\s*{[^}]*margin-bottom:\s*18px;/s);
     assert.match(html, /<a class="liax-search-back" href="\/zh">Liax Space<\/a>\s*<h1>搜索<\/h1>/);
   });
+
+  it("uses the updated public chrome and search overlay contract", () => {
+    const html = renderPublicSearchPage("en", "docs", []);
+
+    assert.match(html, /<a class="liax-public-avatar" href="\/console" aria-label="Console"/);
+    assert.match(html, /data-public-search-overlay-trigger/);
+    assert.match(html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\)/);
+    assert.doesNotMatch(html, /href="\/en\/account"/);
+  });
 });

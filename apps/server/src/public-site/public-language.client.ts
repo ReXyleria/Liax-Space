@@ -19,7 +19,7 @@ const searchInputSelector = "[data-public-search-overlay-trigger]";
 const adminLocaleStorageKey = "liax.admin.locale";
 const localeCookieKey = "liax.locale";
 const publicLocaleStorageKey = "liax.public.locale";
-const overlayDurationMs = 900;
+const overlayDurationMs = 760;
 
 let isSwitchingLanguage = false;
 let activeSearchOverlay: HTMLElement | null = null;
@@ -209,6 +209,11 @@ function cloneOverlayContent(targetDocument: Document): HTMLElement {
     node.style.animation = "none";
     node.style.transform = "none";
   });
+  Object.assign(shell.style, {
+    opacity: "0",
+    transform: "translateY(10px)",
+    transition: "opacity 360ms ease 120ms, transform 520ms cubic-bezier(0.22, 1, 0.36, 1) 120ms"
+  });
   return shell;
 }
 
@@ -271,7 +276,8 @@ function createOverlay(targetDocument: Document, origin: { x: number; y: number 
 
   overlay.dataset.languageWipeOverlay = "true";
   Object.assign(overlay.style, {
-    background: "#faf9f5",
+    background: "rgba(250, 249, 245, 0.98)",
+    backdropFilter: "blur(2px)",
     clipPath: `circle(0px at ${origin.x}px ${origin.y}px)`,
     color: "#141413",
     height: `${overlayHeight}px`,
@@ -279,7 +285,7 @@ function createOverlay(targetDocument: Document, origin: { x: number; y: number 
     insetInlineStart: "0",
     overflow: "auto",
     position: "fixed",
-    transition: `clip-path ${overlayDurationMs}ms ease`,
+    transition: `clip-path ${overlayDurationMs}ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 240ms ease`,
     width: `${overlayWidth}px`,
     zIndex: "2147483646"
   });
@@ -326,6 +332,12 @@ function runOverlayAnimation(overlay: HTMLElement, origin: { x: number; y: numbe
 
     requestAnimationFrame(() => {
       overlay.style.clipPath = `circle(${radius}px at ${origin.x}px ${origin.y}px)`;
+      const shell = overlay.querySelector<HTMLElement>(".liax-public-shell");
+
+      if (shell) {
+        shell.style.opacity = "1";
+        shell.style.transform = "translateY(0)";
+      }
     });
   });
 }
@@ -425,9 +437,9 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
     inset: "0",
     justifyItems: "center",
     opacity: "0",
-    padding: "24px",
+    padding: "clamp(72px, 16vh, 150px) 24px 24px",
     position: "fixed",
-    transition: "opacity 180ms ease",
+    transition: "opacity 220ms ease",
     zIndex: "2147483645"
   });
 
@@ -435,8 +447,8 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
   backdrop.type = "button";
   backdrop.setAttribute("aria-label", label);
   Object.assign(backdrop.style, {
-    backdropFilter: "blur(14px)",
-    background: "rgba(250, 249, 245, 0.72)",
+    backdropFilter: "blur(18px)",
+    background: "rgba(250, 249, 245, 0.66)",
     border: "0",
     cursor: "default",
     inset: "0",
@@ -450,17 +462,17 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
     background: "#ffffff",
     border: "1px solid #d1cfc5",
     borderRadius: "8px",
-    boxShadow: "0 18px 46px rgba(20, 20, 19, 0.14)",
+    boxShadow: "0 24px 70px rgba(20, 20, 19, 0.18)",
     boxSizing: "border-box",
     display: "grid",
     gap: "8px",
-    marginTop: "max(16px, env(safe-area-inset-top))",
+    marginTop: "0",
     opacity: prefersReducedMotion() ? "1" : "0",
     padding: "14px",
     position: "relative",
-    transform: prefersReducedMotion() ? "none" : "translateY(-10px)",
-    transition: "opacity 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
-    width: "min(720px, calc(100vw - 32px))"
+    transform: prefersReducedMotion() ? "none" : "translateY(-16px) scale(0.98)",
+    transition: "opacity 240ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
+    width: "min(840px, calc(100vw - 40px))"
   });
 
   input.dataset.publicSearchOverlayInput = "true";
@@ -476,8 +488,8 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
     boxSizing: "border-box",
     color: "#141413",
     font: "inherit",
-    fontSize: "18px",
-    padding: "13px 16px",
+    fontSize: "20px",
+    padding: "15px 18px",
     width: "100%"
   });
 
@@ -514,7 +526,7 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
   requestAnimationFrame(() => {
     overlay.style.opacity = "1";
     panel.style.opacity = "1";
-    panel.style.transform = "translateY(0)";
+    panel.style.transform = "translateY(0) scale(1)";
   });
   window.setTimeout(() => input.focus(), prefersReducedMotion() ? 0 : 180);
 }

@@ -38,7 +38,7 @@ function renderPublicSearchForm(localePrefix: string, locale: string, variant: "
   const label = locale === "zh-CN" ? "搜索" : "Search";
 
   return `<form class="liax-public-search-form liax-public-search-form--${variant}" action="/${localePrefix}/search" method="get" role="search">
-          <input class="liax-public-search" aria-label="${label}" name="q" type="search" placeholder="${label}" value="${escapeHtml(query)}">
+          <input class="liax-public-search" aria-label="${label}" data-public-search-overlay-trigger name="q" type="search" placeholder="${label}" value="${escapeHtml(query)}">
         </form>`;
 }
 
@@ -74,7 +74,7 @@ export function renderLanguageSwitchScript(): string {
   const sidebarToggleSelector = "[data-public-sidebar-toggle]";
   const sidebarCloseSelector = "[data-public-sidebar-close]";
   const searchInputSelector = "[data-public-search-overlay-trigger]";
-  const durationMs = 900;
+  const durationMs = 760;
   const adminLocaleStorageKey = "liax.admin.locale";
   const localeCookieKey = "liax.locale";
   const publicLocaleStorageKey = "liax.public.locale";
@@ -240,9 +240,15 @@ export function renderLanguageSwitchScript(): string {
       node.style.animation = "none";
       node.style.transform = "none";
     });
+    Object.assign(shell.style, {
+      opacity: "0",
+      transform: "translateY(10px)",
+      transition: \`opacity 360ms ease 120ms, transform 520ms cubic-bezier(0.22, 1, 0.36, 1) 120ms\`
+    });
     overlay.dataset.languageWipeOverlay = "true";
     Object.assign(overlay.style, {
-      background: "#faf9f5",
+      background: "rgba(250, 249, 245, 0.98)",
+      backdropFilter: "blur(2px)",
       clipPath: \`circle(0px at \${origin.x}px \${origin.y}px)\`,
       color: "#141413",
       height: \`\${overlayHeight}px\`,
@@ -250,7 +256,7 @@ export function renderLanguageSwitchScript(): string {
       insetInlineStart: "0",
       overflow: "auto",
       position: "fixed",
-      transition: \`clip-path \${durationMs}ms ease\`,
+      transition: \`clip-path \${durationMs}ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 240ms ease\`,
       width: \`\${overlayWidth}px\`,
       zIndex: "2147483646"
     });
@@ -290,6 +296,11 @@ export function renderLanguageSwitchScript(): string {
       window.setTimeout(finish, durationMs + 80);
       requestAnimationFrame(() => {
         overlay.style.clipPath = \`circle(\${radius}px at \${origin.x}px \${origin.y}px)\`;
+        const shell = overlay.querySelector(".liax-public-shell");
+        if (shell) {
+          shell.style.opacity = "1";
+          shell.style.transform = "translateY(0)";
+        }
       });
     });
   }
@@ -341,17 +352,17 @@ export function renderLanguageSwitchScript(): string {
       inset: "0",
       justifyItems: "center",
       opacity: "0",
-      padding: "24px",
+      padding: "clamp(72px, 16vh, 150px) 24px 24px",
       position: "fixed",
-      transition: "opacity 180ms ease",
+      transition: "opacity 220ms ease",
       zIndex: "2147483645"
     });
 
     backdrop.dataset.publicSearchBackdrop = "true";
     backdrop.setAttribute("aria-label", label);
     Object.assign(backdrop.style, {
-      backdropFilter: "blur(14px)",
-      background: "rgba(250, 249, 245, 0.72)",
+      backdropFilter: "blur(18px)",
+      background: "rgba(250, 249, 245, 0.66)",
       border: "0",
       cursor: "default",
       inset: "0",
@@ -365,17 +376,17 @@ export function renderLanguageSwitchScript(): string {
       background: "#ffffff",
       border: "1px solid #d1cfc5",
       borderRadius: "8px",
-      boxShadow: "0 18px 46px rgba(20, 20, 19, 0.14)",
+      boxShadow: "0 24px 70px rgba(20, 20, 19, 0.18)",
       boxSizing: "border-box",
       display: "grid",
       gap: "8px",
-      marginTop: "max(16px, env(safe-area-inset-top))",
+      marginTop: "0",
       opacity: shouldReduceMotion() ? "1" : "0",
       padding: "14px",
       position: "relative",
-      transform: shouldReduceMotion() ? "none" : "translateY(-10px)",
-      transition: "opacity 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
-      width: "min(720px, calc(100vw - 32px))"
+      transform: shouldReduceMotion() ? "none" : "translateY(-16px) scale(0.98)",
+      transition: "opacity 240ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
+      width: "min(840px, calc(100vw - 40px))"
     });
 
     input.dataset.publicSearchOverlayInput = "true";
@@ -391,8 +402,8 @@ export function renderLanguageSwitchScript(): string {
       boxSizing: "border-box",
       color: "#141413",
       font: "inherit",
-      fontSize: "18px",
-      padding: "13px 16px",
+      fontSize: "20px",
+      padding: "15px 18px",
       width: "100%"
     });
 
@@ -424,7 +435,7 @@ export function renderLanguageSwitchScript(): string {
     requestAnimationFrame(() => {
       overlay.style.opacity = "1";
       panel.style.opacity = "1";
-      panel.style.transform = "translateY(0)";
+      panel.style.transform = "translateY(0) scale(1)";
     });
     window.setTimeout(() => input.focus(), shouldReduceMotion() ? 0 : 180);
   }
@@ -598,22 +609,22 @@ export class TemplateRenderer {
     .liax-public-header {
       box-sizing: border-box;
       display: grid;
-      grid-template-columns: minmax(190px, 1fr) minmax(0, auto) minmax(48px, 1fr);
+      grid-template-columns: max-content minmax(0, 1fr) max-content;
       align-items: center;
-      gap: clamp(16px, 3vw, 32px);
+      gap: clamp(12px, 2vw, 24px);
       width: 100%;
       height: 76px;
       min-height: 76px;
       border-bottom: 1px solid var(--color-border);
       background: var(--color-surface);
       margin: 0;
-      padding: 12px clamp(20px, 4vw, 48px);
+      padding: 12px clamp(18px, 3vw, 40px);
     }
 
     .liax-public-brand {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       color: var(--color-text);
       font-size: 18px;
       font-weight: 760;
@@ -646,15 +657,15 @@ export class TemplateRenderer {
     .liax-public-header__center {
       display: grid;
       grid-template-columns: 44px minmax(0, auto);
-      justify-content: center;
+      justify-content: end;
       align-items: center;
-      gap: 14px;
+      gap: 10px;
     }
 
     .liax-public-menu {
       flex: 1 1 auto;
       flex-wrap: nowrap;
-      justify-content: center;
+      justify-content: flex-end;
       min-width: 0;
       position: relative;
       z-index: 1;
@@ -662,13 +673,14 @@ export class TemplateRenderer {
 
     .liax-public-menu a {
       color: var(--color-text);
-      flex: 0 0 clamp(56px, 7vw, 84px);
+      flex: 0 0 auto;
       font-size: 14px;
       font-weight: 700;
       text-decoration: none;
       display: inline-flex;
       justify-content: center;
-      width: clamp(56px, 7vw, 84px);
+      width: auto;
+      padding: 6px 7px;
       white-space: nowrap;
     }
 
@@ -682,7 +694,7 @@ export class TemplateRenderer {
       display: flex;
       flex: 0 0 auto;
       flex-wrap: nowrap;
-      gap: 8px;
+      gap: 6px;
       justify-content: center;
       position: relative;
       z-index: 2;
@@ -699,7 +711,7 @@ export class TemplateRenderer {
 
     .liax-public-search {
       box-sizing: border-box;
-      width: min(220px, 24vw);
+      width: min(210px, 20vw);
       min-width: 140px;
       border: 1px solid var(--color-border);
       border-radius: 999px;
@@ -827,8 +839,8 @@ export class TemplateRenderer {
 
     .liax-article-card {
       box-sizing: border-box;
-      width: min(960px, calc(100% - 48px));
-      margin: 32px auto 56px;
+      width: min(1440px, calc(100% - clamp(32px, 6vw, 96px)));
+      margin: 24px auto 48px;
       border: 1px solid var(--color-border);
       border-radius: 8px;
       background: var(--color-surface);
@@ -837,7 +849,7 @@ export class TemplateRenderer {
     }
 
     .liax-article-body {
-      max-width: 760px;
+      max-width: 100%;
       margin: 0 auto;
     }
 
@@ -991,12 +1003,12 @@ export class TemplateRenderer {
       }
 
       .liax-public-header {
-        grid-template-columns: auto minmax(0, auto) auto;
+        grid-template-columns: max-content minmax(0, 1fr) max-content;
         height: 76px;
         min-height: 76px;
-        gap: 14px;
+        gap: 10px;
         overflow-x: auto;
-        padding: 10px 16px;
+        padding: 10px 14px;
         scrollbar-width: none;
       }
 
@@ -1013,6 +1025,7 @@ export class TemplateRenderer {
 
       .liax-public-header__center {
         grid-template-columns: 44px;
+        justify-content: end;
       }
 
       .liax-public-brand {
@@ -1028,7 +1041,7 @@ export class TemplateRenderer {
       }
 
       .liax-article-card {
-        width: calc(100% - 36px);
+        width: calc(100% - 24px);
         margin: 18px auto 40px;
         padding: 24px;
       }
@@ -1124,7 +1137,7 @@ ${languageSwitchHtml}
       <div class="liax-public-header__tools">
         ${renderPublicSearchForm(localePrefix, input.locale ?? "en-US", "inline")}
         ${renderPublicMenuToggle(input.locale ?? "en-US")}
-        <a class="liax-public-avatar" href="/${localePrefix}/account" aria-label="User">A</a>
+        <a class="liax-public-avatar" href="/console" aria-label="Console">A</a>
       </div>
     </header>
     ${renderPublicSidebar(localePrefix, input.locale ?? "en-US")}
