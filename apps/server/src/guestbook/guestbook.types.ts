@@ -26,3 +26,16 @@ export type ListPublicGuestbookEntriesInput = {
   limit?: number;
   offset?: number;
 };
+
+export type ListGuestbookEntriesInput = {
+  locale?: ArticleLocale;
+  status?: "all" | "public" | "private" | "hidden";
+  limit?: number;
+  offset?: number;
+};
+
+export type UpdateGuestbookEntryInput = {
+  id: number;
+  isPublic?: boolean;
+  notifyOnly?: boolean;
+};

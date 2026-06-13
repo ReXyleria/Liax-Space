@@ -10,10 +10,10 @@ import { ArticleTranslationEditPage } from "./pages/ArticleTranslationEditPage";
 import { ArticleVersionsPage } from "./pages/ArticleVersionsPage";
 import { ArchivesPage } from "./pages/ArchivesPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { GuestbookPage } from "./pages/GuestbookPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MomentsPage } from "./pages/MomentsPage";
 import { PermissionsPage } from "./pages/PermissionsPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TagsPage } from "./pages/TagsPage";
@@ -169,7 +169,11 @@ export function App(): ReactElement {
   }
 
   if (hash === "#guestbook") {
-    return <PlaceholderPage titleKey="nav.guestbook" />;
+    if (!canAccessRoute(authState.user, ["article:update"])) {
+      return <DashboardPage />;
+    }
+
+    return <GuestbookPage />;
   }
 
   if (hash === "#archives") {

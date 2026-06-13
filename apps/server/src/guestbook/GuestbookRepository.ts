@@ -2,7 +2,13 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 
 import type { ArticleLocale } from "../articles/articles.types.js";
 import { getDatabasePool } from "../database/connection.js";
-import type { CreateGuestbookEntryInput, GuestbookEntry, ListPublicGuestbookEntriesInput } from "./guestbook.types.js";
+import type {
+  CreateGuestbookEntryInput,
+  GuestbookEntry,
+  ListGuestbookEntriesInput,
+  ListPublicGuestbookEntriesInput,
+  UpdateGuestbookEntryInput
+} from "./guestbook.types.js";
 
 type GuestbookEntryRow = RowDataPacket & {
   id: number;
@@ -83,5 +89,83 @@ export class GuestbookRepository {
     );
 
     return rows.map(mapGuestbookEntryRow);
+  }
+
+  async countEntries(): Promise<number> {
+    const pool = getDatabasePool();
+    const [rows] = await pool.execute<Array<RowDataPacket & { total: number }>>(
+      "SELECT COUNT(*) AS total FROM guestbook_entries WHERE deleted_at IS NULL"
+    );
+
+    return rows[0]?.total ?? 0;
+  }
+
+  async listEntries(input: ListGuestbookEntriesInput = {}): Promise<GuestbookEntry[]> {
+    const pool = getDatabasePool();
+    const limit = Math.min(Math.max(Math.trunc(input.limit ?? 50), 1), 200);
+    const offset = Math.max(Math.trunc(input.offset ?? 0), 0);
+    const where = ["deleted_at IS NULL"];
+    const params: Array<string | number> = [];
+
+    if (input.locale) {
+      where.push("locale = ?");
+      params.push(input.locale);
+    }
+
+    if (input.status === "public") {
+      where.push("is_public = 1");
+      where.push("notify_only = 0");
+    } else if (input.status === "private") {
+      where.push("notify_only = 1");
+    } else if (input.status === "hidden") {
+      where.push("is_public = 0");
+      where.push("notify_only = 0");
+    }
+
+    const [rows] = await pool.execute<GuestbookEntryRow[]>(
+      `SELECT ${guestbookEntryColumns}
+       FROM guestbook_entries
+       WHERE ${where.join(" AND ")}
+       ORDER BY created_at DESC, id DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+      params
+    );
+
+    return rows.map(mapGuestbookEntryRow);
+  }
+
+  async updateEntry(input: UpdateGuestbookEntryInput): Promise<GuestbookEntry | null> {
+    const updates: string[] = [];
+    const params: number[] = [];
+
+    if (input.isPublic !== undefined) {
+      updates.push("is_public = ?");
+      params.push(input.isPublic ? 1 : 0);
+    }
+
+    if (input.notifyOnly !== undefined) {
+      updates.push("notify_only = ?");
+      params.push(input.notifyOnly ? 1 : 0);
+    }
+
+    if (updates.length > 0) {
+      const pool = getDatabasePool();
+      await pool.execute(
+        `UPDATE guestbook_entries SET ${updates.join(", ")} WHERE id = ? AND deleted_at IS NULL`,
+        [...params, input.id]
+      );
+    }
+
+    return this.findById(input.id);
+  }
+
+  async softDeleteEntry(id: number, deletedAt = new Date()): Promise<GuestbookEntry | null> {
+    const pool = getDatabasePool();
+    await pool.execute(
+      "UPDATE guestbook_entries SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+      [deletedAt, id]
+    );
+
+    return this.findById(id);
   }
 }

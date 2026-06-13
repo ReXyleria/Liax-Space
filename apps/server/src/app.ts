@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { articleRoutes } from "./articles/articles.routes.js";
 import { attachmentRoutes } from "./attachments/attachments.routes.js";
 import { auditRoutes } from "./audit/audit.routes.js";
+import { createVisitTrackingMiddleware } from "./analytics/visitTrackingMiddleware.js";
 import { authRoutes } from "./auth/auth.routes.js";
 import { categoryRoutes } from "./categories/categories.routes.js";
 import { AppError } from "./common/AppError.js";
@@ -14,7 +15,9 @@ import { errorHandler } from "./common/errorHandler.js";
 import { requestIdMiddleware } from "./common/requestId.js";
 import { env } from "./config/env.js";
 import { storagePaths } from "./config/paths.js";
+import { dashboardRoutes } from "./dashboard/dashboard.routes.js";
 import { checkDatabaseHealth } from "./database/health.js";
+import { guestbookRoutes } from "./guestbook/guestbook.routes.js";
 import { momentRoutes } from "./moments/moments.routes.js";
 import { permissionsRoutes } from "./permissions/permissions.routes.js";
 import { publisherRoutes } from "./publisher/publisher.routes.js";
@@ -111,9 +114,11 @@ export function createApp() {
   app.use("/setup", setupRoutes);
   app.use("/auth", authRoutes);
   app.use(searchRoutes);
+  app.use("/admin", dashboardRoutes);
   app.use("/admin", settingsRoutes);
   app.use("/admin", articleRoutes);
   app.use("/admin", auditRoutes);
+  app.use("/admin", guestbookRoutes);
   app.use("/admin", tagRoutes);
   app.use("/admin", categoryRoutes);
   app.use("/admin", momentRoutes);
@@ -143,6 +148,7 @@ export function createApp() {
     next(createApiNotFoundError());
   });
 
+  app.use(createVisitTrackingMiddleware());
   app.use(publicRoutes);
 
   app.use(errorHandler);

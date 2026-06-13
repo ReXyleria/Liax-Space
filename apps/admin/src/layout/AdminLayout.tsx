@@ -47,7 +47,7 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
         },
         { href: "#tags", key: "nav.tags", match: (hash) => hash.startsWith("#tags"), requiredPermissions: ["article:update"] },
         { href: "#moments", key: "nav.moments", match: (hash) => hash.startsWith("#moments"), requiredPermissions: ["article:update"] },
-        { href: "#guestbook", key: "nav.guestbook", match: (hash) => hash.startsWith("#guestbook") },
+        { href: "#guestbook", key: "nav.guestbook", match: (hash) => hash.startsWith("#guestbook"), requiredPermissions: ["article:update"] },
         { href: "#archives", key: "nav.archives", match: (hash) => hash.startsWith("#archives") }
       ]
     },
