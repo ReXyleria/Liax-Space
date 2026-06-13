@@ -1,0 +1,1544 @@
+import { readFile } from "node:fs/promises";
+import { isAbsolute, relative, resolve } from "node:path";
+import type { Request, Response } from "express";
+
+import { ArticleTranslationRepository } from "../articles/ArticleTranslationRepository.js";
+import type { ArticleLocale, ArticleTranslation } from "../articles/articles.types.js";
+import { JwtService, type AuthTokenPayload } from "../auth/JwtService.js";
+import { AppError } from "../common/AppError.js";
+import { errorCodes } from "../common/errorCodes.js";
+import { logger } from "../common/logger.js";
+import { storagePaths } from "../config/paths.js";
+import { MomentRepository } from "../moments/MomentRepository.js";
+import type { Moment } from "../moments/moments.types.js";
+import { renderLanguageSwitchScript } from "../renderer/TemplateRenderer.js";
+import { SearchService, type SearchResult } from "../search/SearchService.js";
+import { SettingsRepository } from "../settings/SettingsRepository.js";
+import type { SiteSettings } from "../settings/settings.types.js";
+import { TagRepository, type TagDetail } from "../tags/TagRepository.js";
+
+type LocalePrefix = "zh" | "en";
+
+const localePrefixMap: Record<LocalePrefix, ArticleLocale> = {
+  en: "en-US",
+  zh: "zh-CN"
+};
+
+function notFoundError(): AppError {
+  return new AppError("Published article not found.", {
+    code: errorCodes.notFound,
+    statusCode: 404
+  });
+}
+
+function prefixToLocale(prefix: string): ArticleLocale | null {
+  if (prefix !== "zh" && prefix !== "en") {
+    return null;
+  }
+
+  return localePrefixMap[prefix];
+}
+
+function isPublishedTranslation(
+  translation: ArticleTranslation
+): translation is ArticleTranslation & { currentHtmlPath: string; publishedAt: Date; publishedVersionId: number } {
+  return translation.publishedVersionId !== null && translation.currentHtmlPath !== null && translation.publishedAt !== null;
+}
+
+function resolveRenderedHtmlPath(currentHtmlPath: string): string | null {
+  const renderedRoot = resolve(storagePaths.renderedDir);
+  const absolutePath = resolve(renderedRoot, currentHtmlPath);
+  const relativePath = relative(renderedRoot, absolutePath);
+
+  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    return null;
+  }
+
+  return absolutePath;
+}
+
+function isFileNotFound(error: unknown): boolean {
+  return error !== null && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "ENOENT";
+}
+
+function readBearerToken(authorizationHeader: unknown): string | null {
+  if (typeof authorizationHeader !== "string") {
+    return null;
+  }
+
+  const parts = authorizationHeader.split(" ");
+
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const [scheme, token] = parts;
+  return scheme === "Bearer" && token ? token : null;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function renderHomeLanguageSwitch(prefix: LocalePrefix): string {
+  const targetPrefix = prefix === "zh" ? "en" : "zh";
+  const targetLocale = targetPrefix === "zh" ? "zh-CN" : "en-US";
+  const label = targetLocale === "zh-CN" ? "切换到中文" : "Switch to English";
+  const visibleLabel = targetLocale === "zh-CN" ? "中" : "EN";
+
+  return `<nav class="liax-language-switch" aria-label="Language switch" data-language-switch-placeholder="true">
+        <a class="liax-button liax-language-icon-button" aria-label="${label}" data-locale-target="${targetLocale}" href="/${targetPrefix}">
+          <span aria-hidden="true">${visibleLabel}</span>
+        </a>
+      </nav>`;
+}
+
+function renderPublicSearchForm(prefix: LocalePrefix, isZh: boolean): string {
+  const label = isZh ? "搜索" : "Search";
+
+  return `<form class="liax-public-search-form" action="/${prefix}/search" method="get" role="search">
+          <input class="liax-public-search" aria-label="${label}" name="q" type="search" placeholder="${label}">
+        </form>`;
+}
+
+function readStringSetting(settings: SiteSettings, key: string, fallback: string): string {
+  const value = settings[key];
+
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function readUrlSetting(settings: SiteSettings, key: string, fallback: string): string {
+  const value = readStringSetting(settings, key, fallback);
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function includesCjk(value: string): boolean {
+  return /[\u3400-\u9fff]/u.test(value);
+}
+
+type HomeContactItem = {
+  href: string | null;
+  label: string;
+  value: string;
+};
+
+function contactHref(label: string, value: string): string | null {
+  const normalizedLabel = label.toLowerCase();
+
+  if (value.includes("@") && !/\s/.test(value)) {
+    return `mailto:${value}`;
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  if (normalizedLabel.includes("email") || normalizedLabel.includes("mail") || normalizedLabel.includes("邮箱")) {
+    return `mailto:${value}`;
+  }
+
+  return null;
+}
+
+function parseHomeContactItems(settings: SiteSettings, isZh: boolean): HomeContactItem[] {
+  const localeKey = isZh ? "home.contactItems.zh-CN" : "home.contactItems.en-US";
+  const defaultItems = isZh ? "邮箱:hello@example.com\nQQ:123456" : "Email:hello@example.com\nQQ:123456";
+  const legacyItems = readStringSetting(settings, "home.contactItems", "");
+  const legacyFallback = legacyItems && (isZh || !includesCjk(legacyItems)) ? legacyItems : defaultItems;
+  const rawItems = readStringSetting(settings, localeKey, legacyFallback);
+
+  return rawItems
+    .split(/\r?\n|,,/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separatorIndex = line.search(/[:：]/u);
+      const label = separatorIndex >= 0 ? line.slice(0, separatorIndex).trim() : (isZh ? "联系" : "Contact");
+      const value = separatorIndex >= 0 ? line.slice(separatorIndex + 1).trim() : line;
+
+      return {
+        href: contactHref(label, value),
+        label: label || (isZh ? "联系" : "Contact"),
+        value
+      };
+    })
+    .filter((item) => item.value.length > 0);
+}
+
+function renderHomeContactItem(item: HomeContactItem): string {
+  const valueHtml = item.href
+    ? `<a class="liax-home-contact__value" href="${escapeHtml(item.href)}">${escapeHtml(item.value)}</a>`
+    : `<span class="liax-home-contact__value">${escapeHtml(item.value)}</span>`;
+
+  return `<span class="liax-home-contact__item">
+          <span class="liax-home-contact__label">${escapeHtml(item.label)}</span>
+          ${valueHtml}
+        </span>`;
+}
+
+function renderHomeContactBox(settings: SiteSettings, isZh: boolean): string {
+  const items = parseHomeContactItems(settings, isZh);
+
+  return `<aside class="liax-home-contact" aria-label="${isZh ? "联系方式" : "Contact methods"}">
+        ${items.map(renderHomeContactItem).join("\n        ")}
+      </aside>`;
+}
+
+export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, settings: SiteSettings): string {
+  const isZh = locale === "zh-CN";
+  const title = "Liax Space";
+  const description = isZh ? "一个中英文双语言的温暖极简内容空间。" : "A warm minimal bilingual content space.";
+  const switchHtml = renderHomeLanguageSwitch(prefix);
+  const alternatePrefix = prefix === "zh" ? "en" : "zh";
+  const alternateLocale = alternatePrefix === "zh" ? "zh-CN" : "en-US";
+  const signature = readStringSetting(settings, "home.signature", "Timeless Silent Vigil");
+  const brandInfo = readStringSetting(
+    settings,
+    "home.brandInfo",
+    isZh ? "Liax Space · 温暖极简内容空间" : "Liax Space · Warm minimal content space"
+  );
+  const icpNumber = readStringSetting(settings, "home.icpNumber", isZh ? "备案号待配置" : "ICP pending");
+  const icpUrl = readUrlSetting(settings, "home.icpUrl", "https://beian.miit.gov.cn");
+  const contactBox = renderHomeContactBox(settings, isZh);
+
+  return `<!doctype html>
+<html lang="${locale}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="${escapeHtml(description)}">
+  <link rel="canonical" href="/${prefix}">
+  <link rel="alternate" hreflang="${alternateLocale}" href="/${alternatePrefix}">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    :root {
+      --color-page: #faf9f5;
+      --color-surface: #ffffff;
+      --color-surface-muted: #f5f4ed;
+      --color-border: #d1cfc5;
+      --color-text: #141413;
+      --color-primary: #141413;
+      --color-primary-text: #faf9f5;
+      --color-brand: #c96442;
+      --color-brand-text: #faf9f5;
+      --color-accent: #d97757;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+      background: var(--color-page);
+      color: var(--color-text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      text-rendering: geometricPrecision;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .liax-public-shell {
+      box-sizing: border-box;
+      display: grid;
+      min-height: 100vh;
+      grid-template-rows: auto 1fr auto;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    .liax-public-header,
+    main,
+    .liax-home-footer {
+      animation: liax-page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    main {
+      animation-delay: 70ms;
+    }
+
+    .liax-home-footer {
+      animation-delay: 120ms;
+    }
+
+    .liax-public-header {
+      display: grid;
+      grid-template-columns: minmax(190px, 0.72fr) auto minmax(280px, 0.72fr);
+      align-items: center;
+      gap: 20px;
+      box-sizing: border-box;
+      width: 100%;
+      height: 76px;
+      border-bottom: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 12px clamp(20px, 4vw, 48px);
+    }
+
+    .liax-public-brand,
+    .liax-public-header__center,
+    .liax-public-header__tools,
+    .liax-public-menu,
+    .liax-language-switch {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .liax-public-brand {
+      color: var(--color-text);
+      font-size: 17px;
+      font-weight: 800;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .liax-public-logo,
+    .liax-public-avatar {
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+    }
+
+    .liax-public-logo {
+      width: 34px;
+      height: 34px;
+      background: var(--color-primary);
+      color: var(--color-primary-text);
+      font-size: 12px;
+    }
+
+    .liax-public-header__center {
+      justify-content: center;
+      min-width: 0;
+    }
+
+    .liax-language-switch {
+      flex: 0 0 auto;
+    }
+
+    .liax-public-menu {
+      flex: 1 1 auto;
+      flex-wrap: nowrap;
+      justify-content: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .liax-public-menu a {
+      flex: 0 0 clamp(56px, 7vw, 84px);
+      display: inline-flex;
+      justify-content: center;
+      width: clamp(56px, 7vw, 84px);
+    }
+
+    .liax-public-menu a,
+    .liax-home-contact a {
+      color: var(--color-text);
+      font-size: 14px;
+      font-weight: 720;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .liax-public-menu a:hover,
+    .liax-public-menu a:focus-visible,
+    .liax-home-contact a:hover,
+    .liax-home-contact a:focus-visible {
+      color: var(--color-accent);
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
+    .liax-button {
+      display: inline-flex;
+      min-height: 36px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      font: inherit;
+      font-size: 14px;
+      font-weight: 760;
+      padding: 6px 11px;
+      text-decoration: none;
+    }
+
+    .liax-button--brand {
+      border-color: var(--color-brand);
+      background: var(--color-brand);
+      color: var(--color-brand-text);
+    }
+
+    .liax-language-icon-button {
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
+      border-color: rgb(209 207 197 / 78%);
+      border-radius: 999px;
+      background: rgb(250 249 245 / 72%);
+      color: rgb(20 20 19 / 82%);
+      padding: 0;
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .liax-public-search {
+      box-sizing: border-box;
+      width: min(200px, 20vw);
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      padding: 8px 12px;
+    }
+
+    .liax-public-search-form {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .liax-public-avatar {
+      text-decoration: none;
+      width: 38px;
+      height: 38px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      font-weight: 800;
+    }
+
+    main {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      align-items: center;
+      gap: clamp(28px, 6vw, 72px);
+      width: min(1120px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: clamp(64px, 10vh, 112px) 0 clamp(72px, 12vh, 132px);
+    }
+
+    .liax-home-author {
+      display: inline-flex;
+      width: max-content;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface);
+      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: 760;
+    }
+
+    .liax-home-title {
+      max-width: 820px;
+      margin: 20px 0 0;
+      font-size: clamp(56px, 8vw, 112px);
+      line-height: 0.96;
+      letter-spacing: 0;
+    }
+
+    .liax-home-contact {
+      display: grid;
+      gap: 12px;
+      justify-self: end;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
+      box-shadow: 0 12px 38px rgba(20, 20, 19, 0.04);
+      padding: 20px;
+      width: 100%;
+    }
+
+    .liax-home-contact__item {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .liax-home-contact__label {
+      color: rgb(20 20 19 / 66%);
+      font-size: 12px;
+      font-weight: 820;
+    }
+
+    .liax-home-contact__value,
+    .liax-home-contact a.liax-home-contact__value {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
+
+    .liax-home-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      width: min(1120px, calc(100% - 48px));
+      margin: 0 auto;
+      border-top: 1px solid var(--color-border);
+      padding-top: 14px;
+      color: var(--color-text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .liax-home-footer a {
+      color: var(--color-text);
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
+    .liax-home-footer a:hover,
+    .liax-home-footer a:focus-visible {
+      color: var(--color-accent);
+    }
+
+    @media (max-width: 1120px) {
+      main {
+        grid-template-columns: 1fr;
+        align-items: start;
+      }
+
+      .liax-home-contact {
+        justify-self: start;
+        max-width: 420px;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .liax-public-header,
+      .liax-home-footer {
+        grid-template-columns: 1fr;
+      }
+
+      .liax-public-header {
+        grid-template-columns: auto auto auto;
+        height: 76px;
+        min-height: 76px;
+        gap: 14px;
+        overflow-x: auto;
+        padding: 10px 16px;
+        scrollbar-width: none;
+      }
+
+      .liax-public-header::-webkit-scrollbar {
+        display: none;
+      }
+
+      .liax-public-header__center,
+      .liax-public-header__tools {
+        align-items: center;
+        flex: 0 0 auto;
+        flex-direction: row;
+      }
+
+      .liax-public-menu {
+        flex-wrap: nowrap;
+        justify-content: center;
+      }
+
+      .liax-public-search {
+        width: 118px;
+      }
+
+      .liax-public-search-form {
+        width: auto;
+      }
+
+      main {
+        align-items: start;
+      }
+
+      .liax-home-contact {
+        justify-self: start;
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      .liax-home-title {
+        font-size: clamp(52px, 18vw, 96px);
+      }
+
+      .liax-home-footer {
+        display: grid;
+      }
+    }
+
+    @keyframes liax-language-wipe-ripple {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0);
+      }
+
+      12% {
+        opacity: 0.62;
+        transform: translate(-50%, -50%) scale(0.14);
+      }
+
+      70% {
+        opacity: 0.42;
+        transform: translate(-50%, -50%) scale(0.78);
+      }
+
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1);
+      }
+    }
+
+    @keyframes liax-language-wipe-ripple-soft {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0);
+      }
+
+      18% {
+        opacity: 0.34;
+        transform: translate(-50%, -50%) scale(0.2);
+      }
+
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1.04);
+      }
+    }
+
+    @keyframes liax-page-enter {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .liax-public-header,
+      main,
+      .liax-home-footer {
+        animation: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="liax-public-shell">
+    <header class="liax-public-header">
+      <a class="liax-public-brand" href="/${prefix}">
+        <span class="liax-public-logo" aria-hidden="true">LS</span>
+        <span>Liax Space</span>
+      </a>
+      <div class="liax-public-header__center">
+        ${switchHtml}
+        <nav class="liax-public-menu" aria-label="Primary">
+          <a href="/${prefix}">${isZh ? "首页" : "Home"}</a>
+          <a href="/${prefix}/posts">${isZh ? "文章" : "Articles"}</a>
+          <a href="/${prefix}/tags">${isZh ? "标签" : "Tags"}</a>
+          <a href="/${prefix}/moments">${isZh ? "瞬间" : "Moments"}</a>
+          <a href="/${prefix}/guestbook">${isZh ? "留言" : "Guestbook"}</a>
+          <a href="/${prefix}/archives">${isZh ? "归档" : "Archives"}</a>
+        </nav>
+      </div>
+      <div class="liax-public-header__tools">
+        ${renderPublicSearchForm(prefix, isZh)}
+        <a class="liax-public-avatar" href="/${prefix}/account" aria-label="User">A</a>
+      </div>
+    </header>
+    <main>
+      <section>
+        <div class="liax-home-author">${isZh ? "作者" : "Author"} · Liax</div>
+        <h1 class="liax-home-title">${escapeHtml(signature)}</h1>
+      </section>
+      ${contactBox}
+    </main>
+    <footer class="liax-home-footer">
+      <span>${escapeHtml(brandInfo)}</span>
+      <a href="${escapeHtml(icpUrl)}" rel="noopener noreferrer" target="_blank">${escapeHtml(icpNumber)}</a>
+    </footer>
+  </div>
+${renderLanguageSwitchScript()}
+</body>
+</html>`;
+}
+
+const publicSectionLabels = {
+  account: { en: "Account", zh: "个人" },
+  archives: { en: "Archives", zh: "归档" },
+  guestbook: { en: "Guestbook", zh: "留言" },
+  moments: { en: "Moments", zh: "瞬间" },
+  posts: { en: "Articles", zh: "文章" },
+  tags: { en: "Tags", zh: "标签" }
+} as const;
+
+type PublicSection = keyof typeof publicSectionLabels;
+type RenderablePublicSection = PublicSection | "not-found";
+
+function isPublicSection(value: string): value is PublicSection {
+  return value in publicSectionLabels;
+}
+
+function renderTagCards(locale: ArticleLocale, tags: TagDetail[]): string {
+  const localizedTags = tags.flatMap((tagDetail) => {
+    const translation = tagDetail.translations.find((item) => item.locale === locale);
+
+    return translation ? [{
+      id: tagDetail.tag.id,
+      name: translation.name,
+      slug: translation.slug
+    }] : [];
+  });
+
+  if (localizedTags.length === 0) {
+    return `<p class="liax-section-empty">${locale === "zh-CN" ? "当前语言还没有标签。" : "No tags are available in this language yet."}</p>`;
+  }
+
+  return `<ul class="liax-tag-grid">
+${localizedTags.map((tag) => `        <li><a href="/${locale === "zh-CN" ? "zh" : "en"}/tags/${escapeHtml(tag.slug)}"><span>#</span><strong>${escapeHtml(tag.name)}</strong><code>${escapeHtml(tag.slug)}</code></a></li>`).join("\n")}
+      </ul>`;
+}
+
+function renderArticleCards(locale: ArticleLocale, prefix: LocalePrefix, articles: SearchResult[], emptyLabel: string): string {
+  if (articles.length === 0) {
+    return `<p class="liax-section-empty">${escapeHtml(emptyLabel)}</p>`;
+  }
+
+  return `<div class="liax-article-list">
+${articles.map((article) => {
+  const dateLabel = article.publishedAt ? new Date(article.publishedAt).toISOString().slice(0, 10) : "";
+  const summary = article.summary ?? article.seoDescription ?? "";
+
+  return `        <article class="liax-article-card">
+          <a href="/${prefix}/posts/${encodeURIComponent(article.slug)}">${escapeHtml(article.title)}</a>
+          <time datetime="${escapeHtml(dateLabel)}">${escapeHtml(dateLabel)}</time>
+          ${summary ? `<p>${escapeHtml(summary)}</p>` : ""}
+        </article>`;
+}).join("\n")}
+      </div>`;
+}
+
+function renderArchiveBody(locale: ArticleLocale, prefix: LocalePrefix, articles: SearchResult[]): string {
+  const emptyLabel = locale === "zh-CN" ? "当前语言还没有已发布文章。" : "No published articles are available in this language yet.";
+  return renderArticleCards(locale, prefix, articles, emptyLabel);
+}
+
+function renderPostsBody(locale: ArticleLocale, prefix: LocalePrefix, articles: SearchResult[]): string {
+  const isZh = locale === "zh-CN";
+  const intro = isZh ? "当前语言下已发布的文章。" : "Published articles in the current language.";
+  const emptyLabel = isZh ? "当前语言还没有已发布文章。" : "No published articles are available in this language yet.";
+
+  return `<p class="liax-section-description">${escapeHtml(intro)}</p>
+      ${renderArticleCards(locale, prefix, articles, emptyLabel)}`;
+}
+
+function renderTagDetailBody(locale: ArticleLocale, prefix: LocalePrefix, tagName: string, tagSlug: string, articles: SearchResult[]): string {
+  const isZh = locale === "zh-CN";
+  const emptyLabel = isZh ? "此标签下还没有已发布文章。" : "No published articles are available for this tag yet.";
+
+  return `<p class="liax-section-eyebrow">${isZh ? "标签" : "Tag"}</p>
+      <p class="liax-section-description">${escapeHtml(isZh ? "当前正在浏览此标签下的内容集合。" : "You are viewing the content collection for this tag.")}</p>
+      <div class="liax-tag-detail-card">
+        <span>#</span>
+        <strong>${escapeHtml(tagName)}</strong>
+        <code>${escapeHtml(tagSlug)}</code>
+      </div>
+      ${renderArticleCards(locale, prefix, articles, emptyLabel)}
+      <a class="liax-section-back" href="/${prefix}/tags">${escapeHtml(isZh ? "返回全部标签" : "Back to all tags")}</a>`;
+}
+
+function renderMomentsBody(locale: ArticleLocale, moments: Moment[]): string {
+  const isZh = locale === "zh-CN";
+
+  if (moments.length === 0) {
+    return `<p class="liax-section-empty">${isZh ? "当前语言还没有已发布瞬间。" : "No published moments are available in this language yet."}</p>`;
+  }
+
+  return `<p class="liax-section-description">${escapeHtml(isZh ? "短内容动态，只显示当前语言已发布内容。" : "Short updates. Only published content in the current language is shown.")}</p>
+      <div class="liax-moment-list">
+${moments.map((moment) => {
+  const date = moment.publishedAt ?? moment.createdAt;
+  const dateLabel = date.toISOString().slice(0, 10);
+
+  return `        <article class="liax-moment-card">
+          <p>${escapeHtml(moment.content)}</p>
+          <time datetime="${escapeHtml(date.toISOString())}">${escapeHtml(dateLabel)}</time>
+        </article>`;
+}).join("\n")}
+      </div>`;
+}
+
+function renderAccountBody(locale: ArticleLocale): string {
+  const isZh = locale === "zh-CN";
+
+  return `<div class="liax-account-card">
+        <p class="liax-section-eyebrow">${escapeHtml(isZh ? "个人页面" : "Account")}</p>
+        <h2>${escapeHtml(isZh ? "Liax Space 访问入口" : "Liax Space access")}</h2>
+        <p>${escapeHtml(isZh ? "这里会承载个人偏好、登录状态和内容身份相关入口。当前版本先提供稳定跳转，避免头像点击落入无效页面。" : "This page is reserved for preferences, session state, and content identity. This version keeps the avatar target stable instead of sending users to a dead end.")}</p>
+      </div>`;
+}
+
+export function renderPublicSectionPage(
+  locale: ArticleLocale,
+  prefix: LocalePrefix,
+  section: RenderablePublicSection,
+  bodyHtml?: string
+): string {
+  const isZh = locale === "zh-CN";
+  const label = section === "not-found" ? (isZh ? "页面未找到" : "Page not found") : (isZh ? publicSectionLabels[section].zh : publicSectionLabels[section].en);
+  const description = section === "not-found"
+    ? (isZh ? "没有找到当前语言下的公开页面。" : "The public page for the current language was not found.")
+    : (isZh ? `${label}页面已接入公开导航。` : `${label} is wired into the public navigation.`);
+  const alternatePrefix = prefix === "zh" ? "en" : "zh";
+  const alternateLocale = alternatePrefix === "zh" ? "zh-CN" : "en-US";
+  const switchHtml = renderHomeLanguageSwitch(prefix);
+
+  return `<!doctype html>
+<html lang="${locale}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="${escapeHtml(description)}">
+  <link rel="canonical" href="/${prefix}/${section}">
+  <link rel="alternate" hreflang="${alternateLocale}" href="/${alternatePrefix}/${section}">
+  <title>${escapeHtml(label)} · Liax Space</title>
+  <style>
+    :root {
+      --color-page: #faf9f5;
+      --color-surface: #ffffff;
+      --color-surface-muted: #f5f4ed;
+      --color-border: #d1cfc5;
+      --color-text: #141413;
+      --color-primary: #141413;
+      --color-primary-text: #faf9f5;
+      --color-brand: #c96442;
+      --color-brand-text: #faf9f5;
+      --color-accent: #d97757;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+      background: var(--color-page);
+      color: var(--color-text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      text-rendering: geometricPrecision;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .liax-public-shell {
+      box-sizing: border-box;
+      display: grid;
+      min-height: 100vh;
+      grid-template-rows: auto 1fr;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    .liax-public-header,
+    .liax-section-card {
+      animation: liax-page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .liax-section-card {
+      animation-delay: 70ms;
+    }
+
+    .liax-section-card {
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
+    }
+
+    .liax-public-header {
+      box-sizing: border-box;
+      display: grid;
+      grid-template-columns: minmax(190px, 0.72fr) auto minmax(280px, 0.72fr);
+      align-items: center;
+      gap: 20px;
+      width: 100%;
+      height: 76px;
+      min-height: 76px;
+      border-bottom: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 12px clamp(20px, 4vw, 48px);
+      scrollbar-width: none;
+    }
+
+    .liax-public-header::-webkit-scrollbar {
+      display: none;
+    }
+
+    .liax-public-brand,
+    .liax-public-header__center,
+    .liax-public-header__tools,
+    .liax-public-menu,
+    .liax-language-switch {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .liax-public-brand {
+      color: var(--color-text);
+      font-weight: 760;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .liax-public-menu a {
+      color: var(--color-text);
+      flex: 0 0 clamp(56px, 7vw, 84px);
+      display: inline-flex;
+      justify-content: center;
+      width: clamp(56px, 7vw, 84px);
+      font-weight: 760;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .liax-public-logo,
+    .liax-public-avatar {
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+    }
+
+    .liax-public-logo {
+      width: 34px;
+      height: 34px;
+      background: var(--color-primary);
+      color: var(--color-primary-text);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .liax-public-header__center,
+    .liax-public-menu {
+      flex-wrap: nowrap;
+      justify-content: center;
+      min-width: 0;
+    }
+
+    .liax-public-menu {
+      flex: 1 1 auto;
+    }
+
+    .liax-public-header__center {
+      min-width: 0;
+    }
+
+    .liax-language-switch {
+      flex: 0 0 auto;
+      flex-wrap: nowrap;
+      justify-content: center;
+    }
+
+    .liax-public-header__tools {
+      justify-content: flex-end;
+    }
+
+    .liax-public-search {
+      width: min(220px, 22vw);
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      padding: 8px 12px;
+    }
+
+    .liax-public-search-form {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .liax-public-avatar {
+      text-decoration: none;
+      width: 38px;
+      height: 38px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      font-weight: 800;
+    }
+
+    .liax-button {
+      display: inline-flex;
+      min-height: 38px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      font: inherit;
+      font-weight: 760;
+      padding: 7px 12px;
+      text-decoration: none;
+    }
+
+    .liax-button--brand {
+      border-color: var(--color-brand);
+      background: var(--color-brand);
+      color: var(--color-brand-text);
+    }
+
+    .liax-language-icon-button {
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
+      border-color: rgb(209 207 197 / 78%);
+      border-radius: 999px;
+      background: rgb(250 249 245 / 72%);
+      color: rgb(20 20 19 / 82%);
+      padding: 0;
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .liax-account-card {
+      max-width: 640px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
+      padding: 24px;
+    }
+
+    .liax-account-card h2 {
+      margin: 0 0 12px;
+      font-size: clamp(24px, 4vw, 38px);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    .liax-account-card p:last-child {
+      margin-bottom: 0;
+    }
+
+    .liax-section-card {
+      box-sizing: border-box;
+      width: min(960px, calc(100% - 48px));
+      margin: 32px auto 56px;
+      padding: 40px;
+    }
+
+    .liax-section-card h1 {
+      margin: 0 0 14px;
+      font-size: clamp(42px, 7vw, 88px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .liax-section-card p {
+      max-width: 680px;
+      margin: 0;
+      line-height: 1.7;
+    }
+
+    .liax-section-eyebrow {
+      color: #9e4b31;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .liax-section-description {
+      margin-bottom: 18px;
+    }
+
+    .liax-section-empty {
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 18px;
+    }
+
+    .liax-tag-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      list-style: none;
+      margin: 24px 0 0;
+      padding: 0;
+    }
+
+    .liax-tag-grid a {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: start;
+      gap: 8px;
+      min-height: 78px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
+      color: var(--color-text);
+      font-weight: 760;
+      padding: 14px;
+      text-decoration: none;
+    }
+
+    .liax-tag-grid a:hover,
+    .liax-tag-grid a:focus-visible {
+      border-color: var(--color-accent);
+      box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.16);
+      outline: 0;
+    }
+
+    .liax-tag-grid span {
+      grid-row: span 2;
+      color: var(--color-accent);
+      font-size: 22px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .liax-tag-grid strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+
+    .liax-tag-grid code {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      color: #6f6a5d;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+    }
+
+    .liax-article-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 24px;
+    }
+
+    .liax-article-card {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 18px;
+    }
+
+    .liax-article-card a {
+      color: var(--color-text);
+      font-size: 20px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    .liax-article-card a:hover,
+    .liax-article-card a:focus-visible {
+      color: var(--color-accent);
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
+    .liax-article-card time,
+    .liax-article-card p {
+      margin: 0;
+      color: var(--color-text);
+    }
+
+    .liax-article-card time {
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .liax-moment-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 24px;
+    }
+
+    .liax-moment-card {
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 18px;
+    }
+
+    .liax-moment-card p {
+      margin: 0 0 12px;
+      max-width: none;
+      white-space: pre-wrap;
+    }
+
+    .liax-moment-card time {
+      color: #6f6a5d;
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .liax-tag-detail-card {
+      display: grid;
+      gap: 6px;
+      max-width: 480px;
+      margin: 24px 0;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 20px;
+    }
+
+    .liax-tag-detail-card span {
+      color: var(--color-accent);
+      font-size: 26px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .liax-tag-detail-card strong {
+      font-size: 26px;
+      line-height: 1.2;
+    }
+
+    .liax-tag-detail-card code {
+      color: var(--color-text);
+      overflow-wrap: anywhere;
+    }
+
+    .liax-section-back {
+      color: var(--color-accent);
+      font-weight: 760;
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
+    @media (max-width: 860px) {
+      .liax-public-header {
+        grid-template-columns: auto auto auto;
+        height: 76px;
+        min-height: 76px;
+        gap: 14px;
+        overflow-x: auto;
+        padding: 10px 16px;
+        scrollbar-width: none;
+      }
+
+      .liax-public-header::-webkit-scrollbar {
+        display: none;
+      }
+
+      .liax-public-header__center,
+      .liax-public-header__tools {
+        align-items: center;
+        flex: 0 0 auto;
+        flex-direction: row;
+      }
+
+      .liax-public-menu {
+        flex-wrap: nowrap;
+      }
+
+      .liax-public-search {
+        width: 118px;
+      }
+
+      .liax-public-search-form {
+        width: auto;
+      }
+
+      .liax-section-card {
+        width: calc(100% - 36px);
+        margin: 18px auto 40px;
+        padding: 24px;
+      }
+    }
+
+    @keyframes liax-language-wipe-ripple {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0);
+      }
+
+      12% {
+        opacity: 0.62;
+        transform: translate(-50%, -50%) scale(0.14);
+      }
+
+      70% {
+        opacity: 0.42;
+        transform: translate(-50%, -50%) scale(0.78);
+      }
+
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1);
+      }
+    }
+
+    @keyframes liax-language-wipe-ripple-soft {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0);
+      }
+
+      18% {
+        opacity: 0.34;
+        transform: translate(-50%, -50%) scale(0.2);
+      }
+
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1.04);
+      }
+    }
+
+    @keyframes liax-page-enter {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .liax-public-header,
+      .liax-section-card {
+        animation: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="liax-public-shell">
+    <header class="liax-public-header">
+      <a class="liax-public-brand" href="/${prefix}">
+        <span class="liax-public-logo" aria-hidden="true">LS</span>
+        <span>Liax Space</span>
+      </a>
+      <div class="liax-public-header__center">
+        ${switchHtml}
+        <nav class="liax-public-menu" aria-label="Primary">
+          <a href="/${prefix}">${isZh ? "首页" : "Home"}</a>
+          <a href="/${prefix}/posts">${isZh ? "文章" : "Articles"}</a>
+          <a href="/${prefix}/tags">${isZh ? "标签" : "Tags"}</a>
+          <a href="/${prefix}/moments">${isZh ? "瞬间" : "Moments"}</a>
+          <a href="/${prefix}/guestbook">${isZh ? "留言" : "Guestbook"}</a>
+          <a href="/${prefix}/archives">${isZh ? "归档" : "Archives"}</a>
+        </nav>
+      </div>
+      <div class="liax-public-header__tools">
+        ${renderPublicSearchForm(prefix, isZh)}
+        <a class="liax-public-avatar" href="/${prefix}/account" aria-label="User">A</a>
+      </div>
+    </header>
+    <main class="liax-section-card">
+      <h1>${escapeHtml(label)}</h1>
+      ${bodyHtml ?? `<p>${escapeHtml(description)}</p>`}
+    </main>
+  </div>
+${renderLanguageSwitchScript()}
+</body>
+</html>`;
+}
+
+function renderNotFoundBody(locale: ArticleLocale, prefix: LocalePrefix): string {
+  const isZh = locale === "zh-CN";
+
+  return `<p>${isZh ? "没有找到当前语言下的公开文章或页面。" : "No public article or page was found for the current language."}</p>
+      <p>${isZh ? "公开站点不会自动切换到另一种语言。" : "The public site does not automatically fall back to another language."}</p>
+      <p><a class="liax-section-back" href="/${prefix}/posts">${isZh ? "返回文章列表" : "Back to articles"}</a></p>`;
+}
+
+function sendPublicNotFound(response: Response, locale: ArticleLocale, prefix: LocalePrefix): void {
+  response.status(404).type("html").send(renderPublicSectionPage(locale, prefix, "not-found", renderNotFoundBody(locale, prefix)));
+}
+
+function renderForbiddenBody(locale: ArticleLocale, prefix: LocalePrefix): string {
+  const isZh = locale === "zh-CN";
+
+  return `<p>${isZh ? "当前文章只允许指定身份访问。" : "This article is limited to selected identities."}</p>
+      <p>${isZh ? "请使用有权限的账号访问，公开站点不会自动降级展示内容。" : "Use an account with access. The public site will not downgrade and reveal the content."}</p>
+      <p><a class="liax-section-back" href="/${prefix}/posts">${isZh ? "返回文章列表" : "Back to articles"}</a></p>`;
+}
+
+function sendPublicForbidden(response: Response, locale: ArticleLocale, prefix: LocalePrefix): void {
+  response.status(403).type("html").send(renderPublicSectionPage(locale, prefix, "not-found", renderForbiddenBody(locale, prefix)));
+}
+
+export class PublicArticleController {
+  constructor(
+    private readonly translationRepository = new ArticleTranslationRepository(),
+    private readonly tagRepository = new TagRepository(),
+    private readonly searchService = new SearchService(),
+    private readonly momentRepository = new MomentRepository(),
+    private readonly settingsRepository = new SettingsRepository(),
+    private readonly jwtService = new JwtService()
+  ) {}
+
+  getHome = async (request: Request, response: Response): Promise<void> => {
+    const prefix = request.params.localePrefix;
+
+    if (prefix !== "zh" && prefix !== "en") {
+      throw notFoundError();
+    }
+
+    const settings = await this.settingsRepository.getSiteSettings();
+
+    response.status(200).type("html").send(renderHomePage(localePrefixMap[prefix], prefix, settings));
+  };
+
+  getSection = async (request: Request, response: Response): Promise<void> => {
+    const prefix = request.params.localePrefix;
+    const section = request.params.section;
+
+    if ((prefix !== "zh" && prefix !== "en") || !isPublicSection(section)) {
+      throw notFoundError();
+    }
+
+    const locale = localePrefixMap[prefix];
+
+    if (section === "tags") {
+      const tags = await this.tagRepository.listTags();
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderTagCards(locale, tags)));
+      return;
+    }
+
+    if (section === "posts") {
+      const articles = await this.searchService.searchPublic({ localePrefix: prefix, limit: 100 });
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderPostsBody(locale, prefix, articles)));
+      return;
+    }
+
+    if (section === "archives") {
+      const articles = await this.searchService.searchPublic({ localePrefix: prefix, limit: 100 });
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderArchiveBody(locale, prefix, articles)));
+      return;
+    }
+
+    if (section === "moments") {
+      const moments = await this.momentRepository.listMoments({ locale, limit: 100, status: "published" });
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderMomentsBody(locale, moments)));
+      return;
+    }
+
+    if (section === "account") {
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderAccountBody(locale)));
+      return;
+    }
+
+    response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section));
+  };
+
+  getTagDetail = async (request: Request, response: Response): Promise<void> => {
+    const prefix = request.params.localePrefix;
+
+    if (prefix !== "zh" && prefix !== "en") {
+      throw notFoundError();
+    }
+
+    const locale = localePrefixMap[prefix];
+    const slug = request.params.slug;
+    const translation = await this.tagRepository.findTranslationByLocaleAndSlug(locale, slug);
+
+    if (!translation) {
+      throw notFoundError();
+    }
+
+    const articles = await this.searchService.searchPublic({
+      localePrefix: prefix,
+      limit: 100,
+      tag: translation.slug
+    });
+
+    response.status(200).type("html").send(
+      renderPublicSectionPage(locale, prefix, "tags", renderTagDetailBody(locale, prefix, translation.name, translation.slug, articles))
+    );
+  };
+
+  getArticle = async (request: Request, response: Response): Promise<void> => {
+    const prefix = request.params.localePrefix;
+
+    if (prefix !== "zh" && prefix !== "en") {
+      throw notFoundError();
+    }
+
+    const locale = localePrefixMap[prefix];
+    const slug = request.params.slug;
+    const translation = await this.translationRepository.findPublicByLocaleAndSlug(locale, slug);
+
+    if (!translation || !isPublishedTranslation(translation)) {
+      sendPublicNotFound(response, locale, prefix);
+      return;
+    }
+
+    if (!this.canViewTranslation(request, translation)) {
+      sendPublicForbidden(response, locale, prefix);
+      return;
+    }
+
+    const htmlPath = resolveRenderedHtmlPath(translation.currentHtmlPath);
+
+    if (htmlPath === null) {
+      logger.error("rendered html path is outside rendered storage", {
+        articleId: translation.articleId,
+        locale,
+        slug,
+        currentHtmlPath: translation.currentHtmlPath
+      });
+      sendPublicNotFound(response, locale, prefix);
+      return;
+    }
+
+    try {
+      const html = await readFile(htmlPath, "utf8");
+      response.status(200).type("html").send(html);
+    } catch (error) {
+      if (isFileNotFound(error)) {
+        logger.error("published rendered html file not found", {
+          articleId: translation.articleId,
+          locale,
+          slug,
+          currentHtmlPath: translation.currentHtmlPath,
+          htmlPath
+        });
+        sendPublicNotFound(response, locale, prefix);
+        return;
+      }
+
+      throw error;
+    }
+  };
+
+  private canViewTranslation(request: Request, translation: ArticleTranslation): boolean {
+    if (translation.allowedRoles.length === 0) {
+      return true;
+    }
+
+    const auth = this.readOptionalAuth(request);
+    return auth !== null && translation.allowedRoles.includes(auth.role);
+  }
+
+  private readOptionalAuth(request: Request): AuthTokenPayload | null {
+    const token = readBearerToken(request.headers.authorization);
+
+    if (!token) {
+      return null;
+    }
+
+    try {
+      return this.jwtService.verifyToken(token);
+    } catch {
+      return null;
+    }
+  }
+}

@@ -1,0 +1,16 @@
+CREATE TABLE articles (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  author_id BIGINT UNSIGNED NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'draft',
+  cover_attachment_id BIGINT UNSIGNED NULL DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP NULL DEFAULT NULL,
+  PRIMARY KEY (id),
+  KEY articles_status_index (status),
+  KEY articles_author_id_index (author_id),
+  CONSTRAINT articles_author_id_fk
+    FOREIGN KEY (author_id) REFERENCES users (id)
+    ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

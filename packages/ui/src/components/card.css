@@ -1,0 +1,36 @@
+.liax-card {
+  border: 1px solid #d1cfc5;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  color: #141413;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.liax-card--muted {
+  background: #f5f4ed;
+}
+
+.liax-card__header,
+.liax-card__body,
+.liax-card__footer {
+  padding: 1rem;
+}
+
+.liax-card__header + .liax-card__body,
+.liax-card__body + .liax-card__footer {
+  border-top: 1px solid #d1cfc5;
+}
+
+.liax-card:focus-within {
+  border-color: #d97757;
+  box-shadow: 0 10px 28px rgb(20 20 19 / 6%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liax-card {
+    transition: none;
+  }
+}

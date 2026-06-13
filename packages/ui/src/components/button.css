@@ -1,0 +1,83 @@
+.liax-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0.625rem 1rem;
+  border: 1px solid #d1cfc5;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  color: #141413;
+  font-weight: 650;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.liax-button:hover {
+  border-color: #d97757;
+  box-shadow: 0 6px 16px rgb(20 20 19 / 7%);
+  transform: translateY(-1px);
+}
+
+.liax-button:active {
+  box-shadow: 0 2px 8px rgb(20 20 19 / 5%);
+  transform: translateY(0);
+}
+
+.liax-button:focus-visible {
+  outline: 3px solid rgb(217 119 87 / 28%);
+  outline-offset: 3px;
+}
+
+.liax-button:disabled,
+.liax-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.liax-button--primary {
+  border-color: #141413;
+  background: #141413;
+  color: #faf9f5;
+}
+
+.liax-button--primary:hover {
+  background: #27251f;
+  border-color: #27251f;
+}
+
+.liax-button--brand {
+  border-color: #c96442;
+  background: #c96442;
+  color: #faf9f5;
+  font-weight: 750;
+}
+
+.liax-button--brand:hover {
+  background: #b95738;
+  border-color: #b95738;
+}
+
+.liax-button--quiet {
+  background: #f5f4ed;
+  color: #141413;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liax-button {
+    transition: none;
+  }
+
+  .liax-button:hover,
+  .liax-button:active {
+    transform: none;
+  }
+}

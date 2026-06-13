@@ -1,39 +1,26 @@
 node_modules
-.npm-cache
-.next
-out
 dist
-coverage
-
-# Local environment and runtime secrets
 .env
-.env.local
-.env.*.local
-runtime.env
-storage/config/*
-storage/**/*.env
-storage/**/setup-token
-storage/**/setup-status.json
-
-# Private operational notes and generated data
-.codex/
-docs/
-.codegraph/
-storage/
-public/uploads/*
-!public/uploads/.gitkeep
-
-# Logs, exports, and backup archives
+.env.*
+.env.example
+coverage
+test-results
+.tmp
+docs
+decisions
 *.log
-*.sql
-!prisma/migrations/**/migration.sql
-*.dump
-*.tar.gz
-*.tgz
-*.zip
-storage/backups/**
+*.out
+*.err
+liax-admin-running*.png
 
-# Build/cache artifacts
-*.tsbuildinfo
-page-*.html
-pet-runs/
+storage/runtime/*
+!storage/runtime/.gitkeep
+
+storage/backups/*
+!storage/backups/.gitkeep
+
+storage/rendered/*
+!storage/rendered/.gitkeep
+
+storage/uploads/*
+!storage/uploads/.gitkeep

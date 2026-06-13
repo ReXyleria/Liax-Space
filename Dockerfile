@@ -1,52 +1,48 @@
-ARG CHAINGUARD_NODE_DEV_IMAGE=cgr.dev/chainguard/node:latest-dev
-ARG CHAINGUARD_NODE_RUNTIME_IMAGE=cgr.dev/chainguard/node:latest
+# syntax=docker/dockerfile:1.7
 
-FROM ${CHAINGUARD_NODE_DEV_IMAGE} AS deps
+ARG NODE_DEV_IMAGE=node:22-bookworm-slim
+ARG NODE_RUNTIME_IMAGE=node:22-bookworm-slim
+
+FROM ${NODE_DEV_IMAGE} AS server-deps
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY apps/server/package.json apps/server/package-lock.json ./apps/server/
+RUN npm ci --prefix apps/server
 
-FROM ${CHAINGUARD_NODE_DEV_IMAGE} AS builder
+FROM ${NODE_DEV_IMAGE} AS admin-deps
 WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN npx prisma generate
-RUN npm run build
+COPY apps/admin/package.json apps/admin/package-lock.json ./apps/admin/
+RUN npm ci --prefix apps/admin
 
-FROM ${CHAINGUARD_NODE_DEV_IMAGE} AS runtime-tools
-WORKDIR /opt/prisma-cli
-COPY docker/prisma-cli/package.json docker/prisma-cli/package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+FROM ${NODE_DEV_IMAGE} AS server-build
+WORKDIR /app
+COPY --from=server-deps /app/apps/server/node_modules ./apps/server/node_modules
+COPY apps/server ./apps/server
+RUN npm run build --prefix apps/server
 
-FROM ${CHAINGUARD_NODE_DEV_IMAGE} AS runtime-dirs
-WORKDIR /runtime
-RUN mkdir -p public/uploads storage storage/backups storage/cache storage/config
+FROM ${NODE_DEV_IMAGE} AS admin-build
+WORKDIR /app
+COPY --from=admin-deps /app/apps/admin/node_modules ./apps/admin/node_modules
+COPY packages ./packages
+COPY apps/admin ./apps/admin
+RUN npm run build --prefix apps/admin
 
-FROM ${CHAINGUARD_NODE_RUNTIME_IMAGE} AS runner
+FROM ${NODE_DEV_IMAGE} AS server-prod-deps
+WORKDIR /app
+COPY apps/server/package.json apps/server/package-lock.json ./apps/server/
+RUN npm ci --omit=dev --prefix apps/server
+
+FROM ${NODE_RUNTIME_IMAGE} AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV HOSTNAME=0.0.0.0
-ENV PORT=3000
-ENV PRISMA_BIN=/opt/prisma-cli/node_modules/prisma/build/index.js
-ENV WORKER_BUNDLE=.next/worker/worker.cjs
-ENV PATH=/opt/prisma-cli/node_modules/.bin:$PATH
-
-COPY --from=runtime-tools --chown=1001:1001 /opt/prisma-cli /opt/prisma-cli
-COPY --from=builder --chown=1001:1001 /app/.next/standalone ./
-COPY --from=builder --chown=1001:1001 /app/.next/static ./.next/static
-COPY --from=builder --chown=1001:1001 /app/.next/worker ./.next/worker
-COPY --from=builder --chown=1001:1001 /app/prisma ./prisma
-COPY --from=builder --chown=1001:1001 /app/public ./public
-COPY --from=builder --chown=1001:1001 /app/src ./src
-COPY --from=builder --chown=1001:1001 /app/scripts ./scripts
-COPY --from=builder --chown=1001:1001 /app/tsconfig.json ./tsconfig.json
-COPY --from=runtime-dirs --chown=1001:1001 /runtime/storage ./storage
-COPY --from=runtime-dirs --chown=1001:1001 /runtime/public/uploads ./public/uploads
-
-USER 0:0
+COPY --from=server-prod-deps /app/apps/server/node_modules ./apps/server/node_modules
+COPY apps/server/package.json ./apps/server/package.json
+COPY apps/server/migrations ./apps/server/migrations
+COPY apps/server/seeds ./apps/server/seeds
+COPY --from=server-build /app/apps/server/dist ./apps/server/dist
+COPY --from=admin-build /app/apps/admin/dist ./apps/admin/dist
+COPY storage/uploads/.gitkeep ./storage/uploads/.gitkeep
+COPY storage/rendered/.gitkeep ./storage/rendered/.gitkeep
+COPY storage/runtime/.gitkeep ./storage/runtime/.gitkeep
+COPY storage/backups/.gitkeep ./storage/backups/.gitkeep
 EXPOSE 3000
-
-ENTRYPOINT ["/usr/bin/node"]
-CMD ["scripts/docker-entrypoint.mjs"]
+CMD ["node", "apps/server/dist/server.js"]

@@ -1,0 +1,29 @@
+{
+  "name": "@liax/admin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node --import tsx --test src/test/dictionaries.test.ts src/test/locale-storage.test.ts src/test/markdown-editor.test.ts src/test/theme-page.test.ts",
+    "test:integration": "node --import tsx --test src/test/App.basic.test.tsx",
+    "test:visual": "playwright test --config ../../tests/visual/playwright.config.cjs"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

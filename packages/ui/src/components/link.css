@@ -1,0 +1,27 @@
+.liax-link {
+  color: #141413;
+  text-decoration-line: underline;
+  text-decoration-color: #d97757;
+  text-decoration-thickness: 0.1em;
+  text-underline-offset: 0.2em;
+  transition:
+    color 160ms ease,
+    text-decoration-color 160ms ease,
+    text-underline-offset 160ms ease;
+}
+
+.liax-link:hover {
+  color: #9e4b31;
+  text-decoration-color: #d97757;
+  text-underline-offset: 0.32em;
+}
+
+.liax-link--accent {
+  color: #9e4b31;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liax-link {
+    transition: none;
+  }
+}

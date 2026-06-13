@@ -1,0 +1,40 @@
+{
+  "name": "@liax/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node --import tsx --test src/test/unit.test.ts",
+    "test:integration": "node --import tsx --test src/test/integration.test.ts",
+    "migrate:latest": "tsx src/database/migrate.ts latest",
+    "migrate:rollback": "tsx src/database/migrate.ts rollback",
+    "migrate:latest:prod": "node dist/database/migrate.js latest",
+    "migrate:rollback:prod": "node dist/database/migrate.js rollback",
+    "seed": "tsx src/database/migrate.ts seed",
+    "seed:prod": "node dist/database/migrate.js seed",
+    "create-setup-token": "tsx src/setup/createSetupToken.ts",
+    "create-setup-token:prod": "node dist/setup/createSetupToken.js",
+    "backup:prod": "node dist/jobs/runBackup.js",
+    "restore:prod": "node dist/jobs/runRestore.js",
+    "rebuild-html:prod": "node dist/jobs/runRebuildHtml.js",
+    "check-consistency:prod": "node dist/jobs/runCheckConsistency.js",
+    "cleanup-rendered-html:prod": "node dist/jobs/runCleanupRenderedHtml.js",
+    "cleanup-unused-attachments:prod": "node dist/jobs/runCleanupUnusedAttachments.js",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mysql2": "^3.11.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

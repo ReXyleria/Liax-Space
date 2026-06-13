@@ -1,159 +1,192 @@
-# Liax-Space
+# Liax Space
 
-## 项目介绍
+## 项目目标
 
-Liax-Space 是一个面向个人站点、独立博客和小型内容社区的发布系统。它把公开阅读、后台管理、账号登录、邮件通知、附件管理、访问统计、备份恢复、双语言内容和站点外观配置放在同一个可部署应用里，适合长期运行在自己的服务器上。
+Liax Space 是一个支持 `zh-CN` / `en-US` 的双语言内容系统，用 Markdown 和附件作为源数据，将公开文章发布为可重建的静态 HTML。
 
-系统采用 Next.js App Router、Prisma、MySQL 和 Docker 部署。文章、用户、设置、评论、访问记录等结构化数据存入 MySQL；上传文件、备份和运行时配置通过宿主机目录持久化，方便迁移、升级和恢复。
+## 核心功能
 
-## 同类项目对比优势
+- 中英文后台界面和中英文公开页面。
+- 管理员初始化、密码登录、TOTP、Passkey、角色权限。
+- Markdown 文章编辑、双语言标题、slug、SEO、summary 和 Markdown 内容。
+- 保存草稿、预览、发布为静态 HTML、回滚版本。
+- 附件上传和 `attachment://id` 引用。
+- 标签、分类、SEO、RSS、sitemap、搜索。
+- 审计日志、一致性检查、清理、备份恢复和 HTML 重建。
+- 语言切换圆形扩散动画，动画期间保留旧语言层和新语言 overlay。
 
-- **双语言内容更自然**：文章可以选择中文或 English 作为原文，另一种语言作为翻译展示；中文读者和英文母语作者都不需要围绕单一中文原文工作。
-- **发布体验更省心**：后台集中管理文章、附件、评论、访问统计、邮件、备份和搜索引擎推送，常用操作不需要在多个工具之间切换。
-- **读者感受更完整**：公开页面支持双语言展示、响应式布局、文章可见性、评论、瞬间、归档、标签和可配置首页背景，更像一个可以长期运营的站点，而不是临时演示。
-- **备份恢复更安心**：MySQL 数据、上传附件、备份文件和运行时配置都有明确的持久化目录；恢复备份后附件目录会被保留或重新创建，避免 `/uploads/...` 因目录丢失而无法显示。
-- **安全默认值更强**：登录支持二次验证、邮箱验证码、TOTP 和恢复码；生产镜像使用更小的 Chainguard Node runtime，不依赖 apt 或 gosu，启动时只用 Node 修复挂载目录后降权到 UID/GID `1001:1001` 运行。
-- **更适合自托管维护**：推荐 Docker Compose 部署，宿主机只需要准备数据目录和环境变量；app 与 worker 共用同一套 storage/uploads/backups 路径，迁移和排查边界清楚。
+## 技术栈
 
-## 安装教程
+- TypeScript
+- Node.js + Express
+- MySQL
+- React + Vite
+- Playwright
+- Markdown 渲染器
+- 本地文件存储
 
-### 1. 准备目录
+## 本地启动
 
-生产容器启动时会尝试修复 `storage` 和 `uploads` 的目录权限，然后降权为 UID/GID `1001:1001` 运行。如果宿主机安全策略禁止容器修改 ownership，再手动执行下面的 `chown`。
-
-```bash
-mkdir -p /opt/liax-space/data/storage/config
-mkdir -p /opt/liax-space/data/storage/backups
-mkdir -p /opt/liax-space/data/storage/cache
-mkdir -p /opt/liax-space/data/uploads
-mkdir -p /opt/liax-space/data/mysql
-# 如果启动日志提示目录不可写，再执行：
-# chown -R 1001:1001 /opt/liax-space/data/storage /opt/liax-space/data/uploads
-cd /opt/liax-space
-```
-
-### 2. 创建 `.env`
-
-`.env` 必须和 `compose.yaml` 分开保存，不能把 Compose 内容写进 `.env`。
-
-```dotenv
-APP_PATH=/opt/liax-space
-MYSQL_PASSWORD=change_this_database_password
-MYSQL_ROOT_PASSWORD=change_this_root_password
-TZ=Asia/Shanghai
-```
-
-### 可选：构建私有 Node 22 镜像
-
-Dockerfile 默认使用 Chainguard 公开可拉取的 `cgr.dev/chainguard/node:latest-dev` 和 `cgr.dev/chainguard/node:latest`，避免版本化 tag 不存在导致构建失败。GitHub Actions 发布 Docker Hub 和 GHCR 镜像时也使用这些公开默认镜像，普通发布不需要配置 `CHAINGUARD_*` repository variables 或 secrets。如果你的 Chainguard 组织仓库开通了 Node 22 版本化镜像，可以在构建时覆盖：
-
-```bash
-docker buildx build \
-  --build-arg CHAINGUARD_NODE_DEV_IMAGE=cgr.dev/YOUR_ORG/node:22-dev \
-  --build-arg CHAINGUARD_NODE_RUNTIME_IMAGE=cgr.dev/YOUR_ORG/node:22-slim \
-  -t liax-space:chainguard-node22 .
-```
-
-### 3. 创建 `compose.yaml`
-
-```yaml
-services:
-  mysql:
-    image: mysql:8.4
-    container_name: liax-space-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: liax_space
-      MYSQL_USER: liax_space
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-    volumes:
-      - ${APP_PATH:?APP_PATH is required}/data/mysql:/var/lib/mysql
-
-  app:
-    image: rexyleria/liax-space:latest
-    container_name: liax-space-app
-    restart: unless-stopped
-    depends_on:
-      - mysql
-    ports:
-      - "3000:3000"
-    environment:
-      APP_STORAGE_DIR: /app/storage
-      SETUP_CONFIG_DIR: /app/storage/config
-      UPLOAD_DIR: /app/public/uploads
-      BACKGROUND_WORKER_MODE: external
-      TZ: ${TZ:-Asia/Shanghai}
-      MYSQL_HOST: mysql
-      MYSQL_PORT: "3306"
-      MYSQL_DATABASE: liax_space
-      MYSQL_USER: liax_space
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    volumes:
-      - ${APP_PATH:?APP_PATH is required}/data/storage:/app/storage
-      - ${APP_PATH:?APP_PATH is required}/data/uploads:/app/public/uploads
-
-  worker:
-    image: rexyleria/liax-space:latest
-    container_name: liax-space-worker
-    restart: unless-stopped
-    depends_on:
-      - mysql
-      - app
-    command: ["scripts/docker-entrypoint.mjs", "worker"]
-    environment:
-      APP_STORAGE_DIR: /app/storage
-      SETUP_CONFIG_DIR: /app/storage/config
-      UPLOAD_DIR: /app/public/uploads
-      BACKGROUND_WORKER_MODE: external
-      BACKGROUND_WORKER_ROLE: worker
-      TZ: ${TZ:-Asia/Shanghai}
-      MYSQL_HOST: mysql
-      MYSQL_PORT: "3306"
-      MYSQL_DATABASE: liax_space
-      MYSQL_USER: liax_space
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    volumes:
-      - ${APP_PATH:?APP_PATH is required}/data/storage:/app/storage
-      - ${APP_PATH:?APP_PATH is required}/data/uploads:/app/public/uploads
-```
-
-重点检查：
-
-- `app.environment` 和 `worker.environment` 都必须包含 `MYSQL_PASSWORD: ${MYSQL_PASSWORD}`。
-- 上传目录使用 `${APP_PATH}/data/uploads:/app/public/uploads`。
-- 存储目录使用 `${APP_PATH}/data/storage:/app/storage`。
-- MySQL 数据目录使用 `${APP_PATH}/data/mysql:/var/lib/mysql`。
-- 如果日志提示目录不可写，先确认宿主机 `data/storage` 和 `data/uploads` 允许容器修复 ownership，或手动授权给 UID/GID `1001:1001`。
-
-### 4. 启动服务
-
-```bash
-docker compose up -d
-docker compose logs -f app
-```
-
-如果日志显示迁移成功，访问：
+先准备 `.env`，可以参考 `.env.example`。真实 `.env` 不提交 Git，默认只需要数据库账号和密码：
 
 ```text
-http://服务器地址:3000/setup
+DATABASE_USER=root
+DATABASE_PASSWORD=root
 ```
 
-按照页面填写安装令牌、站点域名、数据库连接和管理员账号。使用上面的 Compose 配置时，数据库主机填写 `mysql`，端口填写 `3306`，数据库名和用户名填写 `liax_space`，密码填写 `.env` 中的 `MYSQL_PASSWORD`。
+JWT secret 和 password pepper 会自动生成到 `storage/runtime`。根目录提供统一脚本，首次拉取后先安装前后端依赖：
 
-### 5. 迁移和重建提醒
-
-如果你是全新安装，建议使用空的 MySQL 数据目录启动。应用镜像会在启动时执行 Prisma 迁移并创建基础表。
-
-如果服务器已有旧的 `/opt/liax-space/data/mysql`，并且其中存在失败的 `_prisma_migrations` 记录，不能直接覆盖迁移历史。确认没有需要保留的生产数据后，再清空旧 MySQL 数据目录或换一个空数据库重新部署。
-
-### 6. 常用排查命令
-
-```bash
-docker compose ps
-docker compose logs -f mysql
-docker compose logs -f app
-docker compose logs -f worker
+```text
+npm run install:all
+npm run check:env
+npm run migrate:latest
+npm run dev:server
+npm run dev:admin
 ```
 
-数据库可用但提示缺表时，重点查看 app 日志中 `Prisma migrations applied` 或 `prisma migrate deploy` 相关输出。上传文件存在但浏览器访问失败时，确认 `${APP_PATH}/data/uploads` 已正确挂载到 `/app/public/uploads`，并且宿主机目录可被 UID/GID `1001:1001` 写入。
+首次运行需要生成 setup token，然后通过初始化管理员流程创建 admin。构建完成后可以用正式命令生成 token 文件：
+
+```text
+npm run create-setup-token
+```
+
+## 文档索引
+
+- [项目愿景](docs/00-project-vision.md)
+- [产品范围](docs/01-product-scope.md)
+- [用户流程](docs/02-user-journeys.md)
+- [设计系统](docs/03-design-system.md)
+- [国际化策略](docs/04-i18n-strategy.md)
+- [内容模型](docs/05-content-model.md)
+- [数据生命周期](docs/06-data-lifecycle.md)
+- [安全模型](docs/07-security-model.md)
+- [架构概览](docs/08-architecture-overview.md)
+- [文件地图](docs/09-file-map.md)
+- [API 契约](docs/10-api-contract.md)
+- [数据库设计](docs/11-database-design.md)
+- [测试策略](docs/12-test-strategy.md)
+- [Debug 策略](docs/13-debug-strategy.md)
+- [部署策略](docs/14-deployment-strategy.md)
+- [Docker Compose 新手部署页](docs/docker-compose-deployment-guide.md)
+- [最终验收清单](docs/final-acceptance-checklist.md)
+- [术语表](docs/99-glossary.md)
+- [ADR：Markdown 是源数据](decisions/ADR-0001-markdown-is-source.md)
+- [ADR：HTML 是派生产物](decisions/ADR-0002-html-is-derived-artifact.md)
+- [ADR：公开 URL 语言前缀](decisions/ADR-0003-locale-url-prefix.md)
+- [ADR：暖色极简设计系统](decisions/ADR-0004-warm-minimal-design-system.md)
+- [ADR：语言切换 overlay](decisions/ADR-0005-language-wipe-overlay.md)
+
+## 开发顺序
+
+1. 先维护文档、ADR 和验收清单。
+2. 再维护 shared 类型、设计 token 和基础 UI。
+3. 然后实现 server 基础设施、数据库、认证和权限。
+4. 继续实现内容模型、渲染、发布、公开访问和附件。
+5. 最后完善后台 UI、公开页面、测试、Debug、部署和备份恢复。
+
+每一步只完成当前目标，不提前实现后续功能。
+
+## 视觉规范摘要
+
+- 页面背景必须使用 `#faf9f5`。
+- 不使用纯白页面背景。
+- 不使用照片背景。
+- 不实现纸张图片背景。
+- 不实现鼠标纸张褶皱高亮。
+- 正文文字使用 `#141413`。
+- 主按钮使用暖黑底和米白字。
+- 品牌按钮使用陶土橙和米白字。
+- `#d97757` 只少量用于链接、强调、hover、focus 和 underline。
+
+## 双语言规则摘要
+
+- 支持 `zh-CN` 和 `en-US`。
+- 公开 URL 使用 `/zh` 和 `/en` 前缀。
+- 文章标题、slug、SEO、summary、Markdown 内容都是语言相关数据。
+- Markdown 是文章源数据。
+- 附件是源数据。
+- HTML 是可重建派生产物。
+- 公开文章不要自动 fallback 到另一种语言。
+
+## Debug 入口
+
+```text
+npm run check:env
+npm run check:consistency
+npm run check:design
+npm run rebuild-html -- --dry-run
+```
+
+语言切换动画可在后台使用 `?uiDebug=1` 检查，debug mode 才允许暴露 `window.__uiDebug.setLanguageWipeProgress(progress)`。
+
+## 测试命令
+
+```text
+npm run test
+npm run test:visual
+npm run check:acceptance
+npm run check:design
+npm run check:docker-context
+```
+
+## 部署入口
+
+新手优先按 [Docker Compose 新手部署页](docs/docker-compose-deployment-guide.md) 操作。它从 Docker 安装检查、`.env` 填写、容器启动、migration、初始化管理员、打开 `/console` 工作台到备份恢复逐步说明。
+
+部署前先运行：
+
+```text
+npm run check:env
+npm run migrate:latest
+npm run build
+```
+
+生产镜像会把后台构建产物打进 server 镜像，后台入口为 `/console`，API 仍为 `/admin/*`，公开站点仍使用 `/zh` 和 `/en`。
+
+Docker 本地检查：
+
+```text
+npm run check:docker-context
+npm run check:acceptance
+npm run check:install
+docker compose config
+docker compose up --build
+```
+
+本地 compose 的 `.env` 只放数据库账号密码。Dockerfile 使用明确版本的官方 Node slim 镜像，不需要额外基础镜像变量。
+
+`npm run check:docker-context` 会检查 Dockerfile、compose、两个发布 workflow、`.dockerignore`、部署文档、`.env.example` 和生产 dist 边界。运行镜像不应携带 `.env`、测试文件、文档、旧日志、截图或开发脚本。
+
+`npm run check:acceptance` 会检查当前仓库是否保留了关键用户流程、视觉动画、后台设置、公开首页、Docker 发布和新手部署路径的直接验收证据。
+
+`npm run check:install` 生成安装链路报告。默认只做静态结构检查；部署机上可以运行 `npm run check:install -- --strict-docker`，要求 `docker compose config` 必须通过。
+
+Compose 容器启动后使用镜像内已编译入口运行运维命令：
+
+```text
+docker compose exec app node apps/server/dist/database/migrate.js latest
+docker compose exec app node apps/server/dist/setup/createSetupToken.js
+docker compose exec app node apps/server/dist/jobs/runBackup.js
+docker compose exec app node apps/server/dist/jobs/runRebuildHtml.js
+docker compose exec app node apps/server/dist/jobs/runCheckConsistency.js
+docker compose exec app node apps/server/dist/jobs/runCleanupRenderedHtml.js
+docker compose exec app node apps/server/dist/jobs/runCleanupUnusedAttachments.js
+```
+
+`/console` 是每个登录用户的 Liax Space 工作台。管理员拥有更多权限，所以会看到更多菜单；普通用户仍有自己的工作台和个人设置入口。
+
+镜像发布：
+
+- `.github/workflows/docker-publish.yml` 发布到 `ghcr.io/rexyleria/liax-space`。
+- `.github/workflows/dockerhub.yml` 发布到 `rexyleria/liax-space`。
+- GHCR 使用 `GITHUB_TOKEN`；Docker Hub 需要 `DOCKERHUB_USERNAME` 和 `DOCKERHUB_TOKEN`。
+
+备份和恢复入口：
+
+```text
+npm run backup
+npm run restore -- --backup-dir=storage/backups/{timestamp} --confirm-restore
+npm run rebuild-html
+```
+
+`storage/uploads` 是源数据，需要备份。`storage/rendered` 是可重建 HTML 产物，恢复后需要运行 `rebuild-html`。
