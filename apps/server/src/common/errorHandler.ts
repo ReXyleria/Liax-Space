@@ -4,9 +4,36 @@ import { AppError } from "./AppError.js";
 import { errorCodes } from "./errorCodes.js";
 import { logger } from "./logger.js";
 
+type HttpParserError = Error & {
+  expose?: boolean;
+  status?: number;
+  statusCode?: number;
+  type?: string;
+};
+
+function isHttpParserError(error: unknown): error is HttpParserError {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const candidate = error as HttpParserError;
+  return typeof candidate.status === "number" || typeof candidate.statusCode === "number";
+}
+
 function toAppError(error: unknown): AppError {
   if (error instanceof AppError) {
     return error;
+  }
+
+  if (isHttpParserError(error)) {
+    const statusCode = error.statusCode ?? error.status ?? 400;
+    const isPayloadTooLarge = statusCode === 413 || error.type === "entity.too.large";
+
+    return new AppError(isPayloadTooLarge ? "Request body is too large." : error.message, {
+      code: isPayloadTooLarge ? errorCodes.validationFailed : errorCodes.badRequest,
+      statusCode,
+      expose: error.expose ?? statusCode < 500
+    });
   }
 
   if (error instanceof Error) {
@@ -49,4 +76,3 @@ export const errorHandler: ErrorRequestHandler = (error, request, response, _nex
     }
   });
 };
-

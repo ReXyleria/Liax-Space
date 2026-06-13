@@ -7,7 +7,8 @@ import {
   extractHeadingsFromMarkdown,
   extractImageSourceFromMarkdown,
   filterSlashMenuOptions,
-  markdownToHtml
+  markdownToHtml,
+  shouldUsePlainMarkdownEditor
 } from "../components/MarkdownEditor";
 
 describe("MarkdownEditor helpers", () => {
@@ -95,5 +96,16 @@ describe("MarkdownEditor helpers", () => {
     assert.match(html, /<span class="admin-code-keyword">const<\/span> value240 = 240;/);
     assert.match(html, /<td colspan="2">Same<\/td>/);
     assert.ok(elapsedMs < 1500, `Long document render took ${elapsedMs.toFixed(1)}ms.`);
+  });
+
+  it("keeps 12 MiB documents out of the visual DOM renderer", () => {
+    const markdown = `# Large Markdown\n\n${"Large paragraph.\n\n".repeat(Math.ceil((12 * 1024 * 1024) / 18))}`;
+    const startedAt = performance.now();
+    const headings = extractHeadingsFromMarkdown(markdown);
+    const elapsedMs = performance.now() - startedAt;
+
+    assert.equal(shouldUsePlainMarkdownEditor(markdown), true);
+    assert.equal(headings.length, 1);
+    assert.ok(elapsedMs < 2000, `Large heading scan took ${elapsedMs.toFixed(1)}ms.`);
   });
 });

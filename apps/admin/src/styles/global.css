@@ -579,6 +579,26 @@ canvas {
   padding: 8px;
 }
 
+.admin-visual-editor__mode-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid #d1cfc5;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.admin-visual-editor__toolbar .admin-visual-editor__mode-button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.admin-visual-editor__toolbar .admin-visual-editor__mode-button--active {
+  background: #141413;
+  color: #ffffff;
+}
+
 .admin-visual-editor__toolbar button {
   min-height: 34px;
   border: 1px solid #d1cfc5;
@@ -753,7 +773,28 @@ canvas {
   overflow: auto;
 }
 
+.admin-visual-editor__source {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 62vh;
+  border: 1px solid #d1cfc5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #141413;
+  font: 14px/1.7 Consolas, "SFMono-Regular", "Liberation Mono", monospace;
+  padding: 18px;
+  resize: vertical;
+  tab-size: 2;
+  white-space: pre;
+}
+
 .admin-visual-editor__surface:focus-visible {
+  border-color: #d97757;
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.18);
+  outline: 0;
+}
+
+.admin-visual-editor__source:focus-visible {
   border-color: #d97757;
   box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.18);
   outline: 0;
@@ -2123,13 +2164,15 @@ canvas {
   }
 
   .admin-visual-editor__surface,
+  .admin-visual-editor__source,
   .admin-readonly-content {
     min-height: min(58vh, 520px);
     max-height: none;
     padding: 14px;
   }
 
-  .admin-visual-editor__surface {
+  .admin-visual-editor__surface,
+  .admin-visual-editor__source {
     overflow-x: auto;
   }
 

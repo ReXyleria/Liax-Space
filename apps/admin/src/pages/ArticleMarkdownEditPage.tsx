@@ -38,6 +38,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const lastSavedContentRef = useRef("");
+  const mdContentRef = useRef("");
   const autoSaveTimerRef = useRef<number | null>(null);
   const suppressNextAutoSaveRef = useRef(false);
   const sourceLocale = oppositeLocale(locale);
@@ -64,6 +65,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
           setTranslation(activeTranslation);
           setBaseVersionId(latestVersion?.id ?? null);
           setMdContent(latestVersion?.mdContent ?? "");
+          mdContentRef.current = latestVersion?.mdContent ?? "";
           lastSavedContentRef.current = latestVersion?.mdContent ?? "";
         }
       } catch (error) {
@@ -123,11 +125,12 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
     try {
       const response = await versionApi.saveVersion(articleId, locale, {
         baseVersionId,
-        mdContent
+        mdContent: mdContentRef.current
       });
 
       setBaseVersionId(response.version.id);
       setMdContent(response.version.mdContent);
+      mdContentRef.current = response.version.mdContent;
       lastSavedContentRef.current = response.version.mdContent;
       setMessage(options.auto
         ? t("article.autoSaved")
@@ -153,6 +156,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
 
   function handleEditorChange(value: string): void {
     suppressNextAutoSaveRef.current = false;
+    mdContentRef.current = value;
     setMdContent(value);
   }
 
@@ -195,6 +199,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       });
 
       suppressNextAutoSaveRef.current = true;
+      mdContentRef.current = response.translation.fields.content ?? "";
       setMdContent(response.translation.fields.content ?? "");
       setMessage(t("article.translateReady"));
     } catch (error) {
@@ -258,6 +263,10 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                 <MarkdownEditor
                   disabled={isSaving || isTranslating}
                   onChange={handleEditorChange}
+                  onDraftChange={(value) => {
+                    suppressNextAutoSaveRef.current = false;
+                    mdContentRef.current = value;
+                  }}
                   onUploadImage={handlePasteImage}
                   value={mdContent}
                 />

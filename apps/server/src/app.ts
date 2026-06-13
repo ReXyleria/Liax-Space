@@ -33,6 +33,8 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..",
 const adminDistDir = resolve(projectRoot, "apps", "admin", "dist");
 const adminIndexHtml = resolve(adminDistDir, "index.html");
 const adminAssetsDir = resolve(adminDistDir, "assets");
+const defaultJsonBodyLimit = "64kb";
+const articleVersionJsonBodyLimit = "24mb";
 
 function mountAdminStatic(app: express.Express): void {
   if (!existsSync(adminIndexHtml)) {
@@ -103,7 +105,8 @@ export function createApp() {
     fallthrough: false,
     index: false
   }));
-  app.use(express.json({ limit: "64kb" }));
+  app.use("/admin/articles/:articleId/:locale/versions", express.json({ limit: articleVersionJsonBodyLimit }));
+  app.use(express.json({ limit: defaultJsonBodyLimit }));
   app.use("/setup", setupRoutes);
   app.use("/auth", authRoutes);
   app.use(searchRoutes);

@@ -13,6 +13,7 @@ import { useT } from "../i18n/useT";
 
 export type MarkdownEditorProps = {
   disabled?: boolean;
+  onDraftChange?: (value: string) => void;
   onUploadImage?: (file: File) => Promise<{ markdown: string; previewUrl: string }>;
   value: string;
   onChange: (value: string) => void;
@@ -41,12 +42,20 @@ type SlashMenuState = {
   top: number;
 };
 
+type EditorMode = "source" | "visual";
+
 export type SlashMenuOption = {
   description: string;
   id: SlashMenuItemId;
   keywords: string[];
   label: string;
 };
+
+export const largeMarkdownDocumentThreshold = 512 * 1024;
+
+export function shouldUsePlainMarkdownEditor(markdown: string): boolean {
+  return markdown.length >= largeMarkdownDocumentThreshold;
+}
 
 export function filterSlashMenuOptions<T extends SlashMenuOption>(options: T[], query: string): T[] {
   const normalizedQuery = query.trim().toLowerCase();
@@ -536,20 +545,25 @@ function htmlToMarkdown(root: HTMLElement): string {
     .join("\n\n");
 }
 
-export function MarkdownEditor({ disabled = false, onChange, onUploadImage, value }: MarkdownEditorProps): ReactElement {
+export function MarkdownEditor({ disabled = false, onChange, onDraftChange, onUploadImage, value }: MarkdownEditorProps): ReactElement {
   const t = useT();
   const editorShellRef = useRef<HTMLElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const sourceTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const slashImageInputRef = useRef<HTMLInputElement | null>(null);
   const slashInsertRangeRef = useRef<Range | null>(null);
   const lastMarkdownRef = useRef<string | null>(null);
   const selectedMathRef = useRef<HTMLElement | null>(null);
   const selectedTableCellRef = useRef<HTMLTableCellElement | null>(null);
   const syncFrameRef = useRef<number | null>(null);
+  const sourceSyncTimerRef = useRef<number | null>(null);
+  const [editorMode, setEditorMode] = useState<EditorMode>("visual");
   const [isPastingImage, setIsPastingImage] = useState(false);
   const [selectedMathExpression, setSelectedMathExpression] = useState<string | null>(null);
   const [selectedTableContext, setSelectedTableContext] = useState<SelectedTableContext | null>(null);
   const [slashMenu, setSlashMenu] = useState<SlashMenuState | null>(null);
+  const isLargeDocument = shouldUsePlainMarkdownEditor(value);
+  const isSourceMode = editorMode === "source" || isLargeDocument;
   const selectedTableToolbarStyle: CSSProperties | undefined = selectedTableContext
     ? {
         left: selectedTableContext.toolbarLeft,
@@ -610,20 +624,65 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
   const visibleSlashMenuOptions = slashMenu ? filterSlashMenuOptions(slashMenuOptions, slashMenu.query) : [];
 
   useEffect(() => {
+    if (isLargeDocument) {
+      setEditorMode("source");
+    }
+  }, [isLargeDocument]);
+
+  useEffect(() => {
+    if (!isSourceMode) {
+      return;
+    }
+
+    selectedTableCellRef.current?.classList.remove("admin-visual-editor__table-cell--selected");
+    selectedTableCellRef.current = null;
+    selectedMathRef.current?.classList.remove("admin-editor-math--selected");
+    selectedMathRef.current = null;
+    setSelectedMathExpression(null);
+    setSelectedTableContext(null);
+    setSlashMenu(null);
+  }, [isSourceMode]);
+
+  useEffect(() => {
     const editor = editorRef.current;
 
-    if (!editor || value === lastMarkdownRef.current) {
+    if (!editor) {
+      return;
+    }
+
+    if (isSourceMode) {
+      editor.innerHTML = "";
+      lastMarkdownRef.current = value;
+      return;
+    }
+
+    if (value === lastMarkdownRef.current) {
       return;
     }
 
     editor.innerHTML = markdownToHtml(value);
     lastMarkdownRef.current = value;
-  }, [value]);
+  }, [isSourceMode, value]);
+
+  useEffect(() => {
+    const textarea = sourceTextareaRef.current;
+
+    if (!isSourceMode || !textarea || value === lastMarkdownRef.current || document.activeElement === textarea) {
+      return;
+    }
+
+    textarea.value = value;
+    lastMarkdownRef.current = value;
+  }, [isSourceMode, value]);
 
   useEffect(() => {
     return () => {
       if (syncFrameRef.current !== null) {
         window.cancelAnimationFrame(syncFrameRef.current);
+      }
+
+      if (sourceSyncTimerRef.current !== null) {
+        window.clearTimeout(sourceSyncTimerRef.current);
       }
     };
   }, []);
@@ -667,6 +726,18 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
       syncFrameRef.current = null;
     }
 
+    if (sourceSyncTimerRef.current !== null) {
+      window.clearTimeout(sourceSyncTimerRef.current);
+      sourceSyncTimerRef.current = null;
+    }
+
+    if (isSourceMode) {
+      const nextMarkdown = sourceTextareaRef.current?.value ?? value;
+      lastMarkdownRef.current = nextMarkdown;
+      onChange(nextMarkdown);
+      return;
+    }
+
     const editor = editorRef.current;
 
     if (!editor) {
@@ -676,6 +747,105 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
     const nextMarkdown = htmlToMarkdown(editor);
     lastMarkdownRef.current = nextMarkdown;
     onChange(nextMarkdown);
+  }
+
+  function syncSourceMarkdown(nextMarkdown: string, options: { defer?: boolean } = {}): void {
+    lastMarkdownRef.current = nextMarkdown;
+    onDraftChange?.(nextMarkdown);
+
+    if (sourceSyncTimerRef.current !== null) {
+      window.clearTimeout(sourceSyncTimerRef.current);
+      sourceSyncTimerRef.current = null;
+    }
+
+    if (options.defer) {
+      sourceSyncTimerRef.current = window.setTimeout(() => {
+        sourceSyncTimerRef.current = null;
+        onChange(nextMarkdown);
+      }, 700);
+      return;
+    }
+
+    onChange(nextMarkdown);
+  }
+
+  function handleSourceInput(nextMarkdown: string): void {
+    syncSourceMarkdown(nextMarkdown, { defer: true });
+  }
+
+  function focusSourceEditor(): void {
+    sourceTextareaRef.current?.focus();
+  }
+
+  function updateSourceSelection(selectionStart: number, selectionEnd = selectionStart): void {
+    window.requestAnimationFrame(() => {
+      const textarea = sourceTextareaRef.current;
+
+      if (!textarea) {
+        return;
+      }
+
+      textarea.focus();
+      textarea.setSelectionRange(selectionStart, selectionEnd);
+    });
+  }
+
+  function applySourceSelectionTransform(transform: (selection: string) => { cursorEnd?: number; cursorStart?: number; text: string }): void {
+    const textarea = sourceTextareaRef.current;
+
+    if (!textarea || disabled) {
+      return;
+    }
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentMarkdown = textarea.value;
+    const selection = currentMarkdown.slice(start, end);
+    const replacement = transform(selection);
+    const nextMarkdown = `${currentMarkdown.slice(0, start)}${replacement.text}${currentMarkdown.slice(end)}`;
+    const cursorStart = start + (replacement.cursorStart ?? replacement.text.length);
+    const cursorEnd = start + (replacement.cursorEnd ?? replacement.cursorStart ?? replacement.text.length);
+
+    textarea.value = nextMarkdown;
+    syncSourceMarkdown(nextMarkdown, { defer: true });
+    updateSourceSelection(cursorStart, cursorEnd);
+  }
+
+  function insertSourceBlock(markdown: string, cursorOffset = markdown.length): void {
+    applySourceSelectionTransform(() => ({
+      cursorStart: cursorOffset,
+      text: markdown
+    }));
+  }
+
+  function wrapSourceSelection(prefix: string, suffix: string, placeholder: string): void {
+    applySourceSelectionTransform((selection) => {
+      const content = selection || placeholder;
+      return {
+        cursorStart: prefix.length,
+        cursorEnd: prefix.length + content.length,
+        text: `${prefix}${content}${suffix}`
+      };
+    });
+  }
+
+  function prefixSourceLines(prefix: string, placeholder: string): void {
+    applySourceSelectionTransform((selection) => {
+      const content = selection || placeholder;
+      const prefixed = content
+        .split("\n")
+        .map((line) => `${prefix}${line}`)
+        .join("\n");
+
+      return {
+        cursorStart: prefixed.length,
+        text: prefixed
+      };
+    });
+  }
+
+  function insertSourceMarkdown(markdown: string): void {
+    insertSourceBlock(markdown);
   }
 
   function clearTableContext(): void {
@@ -1047,29 +1217,83 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
     syncMarkdownFromEditor();
   }
 
+  function insertSourceHeading(level: 2 | 3): void {
+    applySourceSelectionTransform((selection) => {
+      const prefix = `\n\n${"#".repeat(level)} `;
+      const content = selection || "Heading";
+      const suffix = "\n\n";
+
+      return {
+        cursorStart: prefix.length,
+        cursorEnd: prefix.length + content.length,
+        text: `${prefix}${content}${suffix}`
+      };
+    });
+  }
+
   function insertTable(): void {
+    if (isSourceMode) {
+      insertSourceMarkdown("\n\n| Title | Title | Value |\n| --- | --- | --- |\n| Same | Same | Other |\n| A | B | B |\n\n");
+      return;
+    }
+
     insertHtml(
       "<table><thead><tr><th>Title</th><th>Title</th><th>Value</th></tr></thead><tbody><tr><td>Same</td><td>Same</td><td>Other</td></tr><tr><td>A</td><td>B</td><td>B</td></tr></tbody></table><p><br></p>"
     );
   }
 
   function insertCodeBlock(): void {
+    if (isSourceMode) {
+      applySourceSelectionTransform((selection) => {
+        const prefix = "\n\n```ts\n";
+        const content = selection || "code";
+        const suffix = "\n```\n\n";
+
+        return {
+          cursorStart: prefix.length,
+          cursorEnd: prefix.length + content.length,
+          text: `${prefix}${content}${suffix}`
+        };
+      });
+      return;
+    }
+
     insertHtml("<pre><code>code</code></pre><p><br></p>");
   }
 
   function insertMath(): void {
+    if (isSourceMode) {
+      wrapSourceSelection("$", "$", "E=mc^2");
+      return;
+    }
+
     insertHtml('<span class="admin-editor-math" data-md-math="E=mc^2">E=mc^2</span> ');
   }
 
   function insertHeadingBlock(): void {
+    if (isSourceMode) {
+      insertSourceHeading(2);
+      return;
+    }
+
     insertHtml("<h2>Heading</h2><p><br></p>");
   }
 
   function insertQuoteBlock(): void {
+    if (isSourceMode) {
+      prefixSourceLines("> ", "Quote");
+      return;
+    }
+
     insertHtml("<blockquote>Quote</blockquote><p><br></p>");
   }
 
   function insertTocBlock(): void {
+    if (isSourceMode) {
+      insertSourceMarkdown("\n\n[[toc]]\n\n");
+      return;
+    }
+
     insertHtml('<div class="admin-editor-toc" data-md-block="toc">Table of contents</div><p><br></p>');
   }
 
@@ -1100,6 +1324,18 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
     } else if (option.id === "toc") {
       insertTocBlock();
     }
+  }
+
+  function chooseImageFile(): void {
+    if (disabled || !onUploadImage) {
+      return;
+    }
+
+    if (!isSourceMode) {
+      saveCurrentInsertRange();
+    }
+
+    slashImageInputRef.current?.click();
   }
 
   function handleEditorInput(): void {
@@ -1163,6 +1399,11 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
       const image = await onUploadImage(file);
       const markdownSource = extractImageSourceFromMarkdown(image.markdown) ?? image.previewUrl;
 
+      if (isSourceMode) {
+        insertSourceMarkdown(`![${file.name}](${markdownSource})\n\n`);
+        return;
+      }
+
       insertHtml(
         `<img alt="${escapeHtml(file.name)}" data-md-source="${escapeHtml(markdownSource)}" src="${escapeHtml(image.previewUrl)}"><p><br></p>`
       );
@@ -1204,25 +1445,46 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
   return (
     <section className="admin-visual-editor" aria-label={t("article.markdownContent")} ref={editorShellRef}>
       <div className="admin-visual-editor__toolbar" aria-label={t("article.editorToolbar")}>
-        <button disabled={disabled} onClick={() => runCommand("formatBlock", "p")} type="button">
+        <div className="admin-visual-editor__mode-toggle" aria-label={t("article.editorViewMode")}>
+          <button
+            aria-pressed={!isSourceMode}
+            className={!isSourceMode ? "admin-visual-editor__mode-button admin-visual-editor__mode-button--active" : "admin-visual-editor__mode-button"}
+            disabled={disabled || isLargeDocument}
+            onClick={() => setEditorMode("visual")}
+            type="button"
+          >
+            {t("article.editorVisual")}
+          </button>
+          <button
+            aria-pressed={isSourceMode}
+            className={isSourceMode ? "admin-visual-editor__mode-button admin-visual-editor__mode-button--active" : "admin-visual-editor__mode-button"}
+            disabled={disabled}
+            onClick={() => setEditorMode("source")}
+            type="button"
+          >
+            {t("article.editorSource")}
+          </button>
+        </div>
+        {isLargeDocument ? <span className="admin-visual-editor__status">{t("article.editorLargeDocumentMode")}</span> : null}
+        <button disabled={disabled} onClick={() => isSourceMode ? focusSourceEditor() : runCommand("formatBlock", "p")} type="button">
           {t("article.editorParagraph")}
         </button>
-        <button disabled={disabled} onClick={() => runCommand("formatBlock", "h2")} type="button">
+        <button disabled={disabled} onClick={() => isSourceMode ? insertSourceHeading(2) : runCommand("formatBlock", "h2")} type="button">
           H2
         </button>
-        <button disabled={disabled} onClick={() => runCommand("formatBlock", "h3")} type="button">
+        <button disabled={disabled} onClick={() => isSourceMode ? insertSourceHeading(3) : runCommand("formatBlock", "h3")} type="button">
           H3
         </button>
-        <button disabled={disabled} onClick={() => runCommand("bold")} type="button">
+        <button disabled={disabled} onClick={() => isSourceMode ? wrapSourceSelection("**", "**", "bold text") : runCommand("bold")} type="button">
           B
         </button>
-        <button disabled={disabled} onClick={() => runCommand("italic")} type="button">
+        <button disabled={disabled} onClick={() => isSourceMode ? wrapSourceSelection("*", "*", "emphasis") : runCommand("italic")} type="button">
           I
         </button>
-        <button disabled={disabled} onClick={() => runCommand("insertUnorderedList")} type="button">
+        <button disabled={disabled} onClick={() => isSourceMode ? prefixSourceLines("- ", "List item") : runCommand("insertUnorderedList")} type="button">
           {t("article.editorList")}
         </button>
-        <button disabled={disabled} onClick={() => runCommand("formatBlock", "blockquote")} type="button">
+        <button disabled={disabled} onClick={() => isSourceMode ? insertQuoteBlock() : runCommand("formatBlock", "blockquote")} type="button">
           {t("article.editorQuote")}
         </button>
         <button disabled={disabled} onClick={insertCodeBlock} type="button">
@@ -1234,9 +1496,15 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
         <button disabled={disabled} onClick={insertMath} type="button">
           {t("article.editorMath")}
         </button>
+        <button disabled={disabled || !onUploadImage} onClick={chooseImageFile} type="button">
+          {t("article.slashImage")}
+        </button>
+        <button disabled={disabled} onClick={insertTocBlock} type="button">
+          {t("article.slashToc")}
+        </button>
         {isPastingImage ? <span className="admin-visual-editor__status">{t("attachment.uploading")}</span> : null}
       </div>
-      {selectedTableContext ? (
+      {!isSourceMode && selectedTableContext ? (
         <div
           className="admin-visual-editor__context-toolbar admin-visual-editor__context-toolbar--table"
           aria-label={t("article.editorTableTools")}
@@ -1257,7 +1525,7 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
           </button>
         </div>
       ) : null}
-      {selectedMathExpression !== null ? (
+      {!isSourceMode && selectedMathExpression !== null ? (
         <div className="admin-visual-editor__context-toolbar" aria-label={t("article.editorFormulaTools")}>
           <label className="admin-visual-editor__formula-field">
             <span>{t("article.editorFormulaTools")}</span>
@@ -1272,7 +1540,7 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
           </button>
         </div>
       ) : null}
-      {slashMenu ? (
+      {!isSourceMode && slashMenu ? (
         <div
           className="admin-visual-editor__slash-menu"
           aria-label={t("article.slashMenu")}
@@ -1310,21 +1578,33 @@ export function MarkdownEditor({ disabled = false, onChange, onUploadImage, valu
         tabIndex={-1}
         type="file"
       />
-      <div
-        className="admin-visual-editor__surface"
-        contentEditable={!disabled}
-        onBlur={syncMarkdownFromEditor}
-        onClick={(event) => handleEditorClick(event.target)}
-        onInput={handleEditorInput}
-        onKeyDown={handleEditorKeyDown}
-        onKeyUp={updateContextFromSelection}
-        onPaste={handlePaste}
-        ref={editorRef}
-        role="textbox"
-        spellCheck
-        suppressContentEditableWarning
-        tabIndex={disabled ? -1 : 0}
-      />
+      {isSourceMode ? (
+        <textarea
+          className="admin-visual-editor__source"
+          defaultValue={value}
+          disabled={disabled}
+          onBlur={syncMarkdownFromEditor}
+          onInput={(event) => handleSourceInput(event.currentTarget.value)}
+          ref={sourceTextareaRef}
+          spellCheck
+        />
+      ) : (
+        <div
+          className="admin-visual-editor__surface"
+          contentEditable={!disabled}
+          onBlur={syncMarkdownFromEditor}
+          onClick={(event) => handleEditorClick(event.target)}
+          onInput={handleEditorInput}
+          onKeyDown={handleEditorKeyDown}
+          onKeyUp={updateContextFromSelection}
+          onPaste={handlePaste}
+          ref={editorRef}
+          role="textbox"
+          spellCheck
+          suppressContentEditableWarning
+          tabIndex={disabled ? -1 : 0}
+        />
+      )}
     </section>
   );
 }

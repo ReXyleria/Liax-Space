@@ -58,4 +58,54 @@ describe("app routing", () => {
       await server.close();
     }
   });
+
+  it("accepts 12 MiB markdown version payloads before authentication", async () => {
+    const server = await listen();
+
+    try {
+      const markdown = `# Large import\n\n${"A".repeat(12 * 1024 * 1024)}`;
+      const response = await fetch(`${server.origin}/admin/articles/1/zh-CN/versions`, {
+        body: JSON.stringify({
+          baseVersionId: null,
+          mdContent: markdown
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const body = await response.json();
+
+      assert.equal(response.status, 401);
+      assert.match(response.headers.get("content-type") ?? "", /application\/json/);
+      assert.equal(body.error.code, "UNAUTHORIZED");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("keeps the default JSON body limit for non-version APIs", async () => {
+    const server = await listen();
+
+    try {
+      const response = await fetch(`${server.origin}/auth/login`, {
+        body: JSON.stringify({
+          email: "admin@example.test",
+          password: "A".repeat(128 * 1024)
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const body = await response.json();
+
+      assert.equal(response.status, 413);
+      assert.match(response.headers.get("content-type") ?? "", /application\/json/);
+      assert.equal(body.error.code, "VALIDATION_FAILED");
+      assert.equal(body.error.message, "Request body is too large.");
+    } finally {
+      await server.close();
+    }
+  });
 });
