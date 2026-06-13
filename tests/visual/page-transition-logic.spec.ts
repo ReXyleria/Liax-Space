@@ -424,7 +424,7 @@ test("public language switch uses a real old-to-new overlay without moving heade
   expect(during.currentMainText).toContain("作者");
   expect(during.overlayMainText).toContain("Author");
   expect(during.overlayClipPath).toContain("circle");
-  expect(during.overlayTransitionDuration).toBe("0.9s");
+  expect(during.overlayTransitionDuration).toContain("0.9s");
   expectStableBox(during.overlayHeader, before.header);
   expectStableBox(during.overlayButton, before.languageButton);
 

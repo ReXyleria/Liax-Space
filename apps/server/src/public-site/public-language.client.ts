@@ -19,7 +19,7 @@ const searchInputSelector = "[data-public-search-overlay-trigger]";
 const adminLocaleStorageKey = "liax.admin.locale";
 const localeCookieKey = "liax.locale";
 const publicLocaleStorageKey = "liax.public.locale";
-const overlayDurationMs = 760;
+const overlayDurationMs = 900;
 
 let isSwitchingLanguage = false;
 let activeSearchOverlay: HTMLElement | null = null;
@@ -330,7 +330,8 @@ function runOverlayAnimation(overlay: HTMLElement, origin: { x: number; y: numbe
     overlay.addEventListener("transitionend", finish, { once: true });
     window.setTimeout(finish, overlayDurationMs + 80);
 
-    requestAnimationFrame(() => {
+    overlay.getBoundingClientRect();
+    window.setTimeout(() => {
       overlay.style.clipPath = `circle(${radius}px at ${origin.x}px ${origin.y}px)`;
       const shell = overlay.querySelector<HTMLElement>(".liax-public-shell");
 
@@ -338,7 +339,7 @@ function runOverlayAnimation(overlay: HTMLElement, origin: { x: number; y: numbe
         shell.style.opacity = "1";
         shell.style.transform = "translateY(0)";
       }
-    });
+    }, 24);
   });
 }
 

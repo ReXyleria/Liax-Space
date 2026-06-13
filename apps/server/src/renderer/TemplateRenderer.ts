@@ -74,7 +74,7 @@ export function renderLanguageSwitchScript(): string {
   const sidebarToggleSelector = "[data-public-sidebar-toggle]";
   const sidebarCloseSelector = "[data-public-sidebar-close]";
   const searchInputSelector = "[data-public-search-overlay-trigger]";
-  const durationMs = 760;
+  const durationMs = 900;
   const adminLocaleStorageKey = "liax.admin.locale";
   const localeCookieKey = "liax.locale";
   const publicLocaleStorageKey = "liax.public.locale";
@@ -294,14 +294,15 @@ export function renderLanguageSwitchScript(): string {
       }
       overlay.addEventListener("transitionend", finish, { once: true });
       window.setTimeout(finish, durationMs + 80);
-      requestAnimationFrame(() => {
+      overlay.getBoundingClientRect();
+      window.setTimeout(() => {
         overlay.style.clipPath = \`circle(\${radius}px at \${origin.x}px \${origin.y}px)\`;
         const shell = overlay.querySelector(".liax-public-shell");
         if (shell) {
           shell.style.opacity = "1";
           shell.style.transform = "translateY(0)";
         }
-      });
+      }, 24);
     });
   }
 
