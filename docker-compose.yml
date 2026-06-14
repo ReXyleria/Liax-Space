@@ -13,7 +13,7 @@ services:
       retries: 10
 
   app:
-    image: rexyleria/liax-space:test
+    image: ${APP_IMAGE:-rexyleria/liax-space:test}
     pull_policy: always
     depends_on:
       mysql:

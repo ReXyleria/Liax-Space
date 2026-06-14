@@ -231,9 +231,9 @@ function checkCompose(): CheckResult[] {
       "Compose must define mysql and app services."
     ],
     [
-      content.includes("image: rexyleria/liax-space:test"),
-      "Compose app service uses the Docker Hub test image tag.",
-      "Compose app service must use image: rexyleria/liax-space:test for Tencent testing."
+      content.includes("image: ${APP_IMAGE:-rexyleria/liax-space:test}"),
+      "Compose app service can pin an immutable app image while defaulting to the Docker Hub test tag.",
+      "Compose app service must use image: ${APP_IMAGE:-rexyleria/liax-space:test} for Tencent testing."
     ],
     [
       content.includes("pull_policy: always"),

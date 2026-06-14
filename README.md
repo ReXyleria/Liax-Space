@@ -154,7 +154,7 @@ docker compose pull
 docker compose up -d
 ```
 
-当前 `docker-compose.yml` 的 app 服务固定使用 Docker Hub 测试镜像 `rexyleria/liax-space:test`，不是 `:main`，也不是在服务器上重新 build。`pull_policy: always` 会在启动前拉取最新测试镜像。本地 compose 的 `.env` 只放数据库账号密码；`.env.example` 只是本地占位示例，不进入 Git 或 Docker context。
+当前 `docker-compose.yml` 的 app 服务默认使用 Docker Hub 测试镜像 `rexyleria/liax-space:test`，也可以通过 `APP_IMAGE=rexyleria/liax-space:test-<short-sha>` 固定到不可变测试镜像；不是 `:main`，也不是在服务器上重新 build。`pull_policy: always` 会在启动前拉取配置的镜像。本地 compose 的 `.env` 只放数据库账号密码和可选 `APP_IMAGE`；`.env.example` 只是本地占位示例，不进入 Git 或 Docker context。
 
 `npm run check:docker-context` 会检查 Dockerfile、compose、两个发布 workflow、`.dockerignore`、部署文档和生产 dist 边界。运行镜像不应携带 `.env`、`.env.example`、测试文件、文档、旧日志、截图或开发脚本。
 
