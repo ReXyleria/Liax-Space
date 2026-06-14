@@ -2154,7 +2154,16 @@ export class PublicArticleController {
     }
 
     const auth = this.readOptionalAuth(request);
-    return auth !== null && translation.allowedRoles.includes(auth.role);
+
+    if (auth?.role === "admin") {
+      return true;
+    }
+
+    if (auth !== null && translation.allowedRoles.includes(auth.role)) {
+      return true;
+    }
+
+    return auth === null && translation.allowedRoles.includes("guest");
   }
 
   private readOptionalAuth(request: Request): AuthTokenPayload | null {

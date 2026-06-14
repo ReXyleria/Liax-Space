@@ -41,6 +41,7 @@ publisherRoutes.post(
         allowedRoles: body.allowedRoles,
         articleId: request.params.articleId,
         locale: request.params.locale,
+        publishedAt: body.publishedAt,
         versionId: body.versionId
       });
 
@@ -52,6 +53,7 @@ publisherRoutes.post(
           htmlPath: result.htmlPath,
           allowedRoles: result.translation.allowedRoles,
           locale: result.translation.locale,
+          publishedAt: result.translation.publishedAt,
           versionId: result.version.id
         },
         request,

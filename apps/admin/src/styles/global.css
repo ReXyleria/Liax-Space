@@ -339,6 +339,27 @@ canvas {
   min-width: 0;
 }
 
+.admin-article-title-cell {
+  min-width: 220px;
+}
+
+.admin-article-title-cell strong,
+.admin-article-title-cell small {
+  display: block;
+}
+
+.admin-article-title-cell strong {
+  max-width: 34ch;
+  overflow-wrap: anywhere;
+}
+
+.admin-article-title-cell small {
+  margin-top: 4px;
+  color: #6f6a5d;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .admin-status-badge {
   border: 1px solid #d1cfc5;
   border-radius: 999px;

@@ -47,6 +47,10 @@ function translationStatus(translation: ArticleTranslation | null): TranslationS
   return "metadata";
 }
 
+function preferredTranslation(translations: ArticleTranslation[]): ArticleTranslation | null {
+  return findTranslation(translations, "zh-CN") ?? findTranslation(translations, "en-US");
+}
+
 function createUuidSlug(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -545,6 +549,7 @@ export function ArticleListPage(): ReactElement {
               <thead>
                 <tr>
                   <th>{t("article.id")}</th>
+                  <th>{t("article.field.title")}</th>
                   <th>{t("article.status")}</th>
                   <th>{t("article.translationStatus")}</th>
                   <th>{t("article.updatedAt")}</th>
@@ -552,9 +557,16 @@ export function ArticleListPage(): ReactElement {
                 </tr>
               </thead>
               <tbody>
-                {articles.map((item) => (
+                {articles.map((item) => {
+                  const titleTranslation = preferredTranslation(item.translations);
+
+                  return (
                   <tr key={item.article.id}>
                     <td>{item.article.id}</td>
+                    <td className="admin-article-title-cell">
+                      <strong>{titleTranslation?.title ?? "-"}</strong>
+                      {titleTranslation ? <small>{titleTranslation.locale} · {titleTranslation.slug}</small> : null}
+                    </td>
                     <td>{item.article.status}</td>
                     <td>
                       <div className="admin-translation-badges">
@@ -589,7 +601,8 @@ export function ArticleListPage(): ReactElement {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           ) : null}
@@ -675,6 +688,7 @@ export function ArticleListPage(): ReactElement {
 
               <section className="admin-article-config-section">
                 <h4>{t("article.visibilityTitle")}</h4>
+                <p className="admin-muted-text admin-article-config-help">{t("article.visibilityHelp")}</p>
                 <div className="admin-role-checkbox-grid admin-role-checkbox-grid--compact">
                   {roleOptions.map((role) => (
                     <label className="admin-role-checkbox" key={role.roleKey}>

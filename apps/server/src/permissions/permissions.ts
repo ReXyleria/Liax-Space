@@ -14,8 +14,9 @@ export type Permission = (typeof permissions)[number];
 
 export const rolePermissions: Readonly<Record<Role, readonly Permission[]>> = {
   admin: permissions,
-  editor: ["article:create", "article:update", "article:publish", "attachment:upload"],
-  viewer: []
+  guest: [],
+  ssvip: [],
+  svip: []
 };
 
 export function isPermission(value: unknown): value is Permission {

@@ -50,7 +50,10 @@ const publishedArticleColumns = [
   "article_translations.published_at"
 ].join(", ");
 
-const publicVisibilityWhere = "JSON_LENGTH(COALESCE(article_translations.allowed_roles_json, JSON_ARRAY())) = 0";
+const publicVisibilityWhere = `(
+  JSON_LENGTH(COALESCE(article_translations.allowed_roles_json, JSON_ARRAY())) = 0
+  OR JSON_CONTAINS(COALESCE(article_translations.allowed_roles_json, JSON_ARRAY()), JSON_QUOTE('guest'))
+)`;
 
 const localeToPrefixMap: Record<ArticleLocale, PublicLocalePrefix> = {
   "en-US": "en",

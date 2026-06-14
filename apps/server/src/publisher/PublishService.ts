@@ -13,6 +13,7 @@ export type PublishArticleInput = {
   articleId: unknown;
   allowedRoles?: unknown;
   locale: unknown;
+  publishedAt?: unknown;
   versionId: unknown;
 };
 
@@ -72,6 +73,24 @@ function parseAllowedRoles(value: unknown): string[] {
   }))];
 }
 
+function parseOptionalDateTime(value: unknown, fieldName: string): Date | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw validationError(`${fieldName} must be an ISO datetime string.`);
+  }
+
+  const date = new Date(value);
+
+  if (!Number.isFinite(date.getTime())) {
+    throw validationError(`${fieldName} must be a valid datetime.`);
+  }
+
+  return date;
+}
+
 export class PublishService {
   constructor(
     private readonly versionRepository = new ArticleVersionRepository(),
@@ -86,6 +105,7 @@ export class PublishService {
     const articleId = parsePositiveInteger(input.articleId, "articleId");
     const versionId = parsePositiveInteger(input.versionId, "versionId");
     const locale = parseLocale(input.locale);
+    const publishedAt = parseOptionalDateTime(input.publishedAt, "publishedAt");
     const version = await this.requireVersion(articleId, locale, versionId);
     const translation = await this.requireTranslation(articleId, locale);
     const allowedRoles = await this.parseExistingAllowedRoles(input.allowedRoles, translation.allowedRoles);
@@ -102,7 +122,7 @@ export class PublishService {
         currentHtmlPath: htmlPath,
         locale,
         allowedRoles,
-        publishedAt: new Date(),
+        publishedAt,
         publishedVersionId: versionId
       });
 

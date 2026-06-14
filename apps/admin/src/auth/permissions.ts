@@ -13,8 +13,9 @@ const allPermissions: AdminPermission[] = [
 
 const builtInRolePermissions: Readonly<Record<string, readonly AdminPermission[]>> = {
   admin: allPermissions,
-  editor: ["article:create", "article:update", "article:publish", "attachment:upload"],
-  viewer: []
+  guest: [],
+  ssvip: [],
+  svip: []
 };
 
 export function getUserPermissions(user: AdminUser | null): readonly AdminPermission[] {

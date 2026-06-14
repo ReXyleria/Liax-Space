@@ -1,12 +1,18 @@
 import { AppError } from "../common/AppError.js";
 import { errorCodes } from "../common/errorCodes.js";
 import { isPermission, permissions, rolePermissions, type Permission } from "./permissions.js";
-import { roles } from "./roles.js";
+import { roles, type Role } from "./roles.js";
 import { RoleRepository, type RoleDefinition } from "./RoleRepository.js";
 
 type RoleBody = Record<string, unknown>;
 
 const roleKeyPattern = /^[a-z][a-z0-9_-]{1,31}$/;
+const builtInRoleDisplayNames: Readonly<Record<Role, string>> = {
+  admin: "Administrator",
+  guest: "Guest",
+  ssvip: "SSVIP",
+  svip: "SVIP"
+};
 
 function validationError(message: string): AppError {
   return new AppError(message, {
@@ -23,15 +29,17 @@ function notFoundError(): AppError {
 }
 
 function builtInRole(roleKey: string): RoleDefinition | null {
-  if (!roles.includes(roleKey as (typeof roles)[number])) {
+  if (!roles.includes(roleKey as Role)) {
     return null;
   }
+
+  const role = roleKey as Role;
 
   return {
     builtIn: true,
     createdAt: new Date(0),
-    displayName: roleKey[0].toUpperCase() + roleKey.slice(1),
-    permissions: [...rolePermissions[roleKey as (typeof roles)[number]]],
+    displayName: builtInRoleDisplayNames[role],
+    permissions: [...rolePermissions[role]],
     roleKey,
     updatedAt: new Date(0)
   };
@@ -77,12 +85,6 @@ export class PermissionService {
   constructor(private readonly roleRepository = new RoleRepository()) {}
 
   async listRoles(): Promise<RoleDefinition[]> {
-    const storedRoles = await this.roleRepository.listRoles();
-
-    if (storedRoles.length > 0) {
-      return storedRoles;
-    }
-
     return roles.map((role) => builtInRole(role)).filter((role): role is RoleDefinition => role !== null);
   }
 
@@ -122,17 +124,14 @@ export class PermissionService {
 
   async createRole(body: RoleBody): Promise<RoleDefinition> {
     const roleKey = parseRoleKey(body.roleKey);
-    const existingRole = await this.roleRepository.findByRoleKey(roleKey);
+    void parseDisplayName(body.displayName);
+    void parsePermissions(body.permissions);
 
-    if (existingRole || builtInRole(roleKey)) {
+    if (builtInRole(roleKey)) {
       throw validationError("Role already exists.");
     }
 
-    return this.roleRepository.createRole({
-      displayName: parseDisplayName(body.displayName),
-      permissions: parsePermissions(body.permissions),
-      roleKey
-    });
+    throw validationError("Custom roles are disabled. Use Administrator, SSVIP, SVIP, or Guest.");
   }
 
   async updateRole(roleKeyValue: unknown, body: RoleBody): Promise<RoleDefinition> {
@@ -143,7 +142,11 @@ export class PermissionService {
       throw notFoundError();
     }
 
-    const nextPermissions = roleKey === "admin" ? [...permissions] : parsePermissions(body.permissions);
+    if (builtInRole(roleKey)) {
+      throw validationError("Built-in roles cannot be changed.");
+    }
+
+    const nextPermissions = parsePermissions(body.permissions);
     const updatedRole = await this.roleRepository.updateRole(roleKey, {
       displayName: parseDisplayName(body.displayName),
       permissions: nextPermissions
@@ -164,7 +167,7 @@ export class PermissionService {
       throw notFoundError();
     }
 
-    if (existingRole.builtIn) {
+    if (existingRole.builtIn || builtInRole(roleKey)) {
       throw validationError("Built-in roles cannot be deleted.");
     }
 

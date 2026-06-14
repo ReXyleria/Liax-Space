@@ -179,7 +179,10 @@ function isPublishedWhere(): string {
 }
 
 function isPubliclyVisibleWhere(): string {
-  return "JSON_LENGTH(COALESCE(article_translations.allowed_roles_json, JSON_ARRAY())) = 0";
+  return `(
+    JSON_LENGTH(COALESCE(article_translations.allowed_roles_json, JSON_ARRAY())) = 0
+    OR JSON_CONTAINS(COALESCE(article_translations.allowed_roles_json, JSON_ARRAY()), JSON_QUOTE('guest'))
+  )`;
 }
 
 function normalizeLike(value: string): string {

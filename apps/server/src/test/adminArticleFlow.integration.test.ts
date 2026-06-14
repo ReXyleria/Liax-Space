@@ -619,7 +619,7 @@ class FakeTotpService {
 
 class FakePermissionService {
   async roleExists(roleKey: string): Promise<boolean> {
-    return ["admin", "editor", "viewer"].includes(roleKey);
+    return ["admin", "ssvip", "svip", "guest"].includes(roleKey);
   }
 
   async getPermissionsForRole(roleKey: string): Promise<string[]> {
@@ -1332,24 +1332,43 @@ describe("admin user management integration flow", () => {
     await controller.createUser({
       auth: { userId: admin.id },
       body: {
-        email: "editor@example.test",
+        email: "ssvip@example.test",
         password: "initial-password",
-        role: "editor",
-        username: "editor"
+        role: "ssvip",
+        username: "ssvip"
       }
     } as never, response as never);
 
-    const createdUserRecord = await state.userRepository.findByEmail("editor@example.test");
+    const createdUserRecord = await state.userRepository.findByEmail("ssvip@example.test");
     const responseBody = response.body as { user: Record<string, unknown> };
     const auditEntry = auditEntries[0] as { metadata: Record<string, unknown> };
 
     assert.equal(response.statusCode, 201);
-    assert.equal(responseBody.user.email, "editor@example.test");
-    assert.equal(responseBody.user.role, "editor");
+    assert.equal(responseBody.user.email, "ssvip@example.test");
+    assert.equal(responseBody.user.role, "ssvip");
     assert.equal(responseBody.user.passwordHash, undefined);
     assert.match(createdUserRecord?.passwordHash ?? "", /^scrypt\$/);
     assert.notEqual(createdUserRecord?.passwordHash, "initial-password");
-    assert.deepEqual(auditEntry.metadata, { role: "editor" });
+    assert.deepEqual(auditEntry.metadata, { role: "ssvip" });
+  });
+
+  it("rejects assigning the Guest identity to console users", async () => {
+    const state = new TestState();
+    const modules = await modulesPromise;
+    const userService = new modules.UserService(state.userRepository as never, new FakePermissionService() as never);
+
+    await assert.rejects(
+      () => userService.createUser({
+        email: "guest@example.test",
+        passwordHash: "hash",
+        role: "guest",
+        username: "guest"
+      }),
+      (error) => {
+        assertAppError(error, errorCodes.validationFailed, 400);
+        return true;
+      }
+    );
   });
 
   it("lists users and batch updates roles without changing the acting admin", async () => {
@@ -1362,29 +1381,29 @@ describe("admin user management integration flow", () => {
       role: "admin",
       username: "admin"
     });
-    const editor = await state.userRepository.createUser({
-      email: "editor@example.test",
+    const ssvip = await state.userRepository.createUser({
+      email: "ssvip@example.test",
       passwordHash: "hash",
-      role: "viewer",
-      username: "editor"
+      role: "svip",
+      username: "ssvip"
     });
-    const viewer = await state.userRepository.createUser({
-      email: "viewer@example.test",
+    const svip = await state.userRepository.createUser({
+      email: "svip@example.test",
       passwordHash: "hash",
-      role: "viewer",
-      username: "viewer"
+      role: "svip",
+      username: "svip"
     });
     const searchResults = await userService.listUsers({ search: "example" });
-    const result = await userService.updateManyRoles([admin.id, editor.id, viewer.id], "editor", admin.id);
+    const result = await userService.updateManyRoles([admin.id, ssvip.id, svip.id], "ssvip", admin.id);
     const adminAfterUpdate = await state.userRepository.findById(admin.id);
-    const editorAfterUpdate = await state.userRepository.findById(editor.id);
-    const viewerAfterUpdate = await state.userRepository.findById(viewer.id);
+    const ssvipAfterUpdate = await state.userRepository.findById(ssvip.id);
+    const svipAfterUpdate = await state.userRepository.findById(svip.id);
 
     assert.equal(searchResults.length, 3);
     assert.equal(result.updated, 2);
     assert.equal(adminAfterUpdate?.role, "admin");
-    assert.equal(editorAfterUpdate?.role, "editor");
-    assert.equal(viewerAfterUpdate?.role, "editor");
+    assert.equal(ssvipAfterUpdate?.role, "ssvip");
+    assert.equal(svipAfterUpdate?.role, "ssvip");
   });
 
   it("batch soft deletes users without disabling the acting admin", async () => {
@@ -1400,7 +1419,7 @@ describe("admin user management integration flow", () => {
     const user = await state.userRepository.createUser({
       email: "user@example.test",
       passwordHash: "hash",
-      role: "viewer",
+      role: "svip",
       username: "user"
     });
     const result = await userService.deleteManyUsers([admin.id, user.id], admin.id);

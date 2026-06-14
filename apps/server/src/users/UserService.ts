@@ -78,7 +78,7 @@ export class UserService {
 
   async createUser(input: CreateUserInput): Promise<User> {
     assertCreateUserInput(input);
-    const role = input.role ?? "viewer";
+    const role = input.role ?? "svip";
     await this.assertUserRole(role);
 
     const userRecord = await this.userRepository.createUser({
@@ -179,7 +179,7 @@ export class UserService {
   }
 
   private async assertUserRole(value: string): Promise<void> {
-    if (!value.trim() || !(await this.permissionService.roleExists(value))) {
+    if (!value.trim() || value === "guest" || !(await this.permissionService.roleExists(value))) {
       throw new AppError("User role is invalid.", {
         code: errorCodes.validationFailed,
         statusCode: 400

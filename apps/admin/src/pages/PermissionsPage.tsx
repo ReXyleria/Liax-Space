@@ -36,12 +36,11 @@ export function PermissionsPage(): ReactElement {
   const [permissions, setPermissions] = useState<AdminPermission[]>([]);
   const [editingRole, setEditingRole] = useState<AdminRoleDefinition | null>(null);
   const [form, setForm] = useState<RoleForm>(emptyForm);
-  const [isCreating, setIsCreating] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const isAdminRole = editingRole?.roleKey === "admin" || form.roleKey === "admin";
+  const isBuiltInRole = Boolean(editingRole?.builtIn);
 
   function roleDisplayName(role: AdminRoleDefinition): string {
     if (!role.builtIn) {
@@ -71,14 +70,6 @@ export function PermissionsPage(): ReactElement {
     void loadRoles();
   }, []);
 
-  function openCreateModal(): void {
-    setEditingRole(null);
-    setForm(emptyForm);
-    setIsCreating(true);
-    setMessage(null);
-    setErrorMessage(null);
-  }
-
   function openEditModal(role: AdminRoleDefinition): void {
     setEditingRole(role);
     setForm({
@@ -86,7 +77,6 @@ export function PermissionsPage(): ReactElement {
       permissions: role.permissions,
       roleKey: role.roleKey
     });
-    setIsCreating(false);
     setMessage(null);
     setErrorMessage(null);
   }
@@ -97,7 +87,6 @@ export function PermissionsPage(): ReactElement {
     }
 
     setEditingRole(null);
-    setIsCreating(false);
   }
 
   async function saveRole(): Promise<void> {
@@ -108,7 +97,7 @@ export function PermissionsPage(): ReactElement {
     try {
       const payload = {
         displayName: form.displayName,
-        permissions: isAdminRole ? permissions : form.permissions
+        permissions: form.permissions
       };
       const response = editingRole
         ? await roleApi.updateRole(editingRole.roleKey, payload)
@@ -156,9 +145,9 @@ export function PermissionsPage(): ReactElement {
           <p className="admin-kicker">{t("permissions.kicker")}</p>
           <h2>{t("permissions.title")}</h2>
         </div>
-        <button className="liax-button liax-button--brand" disabled={isSaving} onClick={openCreateModal} type="button">
+        <span className="admin-status-badge">
           {t("permissions.createRole")}
-        </button>
+        </span>
       </section>
 
       <section className="liax-card admin-table-card" aria-label={t("permissions.title")}>
@@ -185,7 +174,7 @@ export function PermissionsPage(): ReactElement {
                     )) : <p className="admin-muted-text">{t("permissions.emptyPermissions")}</p>}
                   </div>
                   <div className="admin-form-actions">
-                    <button className="liax-button" disabled={isSaving} onClick={() => openEditModal(role)} type="button">
+                    <button className="liax-button" disabled={isSaving || role.builtIn} onClick={() => openEditModal(role)} type="button">
                       {t("permissions.editRole")}
                     </button>
                     {!role.builtIn ? (
@@ -201,13 +190,13 @@ export function PermissionsPage(): ReactElement {
         </div>
       </section>
 
-      {editingRole || isCreating ? (
+      {editingRole ? (
         <div className="admin-modal-backdrop" role="presentation">
           <section aria-labelledby="role-edit-title" aria-modal="true" className="admin-modal" role="dialog">
             <div className="admin-modal__header">
               <div>
                 <p className="admin-kicker">{t("permissions.kicker")}</p>
-                <h3 id="role-edit-title">{editingRole ? t("permissions.editRole") : t("permissions.createRole")}</h3>
+                <h3 id="role-edit-title">{t("permissions.editRole")}</h3>
               </div>
               <button className="liax-button" disabled={isSaving} onClick={closeModal} type="button">
                 {t("users.cancel")}
@@ -236,12 +225,12 @@ export function PermissionsPage(): ReactElement {
               </label>
               <fieldset className="admin-role-permission-editor">
                 <legend>{t("permissions.permission")}</legend>
-                {isAdminRole ? <p className="admin-muted-text">{t("permissions.adminFixed")}</p> : null}
+                {isBuiltInRole ? <p className="admin-muted-text">{t("permissions.adminFixed")}</p> : null}
                 {permissions.map((permission) => (
                   <label className="admin-role-permission-option" key={permission}>
                     <input
-                      checked={isAdminRole || permissionEnabled(form.permissions, permission)}
-                      disabled={isSaving || isAdminRole}
+                      checked={permissionEnabled(form.permissions, permission)}
+                      disabled={isSaving || isBuiltInRole}
                       onChange={() => setForm((currentForm) => ({
                         ...currentForm,
                         permissions: togglePermission(currentForm.permissions, permission)

@@ -61,6 +61,7 @@ export type PublishVersionResponse = {
 
 export type PublishVersionRequest = {
   allowedRoles?: string[];
+  publishedAt?: string | null;
 };
 
 function parseJsonResponse(value: string): unknown {
@@ -172,10 +173,14 @@ export const versionApi = {
     versionId: number,
     input: PublishVersionRequest = {}
   ): Promise<PublishVersionResponse> {
-    const body: { allowedRoles?: string[]; versionId: number } = { versionId };
+    const body: { allowedRoles?: string[]; publishedAt?: string | null; versionId: number } = { versionId };
 
     if (input.allowedRoles !== undefined) {
       body.allowedRoles = input.allowedRoles;
+    }
+
+    if (input.publishedAt !== undefined) {
+      body.publishedAt = input.publishedAt;
     }
 
     return httpClient.post<PublishVersionResponse>(`/admin/articles/${articleId}/${locale}/publish`, body);

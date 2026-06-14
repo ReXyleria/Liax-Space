@@ -5,7 +5,7 @@ import { userApi, type AdminUser, type AdminUserRole } from "../api/userApi";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
 
-const fallbackRoleKeys = ["admin", "editor", "viewer"] as const;
+const fallbackRoleKeys = ["admin", "ssvip", "svip"] as const;
 
 type RoleOption = Pick<AdminRoleDefinition, "builtIn" | "displayName" | "roleKey">;
 
@@ -19,7 +19,7 @@ type CreateUserForm = {
 const initialCreateUserForm: CreateUserForm = {
   email: "",
   password: "",
-  role: "viewer",
+  role: "svip",
   username: ""
 };
 
@@ -35,9 +35,9 @@ export function UserManagementPage(): ReactElement {
   const [createForm, setCreateForm] = useState<CreateUserForm>(initialCreateUserForm);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
-  const [editRole, setEditRole] = useState<AdminUserRole>("viewer");
+  const [editRole, setEditRole] = useState<AdminUserRole>("svip");
   const [search, setSearch] = useState("");
-  const [role, setRole] = useState<AdminUserRole>("viewer");
+  const [role, setRole] = useState<AdminUserRole>("svip");
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -83,12 +83,12 @@ export function UserManagementPage(): ReactElement {
         builtIn: item.builtIn,
         displayName: item.displayName,
         roleKey: item.roleKey
-      }));
+      })).filter((item) => item.roleKey !== "guest");
 
       setUsers(Array.isArray(usersResponse.users) ? usersResponse.users : []);
       setRoleOptions(nextRoleOptions);
       if (nextRoleOptions.length > 0 && !nextRoleOptions.some((item) => item.roleKey === role)) {
-        setRole(nextRoleOptions.find((item) => item.roleKey === "viewer")?.roleKey ?? nextRoleOptions[0].roleKey);
+        setRole(nextRoleOptions.find((item) => item.roleKey === "svip")?.roleKey ?? nextRoleOptions[0].roleKey);
       }
       setSelectedIds([]);
     } catch (error) {
