@@ -21,6 +21,7 @@ export type SearchResult = {
   publishedAt: Date | null;
   updatedAt: Date;
   url: string | null;
+  visitCount: number;
 };
 
 export type PublicSearchInput = {
@@ -55,6 +56,7 @@ type SearchRow = RowDataPacket & {
   published_at: Date | null;
   updated_at: Date;
   published_version_id: number | null;
+  visit_count: number | string;
 };
 
 type SearchQuery = {
@@ -78,7 +80,15 @@ const searchColumns = [
   "articles.status AS article_status",
   "article_translations.published_at",
   "article_translations.updated_at",
-  "article_translations.published_version_id"
+  "article_translations.published_version_id",
+  `(
+    SELECT COUNT(*)
+    FROM visit_events
+    WHERE visit_events.path = CONCAT('/', CASE article_translations.locale WHEN 'zh-CN' THEN 'zh' ELSE 'en' END, '/posts/', article_translations.slug)
+      OR visit_events.path LIKE CONCAT('/', CASE article_translations.locale WHEN 'zh-CN' THEN 'zh' ELSE 'en' END, '/posts/', article_translations.slug, '?%')
+      OR visit_events.path = CONCAT('/', article_translations.locale, '/articles/', article_translations.slug)
+      OR visit_events.path LIKE CONCAT('/', article_translations.locale, '/articles/', article_translations.slug, '?%')
+  ) AS visit_count`
 ].join(", ");
 
 const permissionService = new PermissionService();
@@ -210,7 +220,8 @@ function mapRow(row: SearchRow): SearchResult {
     summary: row.summary,
     title: row.title,
     updatedAt: row.updated_at,
-    url: publishStatus === "published" ? `/${localeToPublicPrefix(row.locale)}/posts/${encodeURIComponent(row.slug)}` : null
+    url: publishStatus === "published" ? `/${localeToPublicPrefix(row.locale)}/posts/${encodeURIComponent(row.slug)}` : null,
+    visitCount: Number(row.visit_count) || 0
   };
 }
 

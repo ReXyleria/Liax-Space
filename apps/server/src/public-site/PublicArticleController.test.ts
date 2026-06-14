@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import type { SearchResult } from "../search/SearchService.js";
-import { renderArchiveBody, renderGuestbookBody, renderHomePage, renderMomentsBody, renderPublicSectionPage, renderTagCards } from "./PublicArticleController.js";
+import { renderArchiveBody, renderArticleCards, renderGuestbookBody, renderHomePage, renderMomentsBody, renderPublicSectionPage, renderTagCards } from "./PublicArticleController.js";
 
 function createSearchResult(overrides: Partial<SearchResult> = {}): SearchResult {
   return {
@@ -18,6 +18,7 @@ function createSearchResult(overrides: Partial<SearchResult> = {}): SearchResult
     title: "示例文章",
     updatedAt: new Date("2026-05-01T08:00:00.000Z"),
     url: null,
+    visitCount: 0,
     ...overrides
   };
 }
@@ -226,5 +227,14 @@ describe("public section page rendering", () => {
 
     assert.match(zhHtml, /<span>2026-05<\/span><small>2 篇文章<\/small>/);
     assert.match(enHtml, /<span>2026-06<\/span><small>1 article<\/small>/);
+  });
+
+  it("renders article card read counts like the legacy article list", () => {
+    const html = renderArticleCards("zh-CN", "zh", [
+      createSearchResult({ slug: "read-count", title: "有阅读数的文章", visitCount: 4 })
+    ], "空");
+
+    assert.match(html, /<span>4 阅读<\/span>/);
+    assert.match(html, /class="liax-article-meta"/);
   });
 });

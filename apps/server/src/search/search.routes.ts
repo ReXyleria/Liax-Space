@@ -27,6 +27,14 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+function formatVisitCount(localePrefix: "zh" | "en", count: number): string {
+  if (localePrefix === "zh") {
+    return `${count} 阅读`;
+  }
+
+  return `${count} ${count === 1 ? "read" : "reads"}`;
+}
+
 export function shouldRenderPublicSearchHtml(acceptHeader: string | undefined): boolean {
   if (!acceptHeader || acceptHeader.trim() === "") {
     return true;
@@ -526,6 +534,12 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
       text-underline-offset: 0.18em;
     }
 
+    .liax-search-result small {
+      color: #6f6a5d;
+      font-size: 13px;
+      font-weight: 760;
+    }
+
     .liax-search-empty {
       border: 1px solid var(--color-border);
       border-radius: 8px;
@@ -632,6 +646,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
         ${results.length === 0 ? `<p class="liax-search-empty">${empty}</p>` : `<div class="liax-search-results">
 ${results.map((result) => `        <article class="liax-search-result">
           <a href="${escapeHtml(result.url ?? `/${localePrefix}`)}">${escapeHtml(result.title)}</a>
+          <small>${escapeHtml(formatVisitCount(localePrefix, result.visitCount))}</small>
           ${result.summary ? `<p>${escapeHtml(result.summary)}</p>` : ""}
         </article>`).join("\n")}
         </div>`}

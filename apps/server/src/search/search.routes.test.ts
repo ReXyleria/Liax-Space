@@ -33,4 +33,24 @@ describe("public search page rendering", () => {
     assert.match(html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\)/);
     assert.doesNotMatch(html, /href="\/en\/account"/);
   });
+
+  it("renders search result read counts from public search results", () => {
+    const html = renderPublicSearchPage("en", "docs", [{
+      articleId: 1,
+      articleStatus: "published",
+      locale: "en-US",
+      publishedAt: new Date("2026-06-01T08:00:00.000Z"),
+      publishStatus: "published",
+      seoDescription: null,
+      seoTitle: null,
+      slug: "docs",
+      summary: "Search summary",
+      title: "Docs",
+      updatedAt: new Date("2026-06-01T08:00:00.000Z"),
+      url: "/en/posts/docs",
+      visitCount: 1
+    }]);
+
+    assert.match(html, /<small>1 read<\/small>/);
+  });
 });

@@ -971,6 +971,14 @@ function formatPublicArticleCount(locale: ArticleLocale, count: number): string 
   return `${count} ${count === 1 ? "article" : "articles"}`;
 }
 
+function formatPublicVisitCount(locale: ArticleLocale, count: number): string {
+  if (locale === "zh-CN") {
+    return `${count} 阅读`;
+  }
+
+  return `${count} ${count === 1 ? "read" : "reads"}`;
+}
+
 export function renderTagCards(locale: ArticleLocale, tags: TagDetail[]): string {
   const localizedTags = tags.flatMap((tagDetail) => {
     const translation = tagDetail.translations.find((item) => item.locale === locale);
@@ -992,7 +1000,7 @@ ${localizedTags.map((tag) => `        <li><a href="/${locale === "zh-CN" ? "zh" 
       </ul>`;
 }
 
-function renderArticleCards(locale: ArticleLocale, prefix: LocalePrefix, articles: SearchResult[], emptyLabel: string): string {
+export function renderArticleCards(locale: ArticleLocale, prefix: LocalePrefix, articles: SearchResult[], emptyLabel: string): string {
   if (articles.length === 0) {
     return `<p class="liax-section-empty">${escapeHtml(emptyLabel)}</p>`;
   }
@@ -1004,7 +1012,10 @@ ${articles.map((article) => {
 
   return `        <a class="liax-article-card" href="/${prefix}/posts/${encodeURIComponent(article.slug)}">
           <strong>${escapeHtml(article.title)}</strong>
-          <time datetime="${escapeHtml(dateLabel)}">${escapeHtml(dateLabel)}</time>
+          <span class="liax-article-meta">
+            <time datetime="${escapeHtml(dateLabel)}">${escapeHtml(dateLabel)}</time>
+            <span>${escapeHtml(formatPublicVisitCount(locale, article.visitCount))}</span>
+          </span>
           ${summary ? `<p>${escapeHtml(summary)}</p>` : ""}
         </a>`;
 }).join("\n")}
@@ -1752,13 +1763,16 @@ ${renderThemeCssVariables(settings)}
       text-underline-offset: 0.18em;
     }
 
-    .liax-article-card time,
+    .liax-article-meta,
     .liax-article-card p {
       margin: 0;
       color: var(--color-text);
     }
 
-    .liax-article-card time {
+    .liax-article-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
       font-size: 13px;
       font-weight: 760;
     }
