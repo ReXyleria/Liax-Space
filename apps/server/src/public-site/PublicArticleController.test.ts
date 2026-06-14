@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { renderGuestbookBody, renderHomePage, renderMomentsBody, renderPublicSectionPage } from "./PublicArticleController.js";
+import { renderGuestbookBody, renderHomePage, renderMomentsBody, renderPublicSectionPage, renderTagCards } from "./PublicArticleController.js";
 
 describe("public home page rendering", () => {
   it("renders contact items without a separate contact title", () => {
@@ -166,5 +166,27 @@ describe("public section page rendering", () => {
     assert.match(html, /class="liax-moment-images"/);
     assert.match(html, /src="\/uploads\/moment-a\.jpg"/);
     assert.match(html, /src="https:\/\/example\.com\/moment-b\.jpg"/);
+  });
+
+  it("renders public tag article counts from the migrated legacy tag index", () => {
+    const zhHtml = renderTagCards("zh-CN", [{
+      articleCounts: { "en-US": 1, "zh-CN": 2 },
+      tag: { createdAt: new Date("2026-06-13T08:00:00.000Z"), id: 1 },
+      translations: [
+        { locale: "zh-CN", name: "Linux", slug: "linux", tagId: 1 },
+        { locale: "en-US", name: "Linux", slug: "linux", tagId: 1 }
+      ]
+    }]);
+    const enHtml = renderTagCards("en-US", [{
+      articleCounts: { "en-US": 1, "zh-CN": 2 },
+      tag: { createdAt: new Date("2026-06-13T08:00:00.000Z"), id: 1 },
+      translations: [
+        { locale: "zh-CN", name: "Linux", slug: "linux", tagId: 1 },
+        { locale: "en-US", name: "Linux", slug: "linux", tagId: 1 }
+      ]
+    }]);
+
+    assert.match(zhHtml, /2 篇文章/);
+    assert.match(enHtml, /1 article/);
   });
 });

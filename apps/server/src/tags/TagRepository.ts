@@ -16,6 +16,7 @@ export type TagTranslation = {
 };
 
 export type TagDetail = {
+  articleCounts?: Partial<Record<ArticleLocale, number>>;
   tag: Tag;
   translations: TagTranslation[];
 };
@@ -39,6 +40,12 @@ type TagTranslationRow = RowDataPacket & {
   slug: string;
 };
 
+type TagArticleCountRow = RowDataPacket & {
+  article_count: number;
+  locale: ArticleLocale;
+  tag_id: number;
+};
+
 const tagColumns = ["id", "created_at"].join(", ");
 const tagTranslationColumns = ["tag_id", "locale", "name", "slug"].join(", ");
 
@@ -58,7 +65,11 @@ function mapTagTranslationRow(row: TagTranslationRow): TagTranslation {
   };
 }
 
-function groupTranslations(tags: Tag[], translations: TagTranslation[]): TagDetail[] {
+function groupTranslations(
+  tags: Tag[],
+  translations: TagTranslation[],
+  articleCountsByTagId = new Map<number, Partial<Record<ArticleLocale, number>>>()
+): TagDetail[] {
   const translationsByTagId = new Map<number, TagTranslation[]>();
 
   for (const translation of translations) {
@@ -68,6 +79,7 @@ function groupTranslations(tags: Tag[], translations: TagTranslation[]): TagDeta
   }
 
   return tags.map((tag) => ({
+    articleCounts: articleCountsByTagId.get(tag.id) ?? {},
     tag,
     translations: translationsByTagId.get(tag.id) ?? []
   }));
@@ -91,7 +103,7 @@ export class TagRepository {
     const [rows] = await pool.execute<TagRow[]>(`SELECT ${tagColumns} FROM tags ORDER BY created_at DESC, id DESC`);
     const tags = rows.map(mapTagRow);
 
-    return this.attachTranslations(tags);
+    return this.attachTranslations(tags, { includeArticleCounts: true });
   }
 
   async findById(id: number): Promise<Tag | null> {
@@ -197,14 +209,48 @@ export class TagRepository {
     return this.attachTranslations(tags);
   }
 
-  private async attachTranslations(tags: Tag[]): Promise<TagDetail[]> {
+  private async attachTranslations(tags: Tag[], options: { includeArticleCounts?: boolean } = {}): Promise<TagDetail[]> {
     if (tags.length === 0) {
       return [];
     }
 
     const translations = await this.listTranslationsByTagIds(tags.map((tag) => tag.id));
+    const articleCounts = options.includeArticleCounts ? await this.listPublicArticleCountsByTagIds(tags.map((tag) => tag.id)) : undefined;
 
-    return groupTranslations(tags, translations);
+    return groupTranslations(tags, translations, articleCounts);
+  }
+
+  private async listPublicArticleCountsByTagIds(tagIds: number[]): Promise<Map<number, Partial<Record<ArticleLocale, number>>>> {
+    const pool = getDatabasePool();
+    const placeholders = tagIds.map(() => "?").join(", ");
+    const [rows] = await pool.execute<TagArticleCountRow[]>(
+      `SELECT article_tags.tag_id, article_translations.locale, COUNT(DISTINCT articles.id) AS article_count
+       FROM article_tags
+       INNER JOIN articles
+         ON articles.id = article_tags.article_id
+         AND articles.deleted_at IS NULL
+       INNER JOIN article_translations
+         ON article_translations.article_id = articles.id
+       WHERE article_tags.tag_id IN (${placeholders})
+         AND article_translations.published_version_id IS NOT NULL
+         AND article_translations.current_html_path IS NOT NULL
+         AND article_translations.published_at IS NOT NULL
+         AND (
+           JSON_LENGTH(COALESCE(article_translations.allowed_roles_json, JSON_ARRAY())) = 0
+           OR JSON_CONTAINS(COALESCE(article_translations.allowed_roles_json, JSON_ARRAY()), JSON_QUOTE('guest'))
+         )
+       GROUP BY article_tags.tag_id, article_translations.locale`,
+      tagIds
+    );
+    const countsByTagId = new Map<number, Partial<Record<ArticleLocale, number>>>();
+
+    for (const row of rows) {
+      const counts = countsByTagId.get(row.tag_id) ?? {};
+      counts[row.locale] = Number(row.article_count);
+      countsByTagId.set(row.tag_id, counts);
+    }
+
+    return countsByTagId;
   }
 
   private async listTranslationsByTagIds(tagIds: number[]): Promise<TagTranslation[]> {

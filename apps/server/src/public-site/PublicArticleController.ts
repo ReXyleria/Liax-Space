@@ -963,11 +963,20 @@ function isPublicSection(value: string): value is PublicSection {
   return value in publicSectionLabels;
 }
 
-function renderTagCards(locale: ArticleLocale, tags: TagDetail[]): string {
+function formatTagArticleCount(locale: ArticleLocale, count: number): string {
+  if (locale === "zh-CN") {
+    return `${count} 篇文章`;
+  }
+
+  return `${count} ${count === 1 ? "article" : "articles"}`;
+}
+
+export function renderTagCards(locale: ArticleLocale, tags: TagDetail[]): string {
   const localizedTags = tags.flatMap((tagDetail) => {
     const translation = tagDetail.translations.find((item) => item.locale === locale);
 
     return translation ? [{
+      articleCount: tagDetail.articleCounts?.[locale] ?? 0,
       id: tagDetail.tag.id,
       name: translation.name,
       slug: translation.slug
@@ -979,7 +988,7 @@ function renderTagCards(locale: ArticleLocale, tags: TagDetail[]): string {
   }
 
   return `<ul class="liax-tag-grid">
-${localizedTags.map((tag) => `        <li><a href="/${locale === "zh-CN" ? "zh" : "en"}/tags/${escapeHtml(tag.slug)}"><span>#</span><strong>${escapeHtml(tag.name)}</strong><code>${escapeHtml(tag.slug)}</code></a></li>`).join("\n")}
+${localizedTags.map((tag) => `        <li><a href="/${locale === "zh-CN" ? "zh" : "en"}/tags/${escapeHtml(tag.slug)}"><span>#</span><strong>${escapeHtml(tag.name)}</strong><code>${escapeHtml(tag.slug)}</code><small>${escapeHtml(formatTagArticleCount(locale, tag.articleCount))}</small></a></li>`).join("\n")}
       </ul>`;
 }
 
@@ -1704,6 +1713,13 @@ ${renderThemeCssVariables(settings)}
       color: #6f6a5d;
       font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
       font-size: 13px;
+    }
+
+    .liax-tag-grid small {
+      grid-column: 2;
+      color: #6f6a5d;
+      font-size: 13px;
+      font-weight: 760;
     }
 
     .liax-article-list {
