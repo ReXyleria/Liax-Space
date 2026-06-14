@@ -104,7 +104,7 @@ export class RoleRepository {
   async deleteRole(roleKey: string): Promise<boolean> {
     const pool = getDatabasePool();
     const [result] = await pool.execute<ResultSetHeader>(
-      "DELETE FROM role_definitions WHERE role_key = ? AND built_in = FALSE",
+      "DELETE FROM role_definitions WHERE role_key = ? AND role_key <> 'admin'",
       [roleKey]
     );
 

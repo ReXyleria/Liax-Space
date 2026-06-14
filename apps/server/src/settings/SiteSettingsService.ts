@@ -88,6 +88,16 @@ function assertHttpUrl(key: string, value: unknown): string {
   return url.toString().replace(/\/$/u, "");
 }
 
+function assertOptionalHttpUrl(key: string, value: unknown): string {
+  const normalized = assertString(value, key, 500);
+
+  if (!normalized) {
+    return "";
+  }
+
+  return assertHttpUrl(key, normalized);
+}
+
 function assertTemperature(key: string, value: unknown): number {
   const temperature = typeof value === "string" ? Number(value.trim()) : value;
 
@@ -168,6 +178,8 @@ const knownSettingValidators: Record<string, SiteSettingValidator> = {
   "home.icpNumber": (key, value) => assertString(value, key, 120),
   "home.icpUrl": assertHttpUrl,
   "home.signature": (key, value) => assertString(value, key, 160),
+  "site.logoAlt": (key, value) => assertString(value, key, 120),
+  "site.logoUrl": assertOptionalHttpUrl,
   "smtp.encryption": (key, value) => assertOneOf(value, key, smtpEncryptionModes),
   "smtp.from": assertEmailAddress,
   "smtp.fromName": (key, value) => assertString(value, key, 80),
@@ -219,11 +231,34 @@ function redactSiteSettings(settings: SiteSettings): SiteSettings {
   return redactedSettings;
 }
 
+const appearanceSettingKeys = [
+  "site.logoAlt",
+  "site.logoUrl",
+  "theme.customColors",
+  "theme.preset"
+] as const;
+
+function pickAppearanceSettings(settings: SiteSettings): SiteSettings {
+  const appearanceSettings: SiteSettings = {};
+
+  for (const key of appearanceSettingKeys) {
+    if (settings[key] !== undefined) {
+      appearanceSettings[key] = settings[key];
+    }
+  }
+
+  return appearanceSettings;
+}
+
 export class SiteSettingsService {
   constructor(private readonly settingsRepository = new SettingsRepository()) {}
 
   async getSiteSettings(): Promise<SiteSettings> {
     return redactSiteSettings(await this.settingsRepository.getSiteSettings());
+  }
+
+  async getAppearanceSettings(): Promise<SiteSettings> {
+    return pickAppearanceSettings(await this.settingsRepository.getSiteSettings());
   }
 
   async updateSiteSettings(input: unknown): Promise<SiteSettings> {

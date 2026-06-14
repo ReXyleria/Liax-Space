@@ -176,6 +176,92 @@ function readUrlSetting(settings: SiteSettings, key: string, fallback: string): 
   }
 }
 
+type PublicThemePresetId = "clear-graphite" | "quiet-garden" | "warm-minimal";
+
+const publicThemePresets: Record<PublicThemePresetId, Record<string, string>> = {
+  "clear-graphite": {
+    "--color-accent": "#6a625a",
+    "--color-border": "#c7c2b9",
+    "--color-brand": "#5a554f",
+    "--color-primary": "#111315",
+    "--color-surface-muted": "#efeee8"
+  },
+  "quiet-garden": {
+    "--color-accent": "#5f7a50",
+    "--color-border": "#c6d0bf",
+    "--color-brand": "#3f6b4a",
+    "--color-primary": "#102316",
+    "--color-surface-muted": "#edf2e7"
+  },
+  "warm-minimal": {}
+};
+
+const editablePublicThemeTokens = [
+  "--color-accent",
+  "--color-border",
+  "--color-brand",
+  "--color-primary",
+  "--color-surface-muted"
+] as const;
+
+function isPublicThemePresetId(value: unknown): value is PublicThemePresetId {
+  return value === "warm-minimal" || value === "quiet-garden" || value === "clear-graphite";
+}
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/iu.test(value);
+}
+
+function renderThemeCssVariables(settings: SiteSettings): string {
+  const presetId = isPublicThemePresetId(settings["theme.preset"]) ? settings["theme.preset"] : "warm-minimal";
+  const values = { ...publicThemePresets[presetId] };
+  const customColors = settings["theme.customColors"];
+
+  if (customColors && typeof customColors === "object" && !Array.isArray(customColors)) {
+    const presetColors = (customColors as Record<string, unknown>)[presetId];
+
+    if (presetColors && typeof presetColors === "object" && !Array.isArray(presetColors)) {
+      for (const tokenName of editablePublicThemeTokens) {
+        const color = (presetColors as Record<string, unknown>)[tokenName];
+
+        if (isHexColor(color)) {
+          values[tokenName] = color.toLowerCase();
+        }
+      }
+    }
+  }
+
+  return Object.entries(values)
+    .map(([tokenName, color]) => `      ${tokenName}: ${color};`)
+    .join("\n");
+}
+
+function readLogoUrl(settings: SiteSettings): string | null {
+  const value = settings["site.logoUrl"];
+
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderPublicLogo(settings: SiteSettings): string {
+  const logoUrl = readLogoUrl(settings);
+  const logoAlt = readStringSetting(settings, "site.logoAlt", "Liax Space");
+
+  if (!logoUrl) {
+    return `<span class="liax-public-logo" aria-hidden="true">LS</span>`;
+  }
+
+  return `<span class="liax-public-logo"><img alt="${escapeHtml(logoAlt)}" src="${escapeHtml(logoUrl)}"></span>`;
+}
+
 function includesCjk(value: string): boolean {
   return /[\u3400-\u9fff]/u.test(value);
 }
@@ -286,6 +372,7 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
       --color-brand: #c96442;
       --color-brand-text: #faf9f5;
       --color-accent: #d97757;
+${renderThemeCssVariables(settings)}
     }
 
     html,
@@ -368,6 +455,13 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
       background: var(--color-primary);
       color: var(--color-primary-text);
       font-size: 12px;
+      overflow: hidden;
+    }
+
+    .liax-public-logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .liax-public-header__center {
@@ -820,7 +914,7 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
   <div class="liax-public-shell">
     <header class="liax-public-header">
       <a class="liax-public-brand" href="/${prefix}">
-        <span class="liax-public-logo" aria-hidden="true">LS</span>
+        ${renderPublicLogo(settings)}
         <span>Liax Space</span>
       </a>
       <div class="liax-public-header__center">
@@ -899,18 +993,50 @@ ${articles.map((article) => {
   const dateLabel = article.publishedAt ? new Date(article.publishedAt).toISOString().slice(0, 10) : "";
   const summary = article.summary ?? article.seoDescription ?? "";
 
-  return `        <article class="liax-article-card">
-          <a href="/${prefix}/posts/${encodeURIComponent(article.slug)}">${escapeHtml(article.title)}</a>
+  return `        <a class="liax-article-card" href="/${prefix}/posts/${encodeURIComponent(article.slug)}">
+          <strong>${escapeHtml(article.title)}</strong>
           <time datetime="${escapeHtml(dateLabel)}">${escapeHtml(dateLabel)}</time>
           ${summary ? `<p>${escapeHtml(summary)}</p>` : ""}
-        </article>`;
+        </a>`;
 }).join("\n")}
       </div>`;
 }
 
 function renderArchiveBody(locale: ArticleLocale, prefix: LocalePrefix, articles: SearchResult[]): string {
-  const emptyLabel = locale === "zh-CN" ? "当前语言还没有已发布文章。" : "No published articles are available in this language yet.";
-  return renderArticleCards(locale, prefix, articles, emptyLabel);
+  const isZh = locale === "zh-CN";
+
+  if (articles.length === 0) {
+    return `<p class="liax-section-empty">${escapeHtml(isZh ? "当前语言还没有已发布文章。" : "No published articles are available in this language yet.")}</p>`;
+  }
+
+  const grouped = new Map<string, SearchResult[]>();
+
+  for (const article of articles) {
+    const date = article.publishedAt ? new Date(article.publishedAt) : null;
+    const key = date && Number.isFinite(date.getTime())
+      ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+      : (isZh ? "未注明时间" : "Undated");
+    grouped.set(key, [...(grouped.get(key) ?? []), article]);
+  }
+
+  return `<div class="liax-archive-timeline">
+${[...grouped.entries()].map(([groupLabel, groupArticles]) => `        <section class="liax-archive-group">
+          <h2>${escapeHtml(groupLabel)}</h2>
+          <ol>
+${groupArticles.map((article) => {
+  const date = article.publishedAt ? new Date(article.publishedAt) : null;
+  const dateLabel = date && Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : "";
+
+  return `            <li>
+              <a href="/${prefix}/posts/${encodeURIComponent(article.slug)}">
+                <time datetime="${escapeHtml(dateLabel)}">${escapeHtml(dateLabel || (isZh ? "未注明" : "Undated"))}</time>
+                <strong>${escapeHtml(article.title)}</strong>
+              </a>
+            </li>`;
+}).join("\n")}
+          </ol>
+        </section>`).join("\n")}
+      </div>`;
 }
 
 function renderPostsBody(locale: ArticleLocale, prefix: LocalePrefix, articles: SearchResult[]): string {
@@ -1121,7 +1247,8 @@ export function renderPublicSectionPage(
   locale: ArticleLocale,
   prefix: LocalePrefix,
   section: RenderablePublicSection,
-  bodyHtml?: string
+  bodyHtml?: string,
+  settings: SiteSettings = {}
 ): string {
   const isZh = locale === "zh-CN";
   const label = section === "not-found" ? (isZh ? "页面未找到" : "Page not found") : (isZh ? publicSectionLabels[section].zh : publicSectionLabels[section].en);
@@ -1153,6 +1280,7 @@ export function renderPublicSectionPage(
       --color-brand: #c96442;
       --color-brand-text: #faf9f5;
       --color-accent: #d97757;
+${renderThemeCssVariables(settings)}
     }
 
     html,
@@ -1254,6 +1382,13 @@ export function renderPublicSectionPage(
       color: var(--color-primary-text);
       font-size: 12px;
       font-weight: 800;
+      overflow: hidden;
+    }
+
+    .liax-public-logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .liax-public-header__center,
@@ -1575,18 +1710,19 @@ export function renderPublicSectionPage(
       border: 1px solid var(--color-border);
       border-radius: 8px;
       background: var(--color-surface-muted);
-      padding: 18px;
-    }
-
-    .liax-article-card a {
       color: var(--color-text);
-      font-size: 20px;
-      font-weight: 800;
+      padding: 18px;
       text-decoration: none;
     }
 
-    .liax-article-card a:hover,
-    .liax-article-card a:focus-visible {
+    .liax-article-card strong {
+      color: var(--color-text);
+      font-size: 20px;
+      font-weight: 800;
+    }
+
+    .liax-article-card:hover strong,
+    .liax-article-card:focus-visible strong {
       color: var(--color-accent);
       text-decoration: underline;
       text-underline-offset: 0.18em;
@@ -1601,6 +1737,64 @@ export function renderPublicSectionPage(
     .liax-article-card time {
       font-size: 13px;
       font-weight: 760;
+    }
+
+    .liax-archive-timeline {
+      display: grid;
+      gap: 26px;
+      margin-top: 24px;
+    }
+
+    .liax-archive-group {
+      display: grid;
+      gap: 12px;
+    }
+
+    .liax-archive-group h2 {
+      margin: 0;
+      color: var(--color-accent);
+      font-size: 18px;
+    }
+
+    .liax-archive-group ol {
+      display: grid;
+      gap: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      border-top: 1px solid var(--color-border);
+    }
+
+    .liax-archive-group li {
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .liax-archive-group a {
+      display: grid;
+      grid-template-columns: 116px minmax(0, 1fr);
+      gap: 18px;
+      align-items: baseline;
+      color: var(--color-text);
+      padding: 13px 0;
+      text-decoration: none;
+    }
+
+    .liax-archive-group a:hover strong,
+    .liax-archive-group a:focus-visible strong {
+      color: var(--color-accent);
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
+    .liax-archive-group time {
+      color: #6f6a5d;
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .liax-archive-group strong {
+      font-size: 17px;
+      overflow-wrap: anywhere;
     }
 
     .liax-moment-list {
@@ -1914,7 +2108,7 @@ export function renderPublicSectionPage(
   <div class="liax-public-shell">
     <header class="liax-public-header">
       <a class="liax-public-brand" href="/${prefix}">
-        <span class="liax-public-logo" aria-hidden="true">LS</span>
+        ${renderPublicLogo(settings)}
         <span>Liax Space</span>
       </a>
       <div class="liax-public-header__center">
@@ -1996,28 +2190,29 @@ export class PublicArticleController {
     }
 
     const locale = localePrefixMap[prefix];
+    const settings = await this.settingsRepository.getSiteSettings();
 
     if (section === "tags") {
       const tags = await this.tagRepository.listTags();
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderTagCards(locale, tags)));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderTagCards(locale, tags), settings));
       return;
     }
 
     if (section === "posts") {
       const articles = await this.searchService.searchPublic({ localePrefix: prefix, limit: 100 });
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderPostsBody(locale, prefix, articles)));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderPostsBody(locale, prefix, articles), settings));
       return;
     }
 
     if (section === "archives") {
       const articles = await this.searchService.searchPublic({ localePrefix: prefix, limit: 100 });
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderArchiveBody(locale, prefix, articles)));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderArchiveBody(locale, prefix, articles), settings));
       return;
     }
 
     if (section === "moments") {
       const moments = await this.momentRepository.listMoments({ locale, limit: 100, status: "published" });
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderMomentsBody(locale, moments)));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderMomentsBody(locale, moments), settings));
       return;
     }
 
@@ -2027,17 +2222,18 @@ export class PublicArticleController {
         locale,
         prefix,
         section,
-        renderGuestbookBody(locale, prefix, entries, { submitted: readGuestbookSubmitted(request.query.submitted) })
+        renderGuestbookBody(locale, prefix, entries, { submitted: readGuestbookSubmitted(request.query.submitted) }),
+        settings
       ));
       return;
     }
 
     if (section === "account") {
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderAccountBody(locale)));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderAccountBody(locale), settings));
       return;
     }
 
-    response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section));
+    response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, undefined, settings));
   };
 
   postGuestbook = async (request: Request, response: Response): Promise<void> => {
@@ -2052,6 +2248,7 @@ export class PublicArticleController {
 
     if (!parsed.input) {
       const entries = await this.guestbookRepository.listPublicEntries({ locale, limit: 50 });
+      const settings = await this.settingsRepository.getSiteSettings();
       response.status(400).type("html").send(renderPublicSectionPage(
         locale,
         prefix,
@@ -2059,7 +2256,8 @@ export class PublicArticleController {
         renderGuestbookBody(locale, prefix, entries, {
           errors: parsed.errors,
           values: parsed.values
-        })
+        }),
+        settings
       ));
       return;
     }
@@ -2088,9 +2286,10 @@ export class PublicArticleController {
       limit: 100,
       tag: translation.slug
     });
+    const settings = await this.settingsRepository.getSiteSettings();
 
     response.status(200).type("html").send(
-      renderPublicSectionPage(locale, prefix, "tags", renderTagDetailBody(locale, prefix, translation.name, translation.slug, articles))
+      renderPublicSectionPage(locale, prefix, "tags", renderTagDetailBody(locale, prefix, translation.name, translation.slug, articles), settings)
     );
   };
 

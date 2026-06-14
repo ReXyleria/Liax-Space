@@ -143,6 +143,13 @@ export class UserRepository {
     return this.findById(input.id);
   }
 
+  async updatePasswordHash(id: number, passwordHash: string): Promise<UserRecord | null> {
+    const pool = getDatabasePool();
+    await pool.execute("UPDATE users SET password_hash = ? WHERE id = ?", [passwordHash, id]);
+
+    return this.findById(id);
+  }
+
   async updateManyRoles(ids: number[], role: UserRole): Promise<number> {
     if (ids.length === 0) {
       return 0;

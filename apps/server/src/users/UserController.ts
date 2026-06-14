@@ -132,6 +132,25 @@ export class UserController {
     response.status(200).json({ user });
   };
 
+  resetUserPassword = async (request: Request, response: Response): Promise<void> => {
+    const actorUserId = requireAuthUserId(request);
+    const userId = readPositiveId(request.params.id, "user id");
+    const password = readRequiredString(request.body?.password, "password");
+    const passwordHash = await hashPassword(password);
+    const user = await this.userService.resetUserPassword(userId, passwordHash, actorUserId);
+
+    await this.auditLogService.recordFromRequest({
+      action: "user.password_reset",
+      entityId: userId,
+      entityType: "user",
+      metadata: {},
+      request,
+      userId: actorUserId
+    });
+
+    response.status(200).json({ user });
+  };
+
   updateManyRoles = async (request: Request, response: Response): Promise<void> => {
     const actorUserId = requireAuthUserId(request);
     const ids = readIdList(request.body?.ids);

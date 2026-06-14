@@ -153,6 +153,29 @@ export class UserService {
     return userRecord ? toUser(userRecord) : null;
   }
 
+  async resetUserPassword(id: number, passwordHash: string, actorUserId: number): Promise<User | null> {
+    assertPositiveId(id);
+    assertPositiveId(actorUserId);
+
+    if (!passwordHash) {
+      throw new AppError("Password hash is required.", {
+        code: errorCodes.validationFailed,
+        statusCode: 400
+      });
+    }
+
+    if (id === actorUserId) {
+      throw new AppError("Users cannot reset their own password from user management.", {
+        code: errorCodes.validationFailed,
+        statusCode: 400
+      });
+    }
+
+    const userRecord = await this.userRepository.updatePasswordHash(id, passwordHash);
+
+    return userRecord ? toUser(userRecord) : null;
+  }
+
   async updateManyRoles(ids: number[], role: string, actorUserId: number): Promise<{ updated: number }> {
     assertPositiveId(actorUserId);
     await this.assertUserRole(role);

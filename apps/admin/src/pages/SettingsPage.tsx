@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactElement } from "react";
 import { settingsApi } from "../api/settingsApi";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
+import { notifySiteAppearanceUpdated } from "../theme/siteTheme";
 
 type HomeSettingsForm = {
   brandInfo: string;
@@ -11,6 +12,8 @@ type HomeSettingsForm = {
   contactItemsZh: string;
   icpNumber: string;
   icpUrl: string;
+  logoAlt: string;
+  logoUrl: string;
 };
 
 type AiSettingsForm = {
@@ -42,6 +45,8 @@ const defaultHomeSettings: HomeSettingsForm = {
   contactItemsZh: "邮箱:hello@example.com\nQQ:123456",
   icpNumber: "备案号待配置",
   icpUrl: "https://beian.miit.gov.cn",
+  logoAlt: "Liax Space",
+  logoUrl: "",
   signature: "Timeless Silent Vigil"
 };
 
@@ -180,6 +185,8 @@ export function SettingsPage(): ReactElement {
             ),
             icpNumber: readSiteString(siteSettingsResponse.settings, "home.icpNumber", defaultHomeSettings.icpNumber),
             icpUrl: readSiteString(siteSettingsResponse.settings, "home.icpUrl", defaultHomeSettings.icpUrl),
+            logoAlt: readSiteString(siteSettingsResponse.settings, "site.logoAlt", defaultHomeSettings.logoAlt),
+            logoUrl: readSiteString(siteSettingsResponse.settings, "site.logoUrl", defaultHomeSettings.logoUrl),
             signature: readSiteString(siteSettingsResponse.settings, "home.signature", defaultHomeSettings.signature)
           });
           setAiSettings({
@@ -244,8 +251,11 @@ export function SettingsPage(): ReactElement {
         "home.contactItems.zh-CN": homeSettings.contactItemsZh.trim(),
         "home.icpNumber": homeSettings.icpNumber.trim(),
         "home.icpUrl": homeSettings.icpUrl.trim(),
-        "home.signature": homeSettings.signature.trim()
+        "home.signature": homeSettings.signature.trim(),
+        "site.logoAlt": homeSettings.logoAlt.trim(),
+        "site.logoUrl": homeSettings.logoUrl.trim()
       });
+      notifySiteAppearanceUpdated(response.settings);
 
       setHomeSettings({
         brandInfo: readSiteString(response.settings, "home.brandInfo", defaultHomeSettings.brandInfo),
@@ -253,6 +263,8 @@ export function SettingsPage(): ReactElement {
         contactItemsZh: readSiteString(response.settings, "home.contactItems.zh-CN", defaultHomeSettings.contactItemsZh),
         icpNumber: readSiteString(response.settings, "home.icpNumber", defaultHomeSettings.icpNumber),
         icpUrl: readSiteString(response.settings, "home.icpUrl", defaultHomeSettings.icpUrl),
+        logoAlt: readSiteString(response.settings, "site.logoAlt", defaultHomeSettings.logoAlt),
+        logoUrl: readSiteString(response.settings, "site.logoUrl", defaultHomeSettings.logoUrl),
         signature: readSiteString(response.settings, "home.signature", defaultHomeSettings.signature)
       });
       setMessage(t("settings.siteSaved"));
@@ -414,6 +426,23 @@ export function SettingsPage(): ReactElement {
                   type="url"
                   value={homeSettings.icpUrl}
                   onChange={(event) => setHomeSettings((current) => ({ ...current, icpUrl: event.target.value }))}
+                />
+              </label>
+              <label className="admin-form-field admin-home-settings-grid__wide">
+                <span>{t("settings.siteLogoUrl")}</span>
+                <input
+                  placeholder="https://example.com/logo.png"
+                  type="url"
+                  value={homeSettings.logoUrl}
+                  onChange={(event) => setHomeSettings((current) => ({ ...current, logoUrl: event.target.value }))}
+                />
+                <small>{t("settings.siteLogoUrlHelp")}</small>
+              </label>
+              <label className="admin-form-field">
+                <span>{t("settings.siteLogoAlt")}</span>
+                <input
+                  value={homeSettings.logoAlt}
+                  onChange={(event) => setHomeSettings((current) => ({ ...current, logoAlt: event.target.value }))}
                 />
               </label>
               <label className="admin-form-field">

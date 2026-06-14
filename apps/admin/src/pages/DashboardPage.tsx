@@ -58,6 +58,7 @@ export function DashboardPage(): ReactElement {
 
     return [
       { key: "dashboard.stat.articles", value: dashboard.totals.articles },
+      { key: "dashboard.stat.moments", value: dashboard.totals.moments },
       { key: "dashboard.stat.users", value: dashboard.totals.users },
       { key: "dashboard.stat.comments", value: dashboard.totals.comments },
       { key: "dashboard.stat.guestbook", value: dashboard.totals.guestbook },

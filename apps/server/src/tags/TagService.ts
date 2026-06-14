@@ -53,11 +53,35 @@ function parseRequiredString(value: unknown, fieldName: string): string {
   return value.trim();
 }
 
+function slugifyTagName(name: string): string {
+  const normalized = name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 120)
+    .replace(/-+$/gu, "");
+
+  return normalized || "tag";
+}
+
+function parseOptionalSlug(value: unknown, name: string): string {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+
+  return slugifyTagName(name);
+}
+
 function parseTranslationInput(input: TranslationInput, localeValue?: unknown): Omit<TagTranslationInput, "tagId"> {
+  const name = parseRequiredString(input.name, "name");
+
   return {
     locale: parseLocale(localeValue ?? input.locale),
-    name: parseRequiredString(input.name, "name"),
-    slug: parseRequiredString(input.slug, "slug")
+    name,
+    slug: parseOptionalSlug(input.slug, name)
   };
 }
 
@@ -116,14 +140,18 @@ export class TagService {
 
   async createTag(input: Record<string, unknown>): Promise<TagDetail> {
     const translations = parseTranslations(input.translations);
+    const uniqueTranslations: Array<Omit<TagTranslationInput, "tagId">> = [];
 
     for (const translation of translations) {
-      await this.assertSlugAvailable(translation.locale, translation.slug);
+      uniqueTranslations.push({
+        ...translation,
+        slug: await this.generateUniqueSlug(translation.locale, translation.slug)
+      });
     }
 
     const tag = await this.tagRepository.createTag();
 
-    for (const translation of translations) {
+    for (const translation of uniqueTranslations) {
       await this.tagRepository.createTranslation({
         tagId: tag.id,
         ...translation
@@ -138,19 +166,21 @@ export class TagService {
     await this.requireTag(tagId);
 
     const translation = parseTranslationInput(input, localeValue);
-    await this.assertSlugAvailable(translation.locale, translation.slug, tagId);
+    const uniqueSlug = await this.generateUniqueSlug(translation.locale, translation.slug, tagId);
 
     const existingTranslation = await this.tagRepository.findTranslationByTagAndLocale(tagId, translation.locale);
 
     if (existingTranslation) {
       await this.tagRepository.updateTranslation({
         tagId,
-        ...translation
+        ...translation,
+        slug: uniqueSlug
       });
     } else {
       await this.tagRepository.createTranslation({
         tagId,
-        ...translation
+        ...translation,
+        slug: uniqueSlug
       });
     }
 
@@ -211,11 +241,26 @@ export class TagService {
     return tag;
   }
 
-  private async assertSlugAvailable(locale: ArticleLocale, slug: string, currentTagId?: number): Promise<void> {
-    const existingTranslation = await this.tagRepository.findTranslationByLocaleAndSlug(locale, slug);
+  private async generateUniqueSlug(locale: ArticleLocale, baseSlug: string, currentTagId?: number): Promise<string> {
+    const normalizedBase = slugifyTagName(baseSlug);
+    let slug = normalizedBase;
+    let suffix = 2;
 
-    if (existingTranslation && existingTranslation.tagId !== currentTagId) {
-      throw validationError("Tag slug already exists for this locale.");
+    while (true) {
+      const existingTranslation = await this.tagRepository.findTranslationByLocaleAndSlug(locale, slug);
+
+      if (!existingTranslation || existingTranslation.tagId === currentTagId) {
+        return slug;
+      }
+
+      const suffixText = `-${suffix}`;
+      const suffixBase = normalizedBase.slice(0, 160 - suffixText.length).replace(/-+$/gu, "") || "tag";
+      slug = `${suffixBase}${suffixText}`;
+      suffix += 1;
+
+      if (suffix > 1000) {
+        throw validationError("Could not generate a unique tag slug.");
+      }
     }
   }
 }

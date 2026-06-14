@@ -20,7 +20,9 @@ import { TagsPage } from "./pages/TagsPage";
 import { ThemePage } from "./pages/ThemePage";
 import { UserManagementPage } from "./pages/UserManagementPage";
 import { hasAnyPermission } from "./auth/permissions";
+import { settingsApi } from "./api/settingsApi";
 import { authStore, type AuthState } from "./stores/authStore";
+import { applySiteTheme } from "./theme/siteTheme";
 
 function readHash(): string {
   return typeof window === "undefined" ? "" : window.location.hash;
@@ -94,6 +96,16 @@ export function App(): ReactElement {
       authStore.logout();
     });
   }, [authState.status, authState.user]);
+
+  useEffect(() => {
+    if (authState.status !== "authenticated") {
+      return;
+    }
+
+    void settingsApi.getAppearanceSettings()
+      .then((response) => applySiteTheme(response.settings))
+      .catch(() => undefined);
+  }, [authState.status]);
 
   useEffect(() => {
     function handleHashChange(): void {

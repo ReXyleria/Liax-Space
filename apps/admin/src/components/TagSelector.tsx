@@ -5,16 +5,12 @@ import { useT } from "../i18n/useT";
 
 type TranslationForm = {
   enName: string;
-  enSlug: string;
   zhName: string;
-  zhSlug: string;
 };
 
 const emptyForm: TranslationForm = {
   enName: "",
-  enSlug: "",
-  zhName: "",
-  zhSlug: ""
+  zhName: ""
 };
 
 function readName(tag: TagDetail, locale: "zh-CN" | "en-US"): string {
@@ -28,14 +24,12 @@ function readSlug(tag: TagDetail, locale: "zh-CN" | "en-US"): string {
 function formFromTag(tag: TagDetail): TranslationForm {
   return {
     enName: readName(tag, "en-US") === "-" ? "" : readName(tag, "en-US"),
-    enSlug: readSlug(tag, "en-US") === "-" ? "" : readSlug(tag, "en-US"),
-    zhName: readName(tag, "zh-CN") === "-" ? "" : readName(tag, "zh-CN"),
-    zhSlug: readSlug(tag, "zh-CN") === "-" ? "" : readSlug(tag, "zh-CN")
+    zhName: readName(tag, "zh-CN") === "-" ? "" : readName(tag, "zh-CN")
   };
 }
 
 function isCompleteForm(form: TranslationForm): boolean {
-  return Boolean(form.zhName.trim() && form.zhSlug.trim() && form.enName.trim() && form.enSlug.trim());
+  return Boolean(form.zhName.trim() && form.enName.trim());
 }
 
 export function TagSelector(): ReactElement {
@@ -108,8 +102,8 @@ export function TagSelector(): ReactElement {
 
     try {
       const response = await tagApi.createTag([
-        { locale: "zh-CN", name: form.zhName.trim(), slug: form.zhSlug.trim() },
-        { locale: "en-US", name: form.enName.trim(), slug: form.enSlug.trim() }
+        { locale: "zh-CN", name: form.zhName.trim() },
+        { locale: "en-US", name: form.enName.trim() }
       ]);
 
       setTags((currentTags) => [response.tag, ...currentTags]);
@@ -141,12 +135,10 @@ export function TagSelector(): ReactElement {
 
     try {
       await tagApi.updateTranslation(tagId, "zh-CN", {
-        name: editForm.zhName.trim(),
-        slug: editForm.zhSlug.trim()
+        name: editForm.zhName.trim()
       });
       const response = await tagApi.updateTranslation(tagId, "en-US", {
-        name: editForm.enName.trim(),
-        slug: editForm.enSlug.trim()
+        name: editForm.enName.trim()
       });
 
       setTags((currentTags) => currentTags.map((tag) => tag.tag.id === tagId ? response.tag : tag));
@@ -196,16 +188,8 @@ export function TagSelector(): ReactElement {
             <input value={form.zhName} onChange={(event) => updateForm("zhName", event.target.value)} />
           </label>
           <label className="admin-form-field">
-            <span>{t("tag.zhSlug")}</span>
-            <input value={form.zhSlug} onChange={(event) => updateForm("zhSlug", event.target.value)} />
-          </label>
-          <label className="admin-form-field">
             <span>{t("tag.enName")}</span>
             <input value={form.enName} onChange={(event) => updateForm("enName", event.target.value)} />
-          </label>
-          <label className="admin-form-field">
-            <span>{t("tag.enSlug")}</span>
-            <input value={form.enSlug} onChange={(event) => updateForm("enSlug", event.target.value)} />
           </label>
         </div>
 
@@ -234,16 +218,8 @@ export function TagSelector(): ReactElement {
                       <input value={editForm.zhName} onChange={(event) => updateEditForm("zhName", event.target.value)} />
                     </label>
                     <label className="admin-form-field">
-                      <span>{t("tag.zhSlug")}</span>
-                      <input value={editForm.zhSlug} onChange={(event) => updateEditForm("zhSlug", event.target.value)} />
-                    </label>
-                    <label className="admin-form-field">
                       <span>{t("tag.enName")}</span>
                       <input value={editForm.enName} onChange={(event) => updateEditForm("enName", event.target.value)} />
-                    </label>
-                    <label className="admin-form-field">
-                      <span>{t("tag.enSlug")}</span>
-                      <input value={editForm.enSlug} onChange={(event) => updateEditForm("enSlug", event.target.value)} />
                     </label>
                   </div>
                 ) : (

@@ -10,7 +10,7 @@ CREATE TABLE role_definitions (
 
 INSERT INTO role_definitions (role_key, display_name, permissions_json, built_in)
 VALUES
-  ('admin', 'Administrator', JSON_ARRAY('article:create', 'article:update', 'article:publish', 'article:delete', 'attachment:upload', 'user:manage', 'system:maintain'), TRUE),
+  ('admin', 'Administer', JSON_ARRAY('article:create', 'article:update', 'article:publish', 'article:delete', 'attachment:upload', 'user:manage', 'system:maintain'), TRUE),
   ('ssvip', 'SSVIP', JSON_ARRAY(), TRUE),
   ('svip', 'SVIP', JSON_ARRAY(), TRUE),
   ('guest', 'Guest', JSON_ARRAY(), TRUE);

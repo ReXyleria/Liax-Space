@@ -147,6 +147,35 @@ describe("SiteSettingsService", () => {
     });
   });
 
+  it("returns only safe appearance settings for non-maintenance readers", async () => {
+    const repository = new MemorySettingsRepository();
+    const service = new SiteSettingsService(repository as never);
+
+    await service.updateSiteSettings({
+      "ai.apiKey": "provider-secret-key",
+      "site.logoAlt": "Liax Space",
+      "site.logoUrl": "https://example.com/logo.png",
+      "smtp.pass": "smtp-secret",
+      "theme.customColors": {
+        "quiet-garden": {
+          "--color-accent": "#abcdef"
+        }
+      },
+      "theme.preset": "quiet-garden"
+    });
+
+    assert.deepEqual(await service.getAppearanceSettings(), {
+      "site.logoAlt": "Liax Space",
+      "site.logoUrl": "https://example.com/logo.png",
+      "theme.customColors": {
+        "quiet-garden": {
+          "--color-accent": "#abcdef"
+        }
+      },
+      "theme.preset": "quiet-garden"
+    });
+  });
+
   it("keeps unknown site settings JSON-compatible for future expansion", async () => {
     const repository = new MemorySettingsRepository();
     const service = new SiteSettingsService(repository as never);

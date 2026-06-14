@@ -6,6 +6,7 @@ import { settingsApi } from "../api/settingsApi";
 import { LanguageSwitchButton } from "../effects/language-wipe/LanguageSwitchButton";
 import { useT } from "../i18n/useT";
 import { authStore, type AuthState } from "../stores/authStore";
+import { siteAppearanceUpdatedEventName } from "../theme/siteTheme";
 
 export type AdminLayoutProps = {
   avatarUrl?: string | null;
@@ -27,10 +28,22 @@ function currentHash(): string {
   return window.location.hash || "#dashboard";
 }
 
+function readLogoSettings(settings: Record<string, unknown>): { logoAlt: string; logoUrl: string | null } {
+  const logoUrl = settings["site.logoUrl"];
+  const logoAlt = settings["site.logoAlt"];
+
+  return {
+    logoAlt: typeof logoAlt === "string" && logoAlt.trim() ? logoAlt.trim() : "Liax Space",
+    logoUrl: typeof logoUrl === "string" && logoUrl.trim() ? logoUrl.trim() : null
+  };
+}
+
 export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): ReactElement {
   const t = useT();
   const [authState, setAuthState] = useState<AuthState>(() => authStore.getSnapshot());
   const [loadedAvatarUrl, setLoadedAvatarUrl] = useState<string | null>(null);
+  const [siteLogoAlt, setSiteLogoAlt] = useState("Liax Space");
+  const [siteLogoUrl, setSiteLogoUrl] = useState<string | null>(null);
   const [activeHash, setActiveHash] = useState(currentHash);
   const visibleAvatarUrl = avatarUrl ?? loadedAvatarUrl;
   const navGroups: Array<{ key: string; items: NavItem[] }> = [
@@ -107,6 +120,52 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
   }, [avatarUrl]);
 
   useEffect(() => {
+    if (authState.status !== "authenticated") {
+      return;
+    }
+
+    let isMounted = true;
+
+    settingsApi.getAppearanceSettings()
+      .then((response) => {
+        if (!isMounted) {
+          return;
+        }
+
+        const logoSettings = readLogoSettings(response.settings);
+        setSiteLogoUrl(logoSettings.logoUrl);
+        setSiteLogoAlt(logoSettings.logoAlt);
+      })
+      .catch(() => {
+        if (isMounted) {
+          setSiteLogoUrl(null);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [authState.status]);
+
+  useEffect(() => {
+    function handleAppearanceUpdated(event: Event): void {
+      if (!(event instanceof CustomEvent)) {
+        return;
+      }
+
+      const logoSettings = readLogoSettings(event.detail as Record<string, unknown>);
+      setSiteLogoUrl(logoSettings.logoUrl);
+      setSiteLogoAlt(logoSettings.logoAlt);
+    }
+
+    window.addEventListener(siteAppearanceUpdatedEventName, handleAppearanceUpdated);
+
+    return () => {
+      window.removeEventListener(siteAppearanceUpdatedEventName, handleAppearanceUpdated);
+    };
+  }, []);
+
+  useEffect(() => {
     function handleHashChange(): void {
       setActiveHash(currentHash());
     }
@@ -123,7 +182,9 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
     <div className="admin-layout">
       <aside className="admin-sidebar" aria-label={t("nav.main")}>
         <div className="admin-sidebar__brand" aria-label="Liax Space">
-          <span className="admin-sidebar__logo" aria-hidden="true">LS</span>
+          <span className="admin-sidebar__logo" aria-hidden={siteLogoUrl ? undefined : "true"}>
+            {siteLogoUrl ? <img alt={siteLogoAlt} src={siteLogoUrl} /> : "LS"}
+          </span>
           <span>Liax Space</span>
         </div>
         <nav className="admin-nav" aria-label={t("nav.main")}>

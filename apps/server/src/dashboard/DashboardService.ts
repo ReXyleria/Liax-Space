@@ -56,7 +56,7 @@ function fillDailyVisits(range: DashboardRange, rows: DailyVisitCount[]): DailyV
       date: key,
       visits: byDate.get(key) ?? 0
     };
-  });
+  }).reverse();
 }
 
 function readDeviceType(userAgent: string | null): string {

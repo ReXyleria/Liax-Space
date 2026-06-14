@@ -36,6 +36,7 @@ export function UserManagementPage(): ReactElement {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [editRole, setEditRole] = useState<AdminUserRole>("svip");
+  const [resetPassword, setResetPassword] = useState("");
   const [search, setSearch] = useState("");
   const [role, setRole] = useState<AdminUserRole>("svip");
   const [isLoading, setIsLoading] = useState(true);
@@ -166,6 +167,7 @@ export function UserManagementPage(): ReactElement {
   function openUserEditor(user: AdminUser): void {
     setEditingUser(user);
     setEditRole(user.role);
+    setResetPassword("");
     setMessage(null);
     setErrorMessage(null);
   }
@@ -207,6 +209,31 @@ export function UserManagementPage(): ReactElement {
       await loadUsers(search);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("users.disableFailed"));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function resetEditingUserPassword(): Promise<void> {
+    if (!editingUser) {
+      return;
+    }
+
+    if (!resetPassword.trim()) {
+      setErrorMessage(t("users.resetPasswordRequired"));
+      return;
+    }
+
+    setIsWorking(true);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await userApi.resetUserPassword(editingUser.id, resetPassword.trim());
+      setResetPassword("");
+      setMessage(`${t("users.passwordReset")}: ${editingUser.username}`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("users.passwordResetFailed"));
     } finally {
       setIsWorking(false);
     }
@@ -415,6 +442,27 @@ export function UserManagementPage(): ReactElement {
                   type="button"
                 >
                   {t("users.disableUser")}
+                </button>
+              </div>
+              <label className="admin-form-field">
+                <span>{t("users.resetPassword")}</span>
+                <input
+                  autoComplete="new-password"
+                  disabled={isWorking}
+                  onChange={(event) => setResetPassword(event.target.value)}
+                  type="password"
+                  value={resetPassword}
+                />
+                <small>{t("users.resetPasswordHelp")}</small>
+              </label>
+              <div className="admin-form-actions">
+                <button
+                  className="liax-button"
+                  disabled={isWorking || !resetPassword.trim()}
+                  onClick={() => void resetEditingUserPassword()}
+                  type="button"
+                >
+                  {t("users.resetPassword")}
                 </button>
               </div>
             </div>

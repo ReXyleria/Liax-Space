@@ -21,7 +21,7 @@ export type TagDetail = {
 export type TagTranslationInput = {
   locale: ArticleLocale;
   name: string;
-  slug: string;
+  slug?: string;
 };
 
 export type ListTagsResponse = {

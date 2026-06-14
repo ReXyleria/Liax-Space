@@ -56,6 +56,10 @@ export const userApi = {
     return httpClient.patch<{ user: AdminUser | null }>(`/admin/users/${id}/role`, { role });
   },
 
+  resetUserPassword(id: number, password: string): Promise<{ user: AdminUser | null }> {
+    return httpClient.patch<{ user: AdminUser | null }>(`/admin/users/${id}/password`, { password });
+  },
+
   disableUser(id: number): Promise<BatchDisableResponse> {
     return httpClient.post<BatchDisableResponse>("/admin/users/batch/disable", { ids: [id] });
   },

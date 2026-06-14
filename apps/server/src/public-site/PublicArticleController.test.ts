@@ -76,6 +76,18 @@ describe("public home page rendering", () => {
     assert.doesNotMatch(html, /background-image:\s*url\(/i);
     assert.doesNotMatch(html, /linear-gradient\([^)]*(blue|purple|violet)/i);
   });
+
+  it("renders configured public logo and theme preset colors", () => {
+    const html = renderHomePage("zh-CN", "zh", {
+      "site.logoAlt": "Liax Space custom logo",
+      "site.logoUrl": "https://example.com/logo.png",
+      "theme.preset": "quiet-garden"
+    });
+
+    assert.match(html, /<img alt="Liax Space custom logo" src="https:\/\/example\.com\/logo\.png">/);
+    assert.match(html, /--color-primary: #102316;/);
+    assert.match(html, /--color-brand: #3f6b4a;/);
+  });
 });
 
 describe("public section page rendering", () => {
@@ -90,6 +102,18 @@ describe("public section page rendering", () => {
     assert.match(html, /<a class="liax-public-avatar" href="\/console" aria-label="Console"/);
     assert.match(html, /data-public-search-overlay-trigger/);
     assert.match(html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\)/);
+  });
+
+  it("applies configured public logo and theme settings to section pages", () => {
+    const html = renderPublicSectionPage("en-US", "en", "tags", undefined, {
+      "site.logoAlt": "Section logo",
+      "site.logoUrl": "https://example.com/section-logo.png",
+      "theme.preset": "clear-graphite"
+    });
+
+    assert.match(html, /<img alt="Section logo" src="https:\/\/example\.com\/section-logo\.png">/);
+    assert.match(html, /--color-primary: #111315;/);
+    assert.match(html, /--color-brand: #5a554f;/);
   });
 
   it("states that missing public pages do not fallback to another language", () => {

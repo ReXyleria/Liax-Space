@@ -81,6 +81,9 @@ export const settingsApi = {
   getSiteSettings(): Promise<SiteSettingsResponse> {
     return httpClient.get<SiteSettingsResponse>("/admin/settings/site");
   },
+  getAppearanceSettings(): Promise<SiteSettingsResponse> {
+    return httpClient.get<SiteSettingsResponse>("/admin/settings/appearance");
+  },
   updateSiteSettings(input: SiteSettings): Promise<SiteSettingsResponse> {
     return httpClient.patch<SiteSettingsResponse>("/admin/settings/site", input);
   },

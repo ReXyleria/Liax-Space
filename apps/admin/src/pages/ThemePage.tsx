@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactElement } f
 import { settingsApi } from "../api/settingsApi";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
+import { applySiteTheme, notifySiteAppearanceUpdated } from "../theme/siteTheme";
 import {
   baseThemeTokenValues,
   editableThemeTokens,
@@ -111,6 +112,7 @@ export function ThemePage(): ReactElement {
         const customColors = readCustomThemeValues(response.settings["theme.customColors"]);
 
         if (isMounted) {
+          applySiteTheme(response.settings);
           setCustomThemeValues(customColors);
 
           if (isThemePresetId(preset)) {
@@ -141,10 +143,11 @@ export function ThemePage(): ReactElement {
     setErrorMessage(null);
 
     try {
-      await settingsApi.updateSiteSettings({
+      const response = await settingsApi.updateSiteSettings({
         "theme.customColors": customThemeValues,
         "theme.preset": nextPresetId
       });
+      notifySiteAppearanceUpdated(response.settings);
       setSelectedPresetId(nextPresetId);
       setMessage(t("theme.saved"));
     } catch (error) {
@@ -183,10 +186,11 @@ export function ThemePage(): ReactElement {
     setErrorMessage(null);
 
     try {
-      await settingsApi.updateSiteSettings({
+      const response = await settingsApi.updateSiteSettings({
         "theme.customColors": nextCustomValues,
         "theme.preset": editingPresetId
       });
+      notifySiteAppearanceUpdated(response.settings);
       setCustomThemeValues(nextCustomValues);
       setSelectedPresetId(editingPresetId);
       setEditingPresetId(null);

@@ -34,13 +34,14 @@ export function PermissionsPage(): ReactElement {
   const t = useT();
   const [roles, setRoles] = useState<AdminRoleDefinition[]>([]);
   const [permissions, setPermissions] = useState<AdminPermission[]>([]);
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<AdminRoleDefinition | null>(null);
   const [form, setForm] = useState<RoleForm>(emptyForm);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const isBuiltInRole = Boolean(editingRole?.builtIn);
+  const isProtectedRole = form.roleKey === "admin";
 
   function roleDisplayName(role: AdminRoleDefinition): string {
     if (!role.builtIn) {
@@ -72,6 +73,7 @@ export function PermissionsPage(): ReactElement {
 
   function openEditModal(role: AdminRoleDefinition): void {
     setEditingRole(role);
+    setIsRoleModalOpen(true);
     setForm({
       displayName: role.displayName,
       permissions: role.permissions,
@@ -81,11 +83,20 @@ export function PermissionsPage(): ReactElement {
     setErrorMessage(null);
   }
 
+  function openCreateModal(): void {
+    setEditingRole(null);
+    setIsRoleModalOpen(true);
+    setForm(emptyForm);
+    setMessage(null);
+    setErrorMessage(null);
+  }
+
   function closeModal(): void {
     if (isSaving) {
       return;
     }
 
+    setIsRoleModalOpen(false);
     setEditingRole(null);
   }
 
@@ -110,7 +121,9 @@ export function PermissionsPage(): ReactElement {
           : [...currentRoles, response.role].sort((left, right) => Number(right.builtIn) - Number(left.builtIn) || left.roleKey.localeCompare(right.roleKey));
       });
       setMessage(t("permissions.saved"));
-      closeModal();
+      setIsRoleModalOpen(false);
+      setEditingRole(null);
+      setForm(emptyForm);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("permissions.saveFailed"));
     } finally {
@@ -145,9 +158,9 @@ export function PermissionsPage(): ReactElement {
           <p className="admin-kicker">{t("permissions.kicker")}</p>
           <h2>{t("permissions.title")}</h2>
         </div>
-        <span className="admin-status-badge">
+        <button className="liax-button liax-button--brand" onClick={openCreateModal} type="button">
           {t("permissions.createRole")}
-        </span>
+        </button>
       </section>
 
       <section className="liax-card admin-table-card" aria-label={t("permissions.title")}>
@@ -161,7 +174,7 @@ export function PermissionsPage(): ReactElement {
                   <div>
                     <div className="admin-role-card__title">
                       <h3>{roleDisplayName(role)}</h3>
-                      {role.builtIn ? <span className="admin-status-badge">{t("permissions.builtIn")}</span> : null}
+                      {role.roleKey === "admin" ? <span className="admin-status-badge">{t("permissions.builtIn")}</span> : null}
                     </div>
                     <code>{role.roleKey}</code>
                   </div>
@@ -174,10 +187,10 @@ export function PermissionsPage(): ReactElement {
                     )) : <p className="admin-muted-text">{t("permissions.emptyPermissions")}</p>}
                   </div>
                   <div className="admin-form-actions">
-                    <button className="liax-button" disabled={isSaving || role.builtIn} onClick={() => openEditModal(role)} type="button">
+                    <button className="liax-button" disabled={isSaving || role.roleKey === "admin"} onClick={() => openEditModal(role)} type="button">
                       {t("permissions.editRole")}
                     </button>
-                    {!role.builtIn ? (
+                    {role.roleKey !== "admin" ? (
                       <button className="liax-button" disabled={isSaving} onClick={() => void deleteRole(role)} type="button">
                         {t("permissions.deleteRole")}
                       </button>
@@ -190,13 +203,13 @@ export function PermissionsPage(): ReactElement {
         </div>
       </section>
 
-      {editingRole ? (
+      {isRoleModalOpen ? (
         <div className="admin-modal-backdrop" role="presentation">
           <section aria-labelledby="role-edit-title" aria-modal="true" className="admin-modal" role="dialog">
             <div className="admin-modal__header">
               <div>
                 <p className="admin-kicker">{t("permissions.kicker")}</p>
-                <h3 id="role-edit-title">{t("permissions.editRole")}</h3>
+                <h3 id="role-edit-title">{editingRole ? t("permissions.editRole") : t("permissions.createRole")}</h3>
               </div>
               <button className="liax-button" disabled={isSaving} onClick={closeModal} type="button">
                 {t("users.cancel")}
@@ -225,12 +238,12 @@ export function PermissionsPage(): ReactElement {
               </label>
               <fieldset className="admin-role-permission-editor">
                 <legend>{t("permissions.permission")}</legend>
-                {isBuiltInRole ? <p className="admin-muted-text">{t("permissions.adminFixed")}</p> : null}
+                {isProtectedRole ? <p className="admin-muted-text">{t("permissions.adminFixed")}</p> : null}
                 {permissions.map((permission) => (
                   <label className="admin-role-permission-option" key={permission}>
                     <input
                       checked={permissionEnabled(form.permissions, permission)}
-                      disabled={isSaving || isBuiltInRole}
+                      disabled={isSaving || isProtectedRole}
                       onChange={() => setForm((currentForm) => ({
                         ...currentForm,
                         permissions: togglePermission(currentForm.permissions, permission)

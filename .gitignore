@@ -6,12 +6,16 @@ dist
 coverage
 test-results
 .tmp
-docs
-decisions
+docs/
+decisions/
+.codex-artifacts/
+.playwright-mcp/
 *.log
 *.out
 *.err
 liax-admin-running*.png
+labor_report*.docx
+random-article-*.png
 
 storage/runtime/*
 !storage/runtime/.gitkeep

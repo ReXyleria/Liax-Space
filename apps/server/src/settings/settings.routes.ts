@@ -60,6 +60,16 @@ settingsRoutes.patch(
 );
 
 settingsRoutes.get(
+  "/settings/appearance",
+  authRequired,
+  asyncHandler(async (_request, response) => {
+    response.status(200).json({
+      settings: await siteSettingsService.getAppearanceSettings()
+    });
+  })
+);
+
+settingsRoutes.get(
   "/me/preferences",
   authRequired,
   asyncHandler(async (request, response) => {
