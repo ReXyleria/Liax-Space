@@ -7,6 +7,7 @@ export type Moment = {
   authorId: number | null;
   locale: ArticleLocale;
   content: string;
+  images: string[];
   status: MomentStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -18,6 +19,7 @@ export type CreateMomentInput = {
   authorId: number;
   locale: ArticleLocale;
   content: string;
+  images?: string[];
   status?: MomentStatus;
 };
 
@@ -25,6 +27,7 @@ export type UpdateMomentInput = {
   id: number;
   locale?: ArticleLocale;
   content?: string;
+  images?: string[];
   status?: MomentStatus;
   publishedAt?: Date | null;
 };

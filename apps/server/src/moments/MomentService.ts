@@ -8,6 +8,8 @@ type MomentBody = Record<string, unknown>;
 
 const momentStatuses = ["draft", "published"] as const;
 const maxMomentLength = 500;
+const maxMomentImages = 12;
+const maxMomentImageLength = 1000;
 
 function validationError(message: string): AppError {
   return new AppError(message, {
@@ -69,6 +71,38 @@ function parseOptionalContent(value: unknown): string | undefined {
   return value === undefined ? undefined : parseContent(value);
 }
 
+function parseImages(value: unknown): string[] {
+  if (value === undefined || value === null || value === "") {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    throw validationError("images must be an array of image URLs.");
+  }
+
+  const images = value.map((item) => {
+    if (typeof item !== "string") {
+      throw validationError("images must be an array of image URLs.");
+    }
+
+    return item.trim();
+  }).filter(Boolean);
+
+  if (images.length > maxMomentImages) {
+    throw validationError(`images must contain ${maxMomentImages} items or fewer.`);
+  }
+
+  if (images.some((image) => image.length > maxMomentImageLength)) {
+    throw validationError(`each image URL must be ${maxMomentImageLength} characters or fewer.`);
+  }
+
+  return images;
+}
+
+function parseOptionalImages(value: unknown): string[] | undefined {
+  return value === undefined ? undefined : parseImages(value);
+}
+
 function parseOptionalLocale(value: unknown): ArticleLocale | undefined {
   return value === undefined ? undefined : parseLocale(value);
 }
@@ -114,6 +148,7 @@ export class MomentService {
     const input: CreateMomentInput = {
       authorId: actorUserId,
       content: parseContent(body.content),
+      images: parseImages(body.images),
       locale: parseLocale(body.locale),
       status: parseStatus(body.status)
     };
@@ -134,6 +169,7 @@ export class MomentService {
     const moment = await this.momentRepository.updateMoment({
       content: parseOptionalContent(body.content),
       id: momentId,
+      images: parseOptionalImages(body.images),
       locale: parseOptionalLocale(body.locale),
       publishedAt,
       status

@@ -1063,7 +1063,7 @@ function renderTagDetailBody(locale: ArticleLocale, prefix: LocalePrefix, tagNam
       <a class="liax-section-back" href="/${prefix}/tags">${escapeHtml(isZh ? "返回全部标签" : "Back to all tags")}</a>`;
 }
 
-function renderMomentsBody(locale: ArticleLocale, moments: Moment[]): string {
+export function renderMomentsBody(locale: ArticleLocale, moments: Moment[]): string {
   const isZh = locale === "zh-CN";
 
   if (moments.length === 0) {
@@ -1076,8 +1076,16 @@ ${moments.map((moment) => {
   const date = moment.publishedAt ?? moment.createdAt;
   const dateLabel = date.toISOString().slice(0, 10);
 
+  const images = moment.images.length > 0
+    ? `
+          <div class="liax-moment-images">
+${moment.images.map((image) => `            <img alt="" loading="lazy" src="${escapeHtml(image)}">`).join("\n")}
+          </div>`
+    : "";
+
   return `        <article class="liax-moment-card">
           <p>${escapeHtml(moment.content)}</p>
+${images}
           <time datetime="${escapeHtml(date.toISOString())}">${escapeHtml(dateLabel)}</time>
         </article>`;
 }).join("\n")}
@@ -1814,6 +1822,23 @@ ${renderThemeCssVariables(settings)}
       margin: 0 0 12px;
       max-width: none;
       white-space: pre-wrap;
+    }
+
+    .liax-moment-images {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .liax-moment-images img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
     }
 
     .liax-moment-card time {

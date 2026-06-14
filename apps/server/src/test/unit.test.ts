@@ -10,6 +10,7 @@ import "../settings/SiteSettingsService.test.js";
 import "../permissions/PermissionService.test.js";
 import "../users/UserService.test.js";
 import "../tags/TagService.test.js";
+import "../moments/MomentService.test.js";
 import "../public-site/PublicArticleController.test.js";
 import "../public-site/public.routes.test.js";
 import "../search/search.routes.test.js";

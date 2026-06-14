@@ -345,6 +345,8 @@ export const enUSDictionary = {
   "moment.deleted": "Moment deleted.",
   "moment.empty": "No moments yet. Write a short update and save it as draft or publish it.",
   "moment.initialStatus": "Initial status",
+  "moment.images": "Image URLs",
+  "moment.imagesPlaceholder": "One image URL per line",
   "moment.kicker": "Moments",
   "moment.loadFailed": "Failed to load moments.",
   "moment.loading": "Loading moments.",

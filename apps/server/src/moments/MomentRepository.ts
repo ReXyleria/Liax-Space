@@ -9,6 +9,7 @@ type MomentRow = RowDataPacket & {
   author_id: number | null;
   locale: ArticleLocale;
   content: string;
+  images_json: string | string[] | null;
   status: MomentStatus;
   created_at: Date;
   updated_at: Date;
@@ -21,12 +22,30 @@ const momentColumns = [
   "author_id",
   "locale",
   "content",
+  "images_json",
   "status",
   "created_at",
   "updated_at",
   "published_at",
   "deleted_at"
 ].join(", ");
+
+function parseMomentImages(value: MomentRow["images_json"]): string[] {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 function mapMomentRow(row: MomentRow): Moment {
   return {
@@ -35,6 +54,7 @@ function mapMomentRow(row: MomentRow): Moment {
     createdAt: row.created_at,
     deletedAt: row.deleted_at,
     id: row.id,
+    images: parseMomentImages(row.images_json),
     locale: row.locale,
     publishedAt: row.published_at,
     status: row.status,
@@ -47,9 +67,9 @@ export class MomentRepository {
     const pool = getDatabasePool();
     const publishedAt = input.status === "published" ? new Date() : null;
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO moments (author_id, locale, content, status, published_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [input.authorId, input.locale, input.content, input.status ?? "draft", publishedAt]
+      `INSERT INTO moments (author_id, locale, content, images_json, status, published_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [input.authorId, input.locale, input.content, JSON.stringify(input.images ?? []), input.status ?? "draft", publishedAt]
     );
     const moment = await this.findById(result.insertId);
 
@@ -113,6 +133,11 @@ export class MomentRepository {
     if (input.content !== undefined) {
       assignments.push("content = ?");
       params.push(input.content);
+    }
+
+    if (input.images !== undefined) {
+      assignments.push("images_json = ?");
+      params.push(JSON.stringify(input.images));
     }
 
     if (input.status !== undefined) {

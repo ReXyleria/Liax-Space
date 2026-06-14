@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { renderGuestbookBody, renderHomePage, renderPublicSectionPage } from "./PublicArticleController.js";
+import { renderGuestbookBody, renderHomePage, renderMomentsBody, renderPublicSectionPage } from "./PublicArticleController.js";
 
 describe("public home page rendering", () => {
   it("renders contact items without a separate contact title", () => {
@@ -147,5 +147,24 @@ describe("public section page rendering", () => {
     assert.match(html, /访客/);
     assert.match(html, /你好/);
     assert.doesNotMatch(html, /visitor@example\.test/);
+  });
+
+  it("renders moment images without dropping migrated legacy media", () => {
+    const html = renderMomentsBody("zh-CN", [{
+      authorId: null,
+      content: "带图片的瞬间",
+      createdAt: new Date("2026-06-13T08:00:00.000Z"),
+      deletedAt: null,
+      id: 1,
+      images: ["/uploads/moment-a.jpg", "https://example.com/moment-b.jpg"],
+      locale: "zh-CN",
+      publishedAt: new Date("2026-06-13T08:00:00.000Z"),
+      status: "published",
+      updatedAt: new Date("2026-06-13T08:00:00.000Z")
+    }]);
+
+    assert.match(html, /class="liax-moment-images"/);
+    assert.match(html, /src="\/uploads\/moment-a\.jpg"/);
+    assert.match(html, /src="https:\/\/example\.com\/moment-b\.jpg"/);
   });
 });

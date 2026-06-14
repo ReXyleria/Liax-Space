@@ -12,11 +12,13 @@ const maxMomentLength = 500;
 type MomentForm = {
   locale: ArticleLocale;
   content: string;
+  imagesText: string;
   status: MomentStatus;
 };
 
 const initialForm: MomentForm = {
   content: "",
+  imagesText: "",
   locale: "zh-CN",
   status: "draft"
 };
@@ -40,6 +42,10 @@ function replaceMoment(moments: Moment[], moment: Moment): Moment[] {
     : [moment, ...moments];
 
   return sortMoments(nextMoments);
+}
+
+function parseImageUrls(value: string): string[] {
+  return value.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean);
 }
 
 export function MomentsPage(): ReactElement {
@@ -89,7 +95,12 @@ export function MomentsPage(): ReactElement {
     setErrorMessage(null);
 
     try {
-      const response = await momentApi.createMoment(form);
+      const response = await momentApi.createMoment({
+        content: form.content,
+        images: parseImageUrls(form.imagesText),
+        locale: form.locale,
+        status: form.status
+      });
       setMoments((currentMoments) => replaceMoment(currentMoments, response.moment));
       setForm(initialForm);
       setMessage(form.status === "published" ? t("moment.createdPublished") : t("moment.createdDraft"));
@@ -248,6 +259,16 @@ export function MomentsPage(): ReactElement {
               value={form.content}
             />
           </label>
+          <label className="admin-form-field">
+            <span>{t("moment.images")}</span>
+            <textarea
+              className="admin-moment-image-field"
+              disabled={isWorking}
+              onChange={(event) => setForm((currentForm) => ({ ...currentForm, imagesText: event.target.value }))}
+              placeholder={t("moment.imagesPlaceholder")}
+              value={form.imagesText}
+            />
+          </label>
           <div className="admin-moment-footer">
             <span className={remainingCharacters < 0 ? "admin-error-text" : "admin-muted-text"}>
               {t("moment.charactersLeft")}: {remainingCharacters}
@@ -273,6 +294,13 @@ export function MomentsPage(): ReactElement {
                 <time>{formatDate(moment.publishedAt ?? moment.createdAt)}</time>
               </div>
               <p>{moment.content}</p>
+              {moment.images.length > 0 ? (
+                <div className="admin-moment-images">
+                  {moment.images.map((image) => (
+                    <img alt="" key={image} loading="lazy" src={image} />
+                  ))}
+                </div>
+              ) : null}
               {moment.status === "published" ? (
                 <div className="admin-moment-published-time">
                   <label className="admin-form-field">

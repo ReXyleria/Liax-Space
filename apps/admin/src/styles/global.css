@@ -2277,6 +2277,11 @@ canvas {
   resize: vertical;
 }
 
+.admin-moment-image-field {
+  min-height: 92px;
+  resize: vertical;
+}
+
 .admin-moment-footer {
   display: flex;
   justify-content: space-between;
@@ -2298,6 +2303,22 @@ canvas {
 .admin-moment-card p {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.admin-moment-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.admin-moment-images img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid #d1cfc5;
+  border-radius: 8px;
+  background: #f5f4ed;
 }
 
 .admin-moment-card__meta {

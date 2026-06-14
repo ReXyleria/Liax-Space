@@ -343,6 +343,8 @@ export const zhCNDictionary = {
   "moment.deleted": "瞬间已删除。",
   "moment.empty": "还没有瞬间。可以先写一条短内容，保存为草稿或直接发布。",
   "moment.initialStatus": "初始状态",
+  "moment.images": "图片链接",
+  "moment.imagesPlaceholder": "每行一个图片链接",
   "moment.kicker": "瞬间",
   "moment.loadFailed": "瞬间加载失败。",
   "moment.loading": "正在加载瞬间。",
