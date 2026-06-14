@@ -1915,7 +1915,8 @@ canvas {
   inset: 0;
   z-index: 20;
   display: grid;
-  place-items: center;
+  align-items: start;
+  justify-items: center;
   overflow: auto;
   background: rgb(250 249 245 / 72%);
   backdrop-filter: blur(10px);
@@ -2132,12 +2133,10 @@ canvas {
 @keyframes admin-page-enter {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
