@@ -65,10 +65,9 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
           ? await versionApi.listVersionSummaries(articleId, locale)
           : { versions: [] };
         const latestVersion = versionsResponse.versions[0] ?? null;
-        const fullVersion = latestVersion
-          ? (await versionApi.getVersion(articleId, locale, latestVersion.id)).version
-          : null;
-        const nextMarkdown = fullVersion?.mdContent ?? "";
+        const nextMarkdown = latestVersion
+          ? await versionApi.getVersionMarkdown(articleId, locale, latestVersion.id)
+          : "";
 
         if (isMounted) {
           setTranslation(activeTranslation);
@@ -200,9 +199,11 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
     setErrorMessage(null);
 
     try {
-      const versionsResponse = await versionApi.listVersions(articleId, sourceLocale);
+      const versionsResponse = await versionApi.listVersionSummaries(articleId, sourceLocale);
       const latestSourceVersion = versionsResponse.versions[0] ?? null;
-      const latestSourceMarkdown = latestSourceVersion?.mdContent ?? "";
+      const latestSourceMarkdown = latestSourceVersion
+        ? await versionApi.getVersionMarkdown(articleId, sourceLocale, latestSourceVersion.id)
+        : "";
 
       if (!latestSourceVersion || !latestSourceMarkdown.trim()) {
         setErrorMessage(t("article.translateSourceMissing"));

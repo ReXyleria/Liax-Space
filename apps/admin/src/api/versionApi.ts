@@ -41,7 +41,7 @@ export type SaveVersionRequest = {
 
 export type SaveVersionResponse = {
   unchanged: boolean;
-  version: ArticleVersion;
+  version: ArticleVersionSummary;
 };
 
 export type ImportMarkdownVersionResponse = {
@@ -142,6 +142,32 @@ function uploadMarkdownFile(
   });
 }
 
+async function fetchMarkdownText(path: string): Promise<string> {
+  const token = readAuthToken();
+  const headers = new Headers();
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(buildApiUrl(path), { headers });
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    const payload = readErrorPayload(parseJsonResponse(responseText));
+
+    throw new ApiError({
+      code: payload.code,
+      details: payload.details,
+      message: payload.message,
+      requestId: payload.requestId ?? response.headers.get("x-request-id"),
+      status: response.status
+    });
+  }
+
+  return responseText;
+}
+
 export const versionApi = {
   listVersions(articleId: number, locale: ArticleLocale): Promise<ListVersionsResponse> {
     return httpClient.get<ListVersionsResponse>(`/admin/articles/${articleId}/${locale}/versions`);
@@ -151,6 +177,9 @@ export const versionApi = {
   },
   getVersion(articleId: number, locale: ArticleLocale, versionId: number): Promise<GetVersionResponse> {
     return httpClient.get<GetVersionResponse>(`/admin/articles/${articleId}/${locale}/versions/${versionId}`);
+  },
+  getVersionMarkdown(articleId: number, locale: ArticleLocale, versionId: number): Promise<string> {
+    return fetchMarkdownText(`/admin/articles/${articleId}/${locale}/versions/${versionId}/markdown`);
   },
   importMarkdownFile(
     articleId: number,

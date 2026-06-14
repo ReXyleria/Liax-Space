@@ -231,7 +231,10 @@ versionRoutes.post(
       userId
     });
 
-    response.status(result.unchanged ? 200 : 201).json(result);
+    response.status(result.unchanged ? 200 : 201).json({
+      unchanged: result.unchanged,
+      version: summarizeArticleVersion(result.version)
+    });
   })
 );
 
@@ -346,6 +349,24 @@ versionRoutes.post(
     );
 
     response.status(200).json({ version });
+  })
+);
+
+versionRoutes.get(
+  "/articles/:articleId/:locale/versions/:versionId/markdown",
+  authRequired,
+  asyncHandler(async (request, response) => {
+    const version = await articleVersionService.getVersion(
+      readPositiveParam(request.params.articleId, "articleId"),
+      request.params.locale,
+      readPositiveParam(request.params.versionId, "versionId")
+    );
+
+    response
+      .status(200)
+      .type("text/markdown; charset=utf-8")
+      .setHeader("Cache-Control", "no-store")
+      .send(version.mdContent);
   })
 );
 
