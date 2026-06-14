@@ -7,7 +7,7 @@ import { sha256 } from "../common/sha256.js";
 import { AttachmentResolver } from "../renderer/AttachmentResolver.js";
 import { ArticleVersionRepository } from "./ArticleVersionRepository.js";
 import { normalizeMarkdown } from "./normalizeMarkdown.js";
-import type { ArticleVersion, ArticleVersionLocale, ArticleVersionSummary } from "./versions.types.js";
+import type { ArticleVersion, ArticleVersionLocale, ArticleVersionMarkdownChunk, ArticleVersionSummary } from "./versions.types.js";
 
 export type SaveArticleVersionInput = {
   articleId: number;
@@ -38,6 +38,14 @@ export type ImportMarkdownVersionInput = {
   locale: unknown;
   mdContent: string;
   createdBy: number;
+};
+
+export type GetMarkdownChunkInput = {
+  articleId: number;
+  locale: unknown;
+  limit: number;
+  offset: number;
+  versionId: number;
 };
 
 function validationError(message: string): AppError {
@@ -119,6 +127,14 @@ export function summarizeArticleVersion(version: ArticleVersion): ArticleVersion
 function parsePositiveInteger(value: unknown, fieldName: string): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
     throw validationError(`${fieldName} must be a positive integer.`);
+  }
+
+  return value;
+}
+
+function parseNonNegativeInteger(value: unknown, fieldName: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw validationError(`${fieldName} must be a non-negative integer.`);
   }
 
   return value;
@@ -238,6 +254,30 @@ export class ArticleVersionService {
     }
 
     return version;
+  }
+
+  async getMarkdownChunk(input: GetMarkdownChunkInput): Promise<ArticleVersionMarkdownChunk> {
+    assertPositiveId(input.articleId, "articleId");
+    assertPositiveId(input.versionId, "versionId");
+
+    const locale = parseLocale(input.locale);
+    const offset = parseNonNegativeInteger(input.offset, "offset");
+    const limit = parsePositiveInteger(input.limit, "limit");
+    const chunk = await this.versionRepository.findMarkdownChunk({
+      limit,
+      offset,
+      versionId: input.versionId
+    });
+
+    if (!chunk) {
+      throw notFoundError("Article version not found.");
+    }
+
+    if (chunk.articleId !== input.articleId || chunk.locale !== locale) {
+      throw validationError("versionId must belong to articleId and locale.");
+    }
+
+    return chunk;
   }
 
   async rollbackVersion(input: RollbackArticleVersionInput): Promise<RollbackArticleVersionResult> {

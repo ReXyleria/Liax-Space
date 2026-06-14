@@ -30,6 +30,16 @@ export type ArticleVersionSummary = Omit<ArticleVersion, "mdContent"> & {
   contentSizeBytes: number;
 };
 
+export type ArticleVersionMarkdownChunk = {
+  articleId: number;
+  locale: ArticleVersionLocale;
+  mdContent: MarkdownContent;
+  nextOffset: number;
+  offset: number;
+  totalLength: number;
+  versionId: number;
+};
+
 export type CreateArticleVersionInput = {
   articleId: number;
   locale: ArticleVersionLocale;

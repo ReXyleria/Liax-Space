@@ -64,6 +64,8 @@ export type PublishVersionRequest = {
   publishedAt?: string | null;
 };
 
+const markdownChunkSize = 256 * 1024;
+
 function parseJsonResponse(value: string): unknown {
   if (!value) {
     return null;
@@ -142,30 +144,57 @@ function uploadMarkdownFile(
   });
 }
 
+function appendMarkdownChunkQuery(path: string, offset: number): string {
+  const separator = path.includes("?") ? "&" : "?";
+
+  return `${path}${separator}offset=${offset}&limit=${markdownChunkSize}`;
+}
+
 async function fetchMarkdownText(path: string): Promise<string> {
   const token = readAuthToken();
   const headers = new Headers();
+  const chunks: string[] = [];
+  let offset = 0;
 
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(buildApiUrl(path), { headers });
-  const responseText = await response.text();
+  while (true) {
+    const response = await fetch(buildApiUrl(appendMarkdownChunkQuery(path, offset)), { headers });
+    const responseText = await response.text();
 
-  if (!response.ok) {
-    const payload = readErrorPayload(parseJsonResponse(responseText));
+    if (!response.ok) {
+      const payload = readErrorPayload(parseJsonResponse(responseText));
 
-    throw new ApiError({
-      code: payload.code,
-      details: payload.details,
-      message: payload.message,
-      requestId: payload.requestId ?? response.headers.get("x-request-id"),
-      status: response.status
-    });
+      throw new ApiError({
+        code: payload.code,
+        details: payload.details,
+        message: payload.message,
+        requestId: payload.requestId ?? response.headers.get("x-request-id"),
+        status: response.status
+      });
+    }
+
+    chunks.push(responseText);
+
+    const totalLength = Number(response.headers.get("x-markdown-total-length") ?? responseText.length);
+    const nextOffset = Number(response.headers.get("x-markdown-next-offset") ?? offset + responseText.length);
+
+    if (!Number.isFinite(totalLength) || !Number.isFinite(nextOffset)) {
+      throw new Error("Markdown chunk response is missing progress metadata.");
+    }
+
+    if (totalLength === 0 || nextOffset >= totalLength) {
+      return chunks.join("");
+    }
+
+    if (nextOffset <= offset) {
+      throw new Error("Markdown chunk response did not advance.");
+    }
+
+    offset = nextOffset;
   }
-
-  return responseText;
 }
 
 export const versionApi = {

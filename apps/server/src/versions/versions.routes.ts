@@ -39,6 +39,42 @@ function readPositiveParam(value: string | undefined, fieldName: string): number
   return id;
 }
 
+function readNonNegativeQuery(value: unknown, fieldName: string, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (Array.isArray(value)) {
+    throw validationError(`${fieldName} must be a non-negative integer.`);
+  }
+
+  const id = Number(value);
+
+  if (!Number.isInteger(id) || id < 0) {
+    throw validationError(`${fieldName} must be a non-negative integer.`);
+  }
+
+  return id;
+}
+
+function readPositiveQuery(value: unknown, fieldName: string, fallback: number, maximum: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (Array.isArray(value)) {
+    throw validationError(`${fieldName} must be a positive integer.`);
+  }
+
+  const id = Number(value);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    throw validationError(`${fieldName} must be a positive integer.`);
+  }
+
+  return Math.min(id, maximum);
+}
+
 function readBodyRecord(body: unknown): Record<string, unknown> {
   return body !== null && typeof body === "object" ? (body as Record<string, unknown>) : {};
 }
@@ -356,11 +392,30 @@ versionRoutes.get(
   "/articles/:articleId/:locale/versions/:versionId/markdown",
   authRequired,
   asyncHandler(async (request, response) => {
-    const version = await articleVersionService.getVersion(
-      readPositiveParam(request.params.articleId, "articleId"),
-      request.params.locale,
-      readPositiveParam(request.params.versionId, "versionId")
-    );
+    const articleId = readPositiveParam(request.params.articleId, "articleId");
+    const versionId = readPositiveParam(request.params.versionId, "versionId");
+
+    if (request.query.offset !== undefined || request.query.limit !== undefined) {
+      const chunk = await articleVersionService.getMarkdownChunk({
+        articleId,
+        limit: readPositiveQuery(request.query.limit, "limit", 256 * 1024, 512 * 1024),
+        locale: request.params.locale,
+        offset: readNonNegativeQuery(request.query.offset, "offset", 0),
+        versionId
+      });
+
+      response
+        .status(200)
+        .type("text/markdown; charset=utf-8")
+        .setHeader("Cache-Control", "no-store")
+        .setHeader("x-markdown-total-length", String(chunk.totalLength))
+        .setHeader("x-markdown-offset", String(chunk.offset))
+        .setHeader("x-markdown-next-offset", String(chunk.nextOffset))
+        .send(chunk.mdContent);
+      return;
+    }
+
+    const version = await articleVersionService.getVersion(articleId, request.params.locale, versionId);
 
     response
       .status(200)

@@ -3,6 +3,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { getDatabasePool } from "../database/connection.js";
 import type {
   ArticleVersion,
+  ArticleVersionMarkdownChunk,
   ArticleVersionLocale,
   ArticleVersionSummary,
   CreateArticleVersionInput,
@@ -49,6 +50,13 @@ type ArticleVersionSummaryRow = RowDataPacket & {
   created_at: Date;
   is_published_snapshot: number | boolean;
   is_pinned: number | boolean;
+};
+
+type ArticleVersionMarkdownChunkRow = RowDataPacket & {
+  article_id: number;
+  content_length: number;
+  locale: ArticleVersionLocale;
+  md_content: string;
 };
 
 const versionColumns = [
@@ -172,6 +180,39 @@ export class ArticleVersionRepository {
     );
 
     return rows[0] ? mapArticleVersionRow(rows[0]) : null;
+  }
+
+  async findMarkdownChunk(input: {
+    limit: number;
+    offset: number;
+    versionId: number;
+  }): Promise<ArticleVersionMarkdownChunk | null> {
+    const pool = getDatabasePool();
+    const [rows] = await pool.execute<ArticleVersionMarkdownChunkRow[]>(
+      `SELECT article_id, locale, CHAR_LENGTH(md_content) AS content_length, SUBSTRING(md_content, ?, ?) AS md_content
+       FROM article_versions
+       WHERE id = ?
+       LIMIT 1`,
+      [input.offset + 1, input.limit, input.versionId]
+    );
+    const row = rows[0];
+
+    if (!row) {
+      return null;
+    }
+
+    const totalLength = Number(row.content_length);
+    const mdContent = row.md_content ?? "";
+
+    return {
+      articleId: row.article_id,
+      locale: row.locale,
+      mdContent,
+      nextOffset: Math.min(input.offset + input.limit, totalLength),
+      offset: input.offset,
+      totalLength,
+      versionId: input.versionId
+    };
   }
 
   async findLatestByArticleAndLocale(articleId: number, locale: ArticleVersionLocale): Promise<ArticleVersion | null> {
