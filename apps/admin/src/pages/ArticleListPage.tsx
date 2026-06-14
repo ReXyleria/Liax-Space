@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { articleApi, type ArticleDetail, type ArticleLocale, type ArticleTranslation } from "../api/articleApi";
+import { roleApi, type AdminRoleDefinition } from "../api/roleApi";
 import { translationApi } from "../api/translationApi";
+import { versionApi } from "../api/versionApi";
 import { LocaleTabs } from "../components/LocaleTabs";
 import { SeoFields, type TranslationMetadataFormValue } from "../components/SeoFields";
 import { AdminLayout } from "../layout/AdminLayout";
@@ -16,6 +18,7 @@ const articleStatusOptions = ["draft", "active", "archived"] as const;
 type TranslationStatus = "missing" | "metadata" | "draft" | "published";
 type TranslationFormState = Record<ArticleLocale, TranslationMetadataFormValue>;
 type ExistingTranslationState = Record<ArticleLocale, ArticleTranslation | null>;
+type VisibilityState = Record<ArticleLocale, string[]>;
 
 function formatDate(value: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, {
@@ -81,6 +84,13 @@ function emptyExistingState(): ExistingTranslationState {
   };
 }
 
+function emptyVisibilityState(): VisibilityState {
+  return {
+    "en-US": [],
+    "zh-CN": []
+  };
+}
+
 function toFormValue(translation: ArticleTranslation | null): TranslationMetadataFormValue {
   if (!translation) {
     return createEmptyFormValue();
@@ -99,16 +109,19 @@ function toFormValue(translation: ArticleTranslation | null): TranslationMetadat
 function buildTranslationState(detail: ArticleDetail): {
   existingTranslations: ExistingTranslationState;
   forms: TranslationFormState;
+  visibility: VisibilityState;
 } {
   const existingTranslations = emptyExistingState();
   const forms = emptyFormState();
+  const visibility = emptyVisibilityState();
 
   for (const translation of detail.translations) {
     existingTranslations[translation.locale] = translation;
     forms[translation.locale] = toFormValue(translation);
+    visibility[translation.locale] = translation.allowedRoles ?? [];
   }
 
-  return { existingTranslations, forms };
+  return { existingTranslations, forms, visibility };
 }
 
 function toNullableValue(value: string): string | null {
@@ -150,18 +163,24 @@ function isSlugDuplicateError(error: unknown): boolean {
 
 export function ArticleListPage(): ReactElement {
   const t = useT();
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const [authState, setAuthState] = useState<AuthState>(() => authStore.getSnapshot());
   const [articles, setArticles] = useState<ArticleDetail[]>([]);
+  const [roleOptions, setRoleOptions] = useState<AdminRoleDefinition[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [editingArticle, setEditingArticle] = useState<ArticleDetail | null>(null);
   const [activeLocale, setActiveLocale] = useState<ArticleLocale>("zh-CN");
   const [existingTranslations, setExistingTranslations] = useState<ExistingTranslationState>(() => emptyExistingState());
+  const [allowedRoles, setAllowedRoles] = useState<VisibilityState>(() => emptyVisibilityState());
   const [forms, setForms] = useState<TranslationFormState>(() => emptyFormState());
   const [status, setStatus] = useState("draft");
   const [coverAttachmentId, setCoverAttachmentId] = useState("");
+  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
+  const [isImportingMarkdown, setIsImportingMarkdown] = useState(false);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
   const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(null);
   const [modalSuccessMessage, setModalSuccessMessage] = useState<string | null>(null);
   const formatterLocale = useMemo(() => navigator.language || "zh-CN", []);
@@ -171,6 +190,34 @@ export function ArticleListPage(): ReactElement {
   const canEditArticle = hasAnyPermission(authState.user, ["article:update"]);
 
   useEffect(() => authStore.subscribe(setAuthState), []);
+
+  useEffect(() => {
+    if (!canEditArticle) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadRoles(): Promise<void> {
+      try {
+        const response = await roleApi.listRoles();
+
+        if (isMounted) {
+          setRoleOptions(response.roles);
+        }
+      } catch {
+        if (isMounted) {
+          setRoleOptions([]);
+        }
+      }
+    }
+
+    void loadRoles();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [canEditArticle]);
 
   useEffect(() => {
     let isMounted = true;
@@ -214,19 +261,29 @@ export function ArticleListPage(): ReactElement {
     setActiveLocale("zh-CN");
     setExistingTranslations(nextState.existingTranslations);
     setForms(nextState.forms);
+    setAllowedRoles(nextState.visibility);
     setStatus(detail.article.status || "draft");
     setCoverAttachmentId(detail.article.coverAttachmentId === null ? "" : String(detail.article.coverAttachmentId));
+    setSelectedImportFile(null);
+    setImportProgress(null);
     setIsGeneratingSeo(false);
+    setIsImportingMarkdown(false);
     setModalErrorMessage(null);
     setModalSuccessMessage(null);
+
+    if (importFileInputRef.current) {
+      importFileInputRef.current.value = "";
+    }
   }
 
   function closeConfigModal(): void {
-    if (isSavingConfig || isGeneratingSeo) {
+    if (isSavingConfig || isGeneratingSeo || isImportingMarkdown) {
       return;
     }
 
     setEditingArticle(null);
+    setSelectedImportFile(null);
+    setImportProgress(null);
     setModalErrorMessage(null);
     setModalSuccessMessage(null);
   }
@@ -242,6 +299,29 @@ export function ArticleListPage(): ReactElement {
     updateActiveForm({
       ...activeForm,
       [field]: value
+    });
+  }
+
+  function roleDisplayName(role: AdminRoleDefinition): string {
+    if (!role.builtIn) {
+      return role.displayName;
+    }
+
+    const localizedName = t(`users.role.${role.roleKey}`);
+    return localizedName.startsWith("[missing:") ? role.displayName : localizedName;
+  }
+
+  function toggleActiveAllowedRole(roleKey: string): void {
+    setAllowedRoles((currentVisibility) => {
+      const currentRoles = currentVisibility[activeLocale] ?? [];
+      const nextRoles = currentRoles.includes(roleKey)
+        ? currentRoles.filter((item) => item !== roleKey)
+        : [...currentRoles, roleKey];
+
+      return {
+        ...currentVisibility,
+        [activeLocale]: nextRoles
+      };
     });
   }
 
@@ -289,6 +369,7 @@ export function ArticleListPage(): ReactElement {
       if (shouldSaveMetadata) {
         const payload = {
           publishedAt: activeTranslation?.publishedVersionId != null ? toPublishedAtPayload(activeForm.publishedAt) : undefined,
+          allowedRoles: allowedRoles[activeLocale] ?? [],
           seoDescription: toNullableValue(activeForm.seoDescription),
           seoTitle: toNullableValue(activeForm.seoTitle),
           slug: activeForm.slug.trim(),
@@ -314,6 +395,7 @@ export function ArticleListPage(): ReactElement {
       setEditingArticle(nextDetail);
       setExistingTranslations(nextState.existingTranslations);
       setForms(nextState.forms);
+      setAllowedRoles(nextState.visibility);
       setCoverAttachmentId(nextDetail.article.coverAttachmentId === null ? "" : String(nextDetail.article.coverAttachmentId));
       setStatus(nextDetail.article.status);
       setModalSuccessMessage(t("article.configSaved"));
@@ -360,6 +442,73 @@ export function ArticleListPage(): ReactElement {
       setModalErrorMessage(error instanceof Error ? error.message : t("article.seoGenerateFailed"));
     } finally {
       setIsGeneratingSeo(false);
+    }
+  }
+
+  function formatBytes(value: number): string {
+    if (value >= 1024 * 1024) {
+      return `${(value / 1024 / 1024).toFixed(1)} MB`;
+    }
+
+    if (value >= 1024) {
+      return `${Math.round(value / 1024)} KB`;
+    }
+
+    return `${value} B`;
+  }
+
+  async function handleImportMarkdownFile(): Promise<void> {
+    if (!editingArticle) {
+      return;
+    }
+
+    if (!activeTranslation) {
+      setModalErrorMessage(t("article.markdownNeedsMetadata"));
+      setModalSuccessMessage(null);
+      return;
+    }
+
+    if (!selectedImportFile) {
+      setModalErrorMessage(t("article.importFileRequired"));
+      setModalSuccessMessage(null);
+      return;
+    }
+
+    setIsImportingMarkdown(true);
+    setImportProgress(0);
+    setModalErrorMessage(null);
+    setModalSuccessMessage(null);
+
+    try {
+      const response = await versionApi.importMarkdownFile(
+        editingArticle.article.id,
+        activeLocale,
+        selectedImportFile,
+        setImportProgress
+      );
+      const nextDetail = await articleApi.getArticle(editingArticle.article.id);
+      const nextState = buildTranslationState(nextDetail);
+
+      setArticles((currentArticles) => currentArticles.map((item) => (
+        item.article.id === nextDetail.article.id ? nextDetail : item
+      )));
+      setEditingArticle(nextDetail);
+      setExistingTranslations(nextState.existingTranslations);
+      setForms(nextState.forms);
+      setAllowedRoles(nextState.visibility);
+      setSelectedImportFile(null);
+      setModalSuccessMessage(
+        `${response.unchanged ? t("article.importUnchanged") : t("article.importSaved")} ${t("article.versionNo")} ${response.version.versionNo} · ${formatBytes(response.version.contentSizeBytes)}`
+      );
+
+      if (importFileInputRef.current) {
+        importFileInputRef.current.value = "";
+      }
+    } catch (error) {
+      setModalErrorMessage(error instanceof Error ? error.message : t("article.importFailed"));
+    } finally {
+      setIsImportingMarkdown(false);
+      setImportProgress(null);
     }
   }
 
@@ -460,14 +609,12 @@ export function ArticleListPage(): ReactElement {
                 <p className="admin-kicker">{t("article.id")} #{editingArticle.article.id}</p>
                 <h3 id="article-config-title">{t("article.configTitle")}</h3>
               </div>
-              <button className="liax-button" disabled={isSavingConfig || isGeneratingSeo} onClick={closeConfigModal} type="button">
+              <button className="liax-button" disabled={isSavingConfig || isGeneratingSeo || isImportingMarkdown} onClick={closeConfigModal} type="button">
                 {t("article.cancel")}
               </button>
             </header>
 
             <div className="admin-modal__body">
-              <p className="admin-muted-text admin-article-config-help">{t("article.configHelp")}</p>
-
               <section className="admin-article-config-section">
                 <h4>{t("article.basicConfig")}</h4>
                 <div className="admin-article-config-grid">
@@ -526,10 +673,62 @@ export function ArticleListPage(): ReactElement {
                 ) : null}
               </section>
 
+              <section className="admin-article-config-section">
+                <h4>{t("article.visibilityTitle")}</h4>
+                <div className="admin-role-checkbox-grid admin-role-checkbox-grid--compact">
+                  {roleOptions.map((role) => (
+                    <label className="admin-role-checkbox" key={role.roleKey}>
+                      <input
+                        checked={(allowedRoles[activeLocale] ?? []).includes(role.roleKey)}
+                        disabled={isSavingConfig || isGeneratingSeo || isImportingMarkdown || !activeTranslation}
+                        onChange={() => toggleActiveAllowedRole(role.roleKey)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <strong>{roleDisplayName(role)}</strong>
+                        <code>{role.roleKey}</code>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="admin-article-config-section">
+                <h4>{t("article.importTitle")}</h4>
+                <div className="admin-markdown-import admin-markdown-import--modal">
+                  <label className="admin-form-field admin-markdown-import__file">
+                    <span>{t("article.importFile")}</span>
+                    <input
+                      accept=".md,.markdown,.mdown,.txt,text/markdown,text/plain"
+                      disabled={isImportingMarkdown || !activeTranslation}
+                      onChange={(event) => setSelectedImportFile(event.target.files?.[0] ?? null)}
+                      ref={importFileInputRef}
+                      type="file"
+                    />
+                  </label>
+                  <button
+                    className="liax-button"
+                    disabled={isImportingMarkdown || !selectedImportFile || !activeTranslation}
+                    onClick={() => void handleImportMarkdownFile()}
+                    type="button"
+                  >
+                    {isImportingMarkdown ? t("article.importing") : t("article.importAction")}
+                  </button>
+                  {selectedImportFile ? (
+                    <p className="admin-muted-text">{selectedImportFile.name} · {formatBytes(selectedImportFile.size)}</p>
+                  ) : null}
+                  {typeof importProgress === "number" ? (
+                    <div className="admin-markdown-import__progress" aria-label={t("article.importProgress")}>
+                      <span style={{ width: `${importProgress}%` }} />
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
               <div className="admin-form-actions">
                 <button
                   className="liax-button liax-button--primary"
-                  disabled={isSavingConfig || isGeneratingSeo}
+                  disabled={isSavingConfig || isGeneratingSeo || isImportingMarkdown}
                   onClick={() => void handleSaveConfig()}
                   type="button"
                 >

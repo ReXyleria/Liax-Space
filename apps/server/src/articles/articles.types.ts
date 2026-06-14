@@ -56,6 +56,7 @@ export type ArticleTranslation = {
 
 export type CreateArticleTranslationInput = {
   articleId: number;
+  allowedRoles?: string[];
   locale: ArticleLocale;
   title: string;
   slug: string;
@@ -66,6 +67,7 @@ export type CreateArticleTranslationInput = {
 
 export type UpdateArticleTranslationInput = {
   articleId: number;
+  allowedRoles?: string[];
   locale: ArticleLocale;
   title?: string;
   slug?: string;

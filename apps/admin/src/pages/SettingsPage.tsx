@@ -22,6 +22,20 @@ type AiSettingsForm = {
   temperature: string;
 };
 
+type SmtpEncryption = "none" | "starttls" | "ssl_tls";
+
+type SmtpSettingsForm = {
+  encryption: SmtpEncryption;
+  from: string;
+  fromName: string;
+  host: string;
+  notificationsEnabled: boolean;
+  pass: string;
+  passConfigured: boolean;
+  port: string;
+  user: string;
+};
+
 const defaultHomeSettings: HomeSettingsForm = {
   brandInfo: "Liax Space · 温暖极简内容空间",
   contactItemsEn: "Email:hello@example.com\nQQ:123456",
@@ -55,6 +69,18 @@ const defaultAiSettings: AiSettingsForm = {
   temperature: "1"
 };
 
+const defaultSmtpSettings: SmtpSettingsForm = {
+  encryption: "starttls",
+  from: "",
+  fromName: "",
+  host: "",
+  notificationsEnabled: true,
+  pass: "",
+  passConfigured: false,
+  port: "587",
+  user: ""
+};
+
 function readSiteString(settings: Record<string, unknown>, key: string, fallback: string): string {
   const value = settings[key];
 
@@ -79,6 +105,20 @@ function readSiteBoolean(settings: Record<string, unknown>, key: string): boolea
   return settings[key] === true;
 }
 
+function readSiteBooleanWithDefault(settings: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = settings[key];
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string" && ["true", "false"].includes(value)) {
+    return value === "true";
+  }
+
+  return fallback;
+}
+
 function includesCjk(value: string): boolean {
   return /[\u3400-\u9fff]/u.test(value);
 }
@@ -95,13 +135,21 @@ function readAiProvider(settings: Record<string, unknown>): AiSettingsForm["prov
   return value === "openai" || value === "ollama" || value === "deepseek" ? value : "deepseek";
 }
 
+function readSmtpEncryption(settings: Record<string, unknown>): SmtpEncryption {
+  const value = settings["smtp.encryption"];
+
+  return value === "none" || value === "ssl_tls" || value === "starttls" ? value : "starttls";
+}
+
 export function SettingsPage(): ReactElement {
   const t = useT();
   const [homeSettings, setHomeSettings] = useState<HomeSettingsForm>(defaultHomeSettings);
   const [aiSettings, setAiSettings] = useState<AiSettingsForm>(defaultAiSettings);
+  const [smtpSettings, setSmtpSettings] = useState<SmtpSettingsForm>(defaultSmtpSettings);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSite, setIsSavingSite] = useState(false);
   const [isSavingAi, setIsSavingAi] = useState(false);
+  const [isSavingSmtp, setIsSavingSmtp] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -149,6 +197,21 @@ export function SettingsPage(): ReactElement {
             ),
             provider,
             temperature: readSiteNumberString(siteSettingsResponse.settings, "ai.translationTemperature", defaultAiSettings.temperature)
+          });
+          setSmtpSettings({
+            encryption: readSmtpEncryption(siteSettingsResponse.settings),
+            from: readSiteString(siteSettingsResponse.settings, "smtp.from", defaultSmtpSettings.from),
+            fromName: readSiteString(siteSettingsResponse.settings, "smtp.fromName", defaultSmtpSettings.fromName),
+            host: readSiteString(siteSettingsResponse.settings, "smtp.host", defaultSmtpSettings.host),
+            notificationsEnabled: readSiteBooleanWithDefault(
+              siteSettingsResponse.settings,
+              "smtp.notificationsEnabled",
+              defaultSmtpSettings.notificationsEnabled
+            ),
+            pass: "",
+            passConfigured: readSiteBoolean(siteSettingsResponse.settings, "smtp.passConfigured"),
+            port: readSiteNumberString(siteSettingsResponse.settings, "smtp.port", defaultSmtpSettings.port),
+            user: readSiteString(siteSettingsResponse.settings, "smtp.user", defaultSmtpSettings.user)
           });
         }
       } catch (error) {
@@ -241,6 +304,54 @@ export function SettingsPage(): ReactElement {
       setErrorMessage(error instanceof Error ? error.message : t("settings.aiSaveFailed"));
     } finally {
       setIsSavingAi(false);
+    }
+  }
+
+  async function handleSaveSmtpSettings(): Promise<void> {
+    const port = Number(smtpSettings.port);
+
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      setErrorMessage(t("settings.smtpPortInvalid"));
+      return;
+    }
+
+    setIsSavingSmtp(true);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const patch: Record<string, boolean | number | string> = {
+        "smtp.encryption": smtpSettings.encryption,
+        "smtp.from": smtpSettings.from.trim(),
+        "smtp.fromName": smtpSettings.fromName.trim(),
+        "smtp.host": smtpSettings.host.trim(),
+        "smtp.notificationsEnabled": smtpSettings.notificationsEnabled,
+        "smtp.port": port,
+        "smtp.user": smtpSettings.user.trim()
+      };
+
+      if (smtpSettings.pass.trim()) {
+        patch["smtp.pass"] = smtpSettings.pass.trim();
+      }
+
+      const response = await settingsApi.updateSiteSettings(patch);
+
+      setSmtpSettings({
+        encryption: readSmtpEncryption(response.settings),
+        from: readSiteString(response.settings, "smtp.from", defaultSmtpSettings.from),
+        fromName: readSiteString(response.settings, "smtp.fromName", defaultSmtpSettings.fromName),
+        host: readSiteString(response.settings, "smtp.host", defaultSmtpSettings.host),
+        notificationsEnabled: readSiteBooleanWithDefault(response.settings, "smtp.notificationsEnabled", defaultSmtpSettings.notificationsEnabled),
+        pass: "",
+        passConfigured: readSiteBoolean(response.settings, "smtp.passConfigured"),
+        port: readSiteNumberString(response.settings, "smtp.port", defaultSmtpSettings.port),
+        user: readSiteString(response.settings, "smtp.user", defaultSmtpSettings.user)
+      });
+      setMessage(t("settings.smtpSaved"));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("settings.smtpSaveFailed"));
+    } finally {
+      setIsSavingSmtp(false);
     }
   }
 
@@ -396,6 +507,91 @@ export function SettingsPage(): ReactElement {
             <div className="admin-form-actions">
               <button className="liax-button liax-button--primary" disabled={isSavingAi} onClick={() => void handleSaveAiSettings()} type="button">
                 {isSavingAi ? t("settings.saving") : t("settings.aiSave")}
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <article className="liax-card">
+          <div className="liax-card__header">
+            <h3>{t("settings.smtp")}</h3>
+          </div>
+          <div className="liax-card__body">
+            <div className="admin-home-settings-grid">
+              <label className="admin-form-field">
+                <span>{t("settings.smtpHost")}</span>
+                <input
+                  value={smtpSettings.host}
+                  onChange={(event) => setSmtpSettings((current) => ({ ...current, host: event.target.value }))}
+                />
+              </label>
+              <label className="admin-form-field">
+                <span>{t("settings.smtpPort")}</span>
+                <input
+                  inputMode="numeric"
+                  max="65535"
+                  min="1"
+                  onChange={(event) => setSmtpSettings((current) => ({ ...current, port: event.target.value }))}
+                  type="number"
+                  value={smtpSettings.port}
+                />
+              </label>
+              <label className="admin-form-field">
+                <span>{t("settings.smtpUser")}</span>
+                <input
+                  autoComplete="username"
+                  value={smtpSettings.user}
+                  onChange={(event) => setSmtpSettings((current) => ({ ...current, user: event.target.value }))}
+                />
+              </label>
+              <label className="admin-form-field">
+                <span>{t("settings.smtpPass")}</span>
+                <input
+                  autoComplete="new-password"
+                  type="password"
+                  value={smtpSettings.pass}
+                  onChange={(event) => setSmtpSettings((current) => ({ ...current, pass: event.target.value }))}
+                />
+                {smtpSettings.passConfigured ? <small>{t("settings.smtpPassConfiguredHelp")}</small> : null}
+              </label>
+              <label className="admin-form-field">
+                <span>{t("settings.smtpFrom")}</span>
+                <input
+                  type="email"
+                  value={smtpSettings.from}
+                  onChange={(event) => setSmtpSettings((current) => ({ ...current, from: event.target.value }))}
+                />
+              </label>
+              <label className="admin-form-field">
+                <span>{t("settings.smtpFromName")}</span>
+                <input
+                  value={smtpSettings.fromName}
+                  onChange={(event) => setSmtpSettings((current) => ({ ...current, fromName: event.target.value }))}
+                />
+              </label>
+              <label className="admin-form-field">
+                <span>{t("settings.smtpEncryption")}</span>
+                <select
+                  onChange={(event) => setSmtpSettings((current) => ({ ...current, encryption: event.target.value as SmtpEncryption }))}
+                  value={smtpSettings.encryption}
+                >
+                  <option value="starttls">{t("settings.smtpEncryptionStartTls")}</option>
+                  <option value="ssl_tls">{t("settings.smtpEncryptionSslTls")}</option>
+                  <option value="none">{t("settings.smtpEncryptionNone")}</option>
+                </select>
+              </label>
+              <label className="admin-toggle-row admin-home-settings-grid__wide">
+                <input
+                  checked={smtpSettings.notificationsEnabled}
+                  onChange={(event) => setSmtpSettings((current) => ({ ...current, notificationsEnabled: event.target.checked }))}
+                  type="checkbox"
+                />
+                <span>{t("settings.smtpNotificationsEnabled")}</span>
+              </label>
+            </div>
+            <div className="admin-form-actions">
+              <button className="liax-button liax-button--primary" disabled={isSavingSmtp} onClick={() => void handleSaveSmtpSettings()} type="button">
+                {isSavingSmtp ? t("settings.saving") : t("settings.smtpSave")}
               </button>
             </div>
           </div>

@@ -1,16 +1,12 @@
 import type { ReactElement } from "react";
 
-import type { AdminRoleDefinition } from "../api/roleApi";
 import { useT } from "../i18n/useT";
 
 export type PublishPanelProps = {
-  allowedRoles: string[];
   currentVersionId: number | null;
-  onAllowedRolesChange: (allowedRoles: string[]) => void;
   publishedVersionId: number | null;
   isPublishing: boolean;
   onPublish: () => void;
-  roleOptions: AdminRoleDefinition[];
 };
 
 function formatVersionId(versionId: number | null, emptyText: string): string {
@@ -18,33 +14,13 @@ function formatVersionId(versionId: number | null, emptyText: string): string {
 }
 
 export function PublishPanel({
-  allowedRoles,
   currentVersionId,
-  onAllowedRolesChange,
   publishedVersionId,
   isPublishing,
-  onPublish,
-  roleOptions
+  onPublish
 }: PublishPanelProps): ReactElement {
   const t = useT();
   const canPublish = currentVersionId !== null && !isPublishing;
-
-  function roleDisplayName(role: AdminRoleDefinition): string {
-    if (!role.builtIn) {
-      return role.displayName;
-    }
-
-    const localizedName = t(`users.role.${role.roleKey}`);
-    return localizedName.startsWith("[missing:") ? role.displayName : localizedName;
-  }
-
-  function toggleAllowedRole(roleKey: string): void {
-    onAllowedRolesChange(
-      allowedRoles.includes(roleKey)
-        ? allowedRoles.filter((item) => item !== roleKey)
-        : [...allowedRoles, roleKey]
-    );
-  }
 
   return (
     <article className="liax-card admin-publish-panel">
@@ -65,27 +41,6 @@ export function PublishPanel({
             <dd>{formatVersionId(publishedVersionId, t("article.noVersion"))}</dd>
           </div>
         </dl>
-
-        <fieldset className="admin-publish-visibility">
-          <legend>{t("article.visibilityTitle")}</legend>
-          <p className="admin-muted-text">{t("article.visibilityHelp")}</p>
-          <div className="admin-role-checkbox-grid">
-            {roleOptions.map((role) => (
-              <label className="admin-role-checkbox" key={role.roleKey}>
-                <input
-                  checked={allowedRoles.includes(role.roleKey)}
-                  disabled={isPublishing}
-                  onChange={() => toggleAllowedRole(role.roleKey)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>{roleDisplayName(role)}</strong>
-                  <code>{role.roleKey}</code>
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
 
         <button
           className="liax-button liax-button--primary"

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import type { Article, ArticleLocale, ArticleTranslation, CreateArticleInput, CreateArticleTranslationInput, ListTranslationsInput, UpdateCurrentVersionInput, UpdatePublishedVersionInput } from "../articles/articles.types.js";
+import type { Article, ArticleLocale, ArticleTranslation, CreateArticleInput, CreateArticleTranslationInput, ListTranslationsInput, UpdateArticleTranslationInput, UpdateCurrentVersionInput, UpdatePublishedVersionInput } from "../articles/articles.types.js";
 import type { Attachment, CreateAttachmentInput } from "../attachments/attachments.types.js";
 import { AppError } from "../common/AppError.js";
 import { errorCodes } from "../common/errorCodes.js";
@@ -369,7 +369,7 @@ class MemoryTranslationRepository {
     const now = new Date();
     const translation: ArticleTranslation = {
       articleId: input.articleId,
-      allowedRoles: [],
+      allowedRoles: input.allowedRoles ?? [],
       createdAt: now,
       currentHtmlPath: null,
       currentVersionId: null,
@@ -421,6 +421,45 @@ class MemoryTranslationRepository {
       .map(cloneTranslation);
   }
 
+  async updateTranslation(input: UpdateArticleTranslationInput): Promise<ArticleTranslation | null> {
+    const translation = this.translations.get(this.key(input.articleId, input.locale));
+
+    if (!translation) {
+      return null;
+    }
+
+    if (input.title !== undefined) {
+      translation.title = input.title;
+    }
+
+    if (input.slug !== undefined) {
+      translation.slug = input.slug;
+    }
+
+    if (input.seoTitle !== undefined) {
+      translation.seoTitle = input.seoTitle;
+    }
+
+    if (input.seoDescription !== undefined) {
+      translation.seoDescription = input.seoDescription;
+    }
+
+    if (input.summary !== undefined) {
+      translation.summary = input.summary;
+    }
+
+    if (input.allowedRoles !== undefined) {
+      translation.allowedRoles = input.allowedRoles;
+    }
+
+    if (input.publishedAt !== undefined) {
+      translation.publishedAt = input.publishedAt;
+    }
+
+    translation.updatedAt = new Date();
+    return cloneTranslation(translation);
+  }
+
   async updateCurrentVersion(input: UpdateCurrentVersionInput): Promise<ArticleTranslation | null> {
     const translation = this.translations.get(this.key(input.articleId, input.locale));
 
@@ -441,7 +480,7 @@ class MemoryTranslationRepository {
     }
 
     translation.currentHtmlPath = input.currentHtmlPath;
-    translation.allowedRoles = input.allowedRoles ?? [];
+    translation.allowedRoles = input.allowedRoles ?? translation.allowedRoles;
     translation.publishedAt = input.publishedAt ?? null;
     translation.publishedVersionId = input.publishedVersionId;
     translation.updatedAt = new Date();
@@ -615,6 +654,17 @@ class FailingStaticPublisher {
   }
 }
 
+class MemoryStaticPublisher {
+  async publishArticleHtml(input: { articleId: number; locale: ArticleLocale; versionId: number }) {
+    const htmlPath = `${input.locale}/articles/${input.articleId}/${input.versionId}/index.html`;
+
+    return {
+      absolutePath: path.join(tempRoot, "rendered", htmlPath),
+      htmlPath
+    };
+  }
+}
+
 class FakeSeoService {
   async buildArticleMetaFromTranslation(translation: ArticleTranslation) {
     return {
@@ -646,7 +696,8 @@ async function createServices(state: TestState) {
   );
   const articleService = new modules.ArticleService(
     state.articleRepository as never,
-    state.translationRepository as never
+    state.translationRepository as never,
+    new FakePermissionService() as never
   );
   const versionService = new modules.ArticleVersionService(
     state.articleRepository as never,
@@ -972,6 +1023,50 @@ describe("admin article integration flow", () => {
     assert.equal(translationAfterFailure?.currentHtmlPath, oldHtmlRelativePath);
     assert.equal(failedVersion?.renderStatus, "failed");
     assert.equal(oldHtmlAfterFailure, oldHtml);
+  });
+
+  it("preserves configured article visibility when publishing without a role payload", async () => {
+    const state = new TestState();
+    const services = await createServices(state);
+    const modules = await modulesPromise;
+
+    await prepareSetupToken();
+    const admin = await services.setupService.initializeAdmin({
+      email: "admin@example.test",
+      password: "correct-password",
+      setupToken,
+      username: "admin"
+    });
+    const article = await services.articleService.createArticle(admin.id, {});
+    await services.articleService.createTranslation(article.id, {
+      allowedRoles: ["admin"],
+      locale: "zh-CN",
+      slug: "restricted-publish",
+      title: "权限发布"
+    });
+    const version = await services.versionService.saveVersion({
+      articleId: article.id,
+      baseVersionId: null,
+      createdBy: admin.id,
+      locale: "zh-CN",
+      mdContent: "# Restricted"
+    });
+    const publishService = new modules.PublishService(
+      state.versionRepository as never,
+      state.translationRepository as never,
+      new FakeMarkdownRenderer() as never,
+      new MemoryStaticPublisher() as never,
+      new FakeSeoService() as never,
+      new FakePermissionService() as never
+    );
+
+    const result = await publishService.publishArticle({
+      articleId: article.id,
+      locale: "zh-CN",
+      versionId: version.version.id
+    });
+
+    assert.deepEqual(result.translation.allowedRoles, ["admin"]);
   });
 
   it("does not fallback public articles to another locale", async () => {

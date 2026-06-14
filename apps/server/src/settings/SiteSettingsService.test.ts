@@ -59,6 +59,47 @@ describe("SiteSettingsService", () => {
     assert.equal(updated["ai.model"], "deepseek-chat");
   });
 
+  it("does not return saved SMTP passwords in site settings responses", async () => {
+    const repository = new MemorySettingsRepository();
+    const service = new SiteSettingsService(repository as never);
+
+    const updated = await service.updateSiteSettings({
+      "smtp.encryption": "starttls",
+      "smtp.from": "site@example.test",
+      "smtp.host": "smtp.example.test",
+      "smtp.notificationsEnabled": true,
+      "smtp.pass": "smtp-secret",
+      "smtp.port": "587",
+      "smtp.user": "site@example.test"
+    });
+    const loaded = await service.getSiteSettings();
+
+    assert.equal(repository.settings["smtp.pass"], "smtp-secret");
+    assert.equal(repository.settings["smtp.port"], 587);
+    assert.equal(updated["smtp.pass"], undefined);
+    assert.equal(loaded["smtp.pass"], undefined);
+    assert.equal(updated["smtp.passConfigured"], true);
+    assert.equal(loaded["smtp.passConfigured"], true);
+  });
+
+  it("keeps an existing SMTP password when a settings patch sends an empty password", async () => {
+    const repository = new MemorySettingsRepository();
+    const service = new SiteSettingsService(repository as never);
+
+    await service.updateSiteSettings({
+      "smtp.pass": "smtp-secret"
+    });
+    const updated = await service.updateSiteSettings({
+      "smtp.host": "smtp.example.test",
+      "smtp.pass": ""
+    });
+
+    assert.equal(repository.settings["smtp.pass"], "smtp-secret");
+    assert.equal(repository.settings["smtp.host"], "smtp.example.test");
+    assert.equal(updated["smtp.pass"], undefined);
+    assert.equal(updated["smtp.passConfigured"], true);
+  });
+
   it("normalizes known site settings before saving them", async () => {
     const repository = new MemorySettingsRepository();
     const service = new SiteSettingsService(repository as never);
@@ -71,6 +112,13 @@ describe("SiteSettingsService", () => {
       "home.contactItems.en-US": " Email:hello@example.com ",
       "home.contactItems.zh-CN": " 邮箱:hello@example.com ",
       "home.icpUrl": "https://beian.miit.gov.cn/",
+      "smtp.encryption": "ssl_tls",
+      "smtp.from": " site@example.test ",
+      "smtp.fromName": " Site Mail ",
+      "smtp.host": " smtp.example.test ",
+      "smtp.notificationsEnabled": false,
+      "smtp.port": "465",
+      "smtp.user": " user@example.test ",
       "theme.customColors": {
         "quiet-garden": {
           "--color-accent": "#ABCDEF"
@@ -85,6 +133,13 @@ describe("SiteSettingsService", () => {
     assert.equal(repository.settings["home.contactItems.en-US"], "Email:hello@example.com");
     assert.equal(repository.settings["home.contactItems.zh-CN"], "邮箱:hello@example.com");
     assert.equal(repository.settings["home.icpUrl"], "https://beian.miit.gov.cn");
+    assert.equal(repository.settings["smtp.encryption"], "ssl_tls");
+    assert.equal(repository.settings["smtp.from"], "site@example.test");
+    assert.equal(repository.settings["smtp.fromName"], "Site Mail");
+    assert.equal(repository.settings["smtp.host"], "smtp.example.test");
+    assert.equal(repository.settings["smtp.notificationsEnabled"], false);
+    assert.equal(repository.settings["smtp.port"], 465);
+    assert.equal(repository.settings["smtp.user"], "user@example.test");
     assert.deepEqual(repository.settings["theme.customColors"], {
       "quiet-garden": {
         "--color-accent": "#abcdef"
@@ -124,6 +179,26 @@ describe("SiteSettingsService", () => {
     await assert.rejects(
       () => service.updateSiteSettings({ "ai.translationTemperature": 2.5 }),
       /ai\.translationTemperature must be a number from 0 to 2/u
+    );
+  });
+
+  it("rejects invalid SMTP settings", async () => {
+    const repository = new MemorySettingsRepository();
+    const service = new SiteSettingsService(repository as never);
+
+    await assert.rejects(
+      () => service.updateSiteSettings({ "smtp.encryption": "tls" }),
+      /smtp\.encryption must be one of/u
+    );
+
+    await assert.rejects(
+      () => service.updateSiteSettings({ "smtp.port": 70000 }),
+      /smtp\.port must be an integer from 1 to 65535/u
+    );
+
+    await assert.rejects(
+      () => service.updateSiteSettings({ "smtp.from": "bad-address" }),
+      /smtp\.from must be a valid email address/u
     );
   });
 

@@ -94,8 +94,8 @@ export class ArticleTranslationRepository {
     const pool = getDatabasePool();
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO article_translations
-        (article_id, locale, title, slug, seo_title, seo_description, summary)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (article_id, locale, title, slug, seo_title, seo_description, summary, allowed_roles_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.articleId,
         input.locale,
@@ -103,7 +103,8 @@ export class ArticleTranslationRepository {
         input.slug,
         input.seoTitle ?? null,
         input.seoDescription ?? null,
-        input.summary ?? null
+        input.summary ?? null,
+        JSON.stringify(input.allowedRoles ?? [])
       ]
     );
 
@@ -143,6 +144,11 @@ export class ArticleTranslationRepository {
     if (input.summary !== undefined) {
       updates.push("summary = ?");
       params.push(input.summary);
+    }
+
+    if (input.allowedRoles !== undefined) {
+      updates.push("allowed_roles_json = ?");
+      params.push(JSON.stringify(input.allowedRoles));
     }
 
     if (input.publishedAt !== undefined) {

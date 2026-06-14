@@ -6,6 +6,7 @@ import type { SiteSettings } from "./settings.types.js";
 type SiteSettingValidator = (key: string, value: unknown) => unknown;
 
 const aiProviders = ["deepseek", "openai", "ollama"] as const;
+const smtpEncryptionModes = ["none", "starttls", "ssl_tls"] as const;
 const themePresetIds = ["warm-minimal", "quiet-garden", "clear-graphite"] as const;
 const editableThemeTokens = [
   "--color-accent",
@@ -52,6 +53,24 @@ function assertString(value: unknown, key: string, maxLength: number): string {
   return normalized;
 }
 
+function assertBoolean(key: string, value: unknown): boolean {
+  if (typeof value !== "boolean") {
+    validationError(`${key} must be a boolean.`);
+  }
+
+  return value;
+}
+
+function assertEmailAddress(key: string, value: unknown): string {
+  const normalized = assertString(value, key, 320);
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalized)) {
+    validationError(`${key} must be a valid email address.`);
+  }
+
+  return normalized;
+}
+
 function assertHttpUrl(key: string, value: unknown): string {
   const normalized = assertString(value, key, 500);
   let url: URL;
@@ -77,6 +96,16 @@ function assertTemperature(key: string, value: unknown): number {
   }
 
   return temperature;
+}
+
+function assertPort(key: string, value: unknown): number {
+  const port = typeof value === "string" ? Number(value.trim()) : value;
+
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+    validationError(`${key} must be an integer from 1 to 65535.`);
+  }
+
+  return port;
 }
 
 function assertOneOf<T extends readonly string[]>(value: unknown, key: string, allowedValues: T): T[number] {
@@ -139,6 +168,15 @@ const knownSettingValidators: Record<string, SiteSettingValidator> = {
   "home.icpNumber": (key, value) => assertString(value, key, 120),
   "home.icpUrl": assertHttpUrl,
   "home.signature": (key, value) => assertString(value, key, 160),
+  "smtp.encryption": (key, value) => assertOneOf(value, key, smtpEncryptionModes),
+  "smtp.from": assertEmailAddress,
+  "smtp.fromName": (key, value) => assertString(value, key, 80),
+  "smtp.host": (key, value) => assertString(value, key, 255),
+  "smtp.notificationsEnabled": assertBoolean,
+  "smtp.pass": (key, value) => assertString(value, key, 4000),
+  "smtp.passConfigured": () => validationError("smtp.passConfigured is read-only."),
+  "smtp.port": assertPort,
+  "smtp.user": (key, value) => assertString(value, key, 320),
   "theme.customColors": validateThemeCustomColors,
   "theme.preset": (key, value) => assertOneOf(value, key, themePresetIds)
 };
@@ -165,12 +203,17 @@ function validateSiteSettingsPatch(value: unknown): SiteSettings {
 function redactSiteSettings(settings: SiteSettings): SiteSettings {
   const redactedSettings = { ...settings };
 
-  if (typeof redactedSettings["ai.apiKey"] === "string" && redactedSettings["ai.apiKey"].trim()) {
-    delete redactedSettings["ai.apiKey"];
-    redactedSettings["ai.apiKeyConfigured"] = true;
-  } else {
-    delete redactedSettings["ai.apiKey"];
-    redactedSettings["ai.apiKeyConfigured"] = false;
+  for (const [secretKey, configuredKey] of [
+    ["ai.apiKey", "ai.apiKeyConfigured"],
+    ["smtp.pass", "smtp.passConfigured"]
+  ] as const) {
+    if (typeof redactedSettings[secretKey] === "string" && redactedSettings[secretKey].trim()) {
+      delete redactedSettings[secretKey];
+      redactedSettings[configuredKey] = true;
+    } else {
+      delete redactedSettings[secretKey];
+      redactedSettings[configuredKey] = false;
+    }
   }
 
   return redactedSettings;
@@ -189,6 +232,10 @@ export class SiteSettingsService {
 
     if (typeof nextSettings["ai.apiKey"] === "string" && !nextSettings["ai.apiKey"].trim()) {
       delete nextSettings["ai.apiKey"];
+    }
+
+    if (typeof nextSettings["smtp.pass"] === "string" && !nextSettings["smtp.pass"].trim()) {
+      delete nextSettings["smtp.pass"];
     }
 
     return redactSiteSettings(await this.settingsRepository.updateSiteSettings(nextSettings));

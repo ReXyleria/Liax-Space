@@ -86,9 +86,9 @@ export class PublishService {
     const articleId = parsePositiveInteger(input.articleId, "articleId");
     const versionId = parsePositiveInteger(input.versionId, "versionId");
     const locale = parseLocale(input.locale);
-    const allowedRoles = await this.parseExistingAllowedRoles(input.allowedRoles);
     const version = await this.requireVersion(articleId, locale, versionId);
     const translation = await this.requireTranslation(articleId, locale);
+    const allowedRoles = await this.parseExistingAllowedRoles(input.allowedRoles, translation.allowedRoles);
 
     try {
       await this.versionRepository.updateRenderStatus({
@@ -137,8 +137,8 @@ export class PublishService {
     return version;
   }
 
-  private async parseExistingAllowedRoles(value: unknown): Promise<string[]> {
-    const allowedRoles = parseAllowedRoles(value);
+  private async parseExistingAllowedRoles(value: unknown, fallback: string[]): Promise<string[]> {
+    const allowedRoles = value === undefined ? [...fallback] : parseAllowedRoles(value);
 
     for (const role of allowedRoles) {
       if (!(await this.permissionService.roleExists(role))) {

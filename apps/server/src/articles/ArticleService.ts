@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { AppError } from "../common/AppError.js";
 import { errorCodes } from "../common/errorCodes.js";
+import { PermissionService } from "../permissions/PermissionService.js";
 import { ArticleRepository } from "./ArticleRepository.js";
 import { ArticleTranslationRepository } from "./ArticleTranslationRepository.js";
 import type {
@@ -21,6 +22,7 @@ export type ArticleDetail = {
 };
 
 type TranslationMetadataInput = {
+  allowedRoles?: unknown;
   locale?: unknown;
   title?: unknown;
   slug?: unknown;
@@ -137,6 +139,24 @@ function parseRequiredString(value: unknown, fieldName: string): string {
   return value.trim();
 }
 
+function parseAllowedRoles(value: unknown): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw validationError("allowedRoles must be an array.");
+  }
+
+  return [...new Set(value.map((role) => {
+    if (typeof role !== "string" || role.trim().length === 0) {
+      throw validationError("allowedRoles must contain role keys.");
+    }
+
+    return role.trim();
+  }))];
+}
+
 function parseLocale(value: unknown): ArticleLocale {
   if (!isArticleLocale(value)) {
     throw validationError("locale must be zh-CN or en-US.");
@@ -172,7 +192,8 @@ function parseListInput(query: Record<string, unknown>): ListArticlesInput {
 export class ArticleService {
   constructor(
     private readonly articleRepository = new ArticleRepository(),
-    private readonly translationRepository = new ArticleTranslationRepository()
+    private readonly translationRepository = new ArticleTranslationRepository(),
+    private readonly permissionService = new PermissionService()
   ) {}
 
   async createArticle(authorId: number, input: Record<string, unknown> = {}): Promise<Article> {
@@ -231,7 +252,11 @@ export class ArticleService {
       throw validationError("Translation already exists for this article and locale.");
     }
 
+    const allowedRoles = parseAllowedRoles(input.allowedRoles);
+    await this.assertRolesExist(allowedRoles);
+
     const translationInput: CreateArticleTranslationInput = {
+      allowedRoles,
       articleId,
       locale,
       title: parseRequiredString(input.title, "title"),
@@ -280,6 +305,11 @@ export class ArticleService {
 
     if (input.summary !== undefined) {
       updateInput.summary = parseOptionalString(input.summary, "summary") ?? null;
+    }
+
+    if (input.allowedRoles !== undefined) {
+      updateInput.allowedRoles = parseAllowedRoles(input.allowedRoles);
+      await this.assertRolesExist(updateInput.allowedRoles);
     }
 
     if (input.publishedAt !== undefined) {
@@ -336,6 +366,18 @@ export class ArticleService {
 
     if (existingTranslation && existingTranslation.articleId !== currentArticleId) {
       throw duplicateSlugError();
+    }
+  }
+
+  private async assertRolesExist(roles: string[] | undefined): Promise<void> {
+    if (roles === undefined) {
+      return;
+    }
+
+    for (const role of roles) {
+      if (!(await this.permissionService.roleExists(role))) {
+        throw validationError(`allowedRoles contains unknown role: ${role}`);
+      }
     }
   }
 }

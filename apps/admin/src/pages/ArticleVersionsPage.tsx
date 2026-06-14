@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { articleApi, type ArticleLocale, type ArticleTranslation } from "../api/articleApi";
-import { roleApi, type AdminRoleDefinition } from "../api/roleApi";
 import { type ArticleVersion, versionApi } from "../api/versionApi";
 import { largeMarkdownDocumentThreshold } from "../components/MarkdownEditor";
 import { PublishPanel } from "../components/PublishPanel";
@@ -48,8 +47,6 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
   const t = useT();
   const [translation, setTranslation] = useState<ArticleTranslation | null>(null);
   const [versions, setVersions] = useState<ArticleVersion[]>([]);
-  const [roleOptions, setRoleOptions] = useState<AdminRoleDefinition[]>([]);
-  const [allowedRoles, setAllowedRoles] = useState<string[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<ArticleVersion | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
@@ -70,15 +67,12 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
         articleApi.getArticle(articleId),
         versionApi.listVersionSummaries(articleId, locale)
       ]);
-      const rolesResponse = await roleApi.listRoles();
       const activeTranslation = findTranslation(articleDetail.translations, locale);
       const sortedVersions = sortVersions(versionsResponse.versions);
       const preferredVersion =
         sortedVersions.find((version) => version.id === activeTranslation?.currentVersionId) ?? sortedVersions[0] ?? null;
 
       setTranslation(activeTranslation);
-      setAllowedRoles(activeTranslation?.allowedRoles ?? []);
-      setRoleOptions(rolesResponse.roles);
       setVersions(sortedVersions);
       setSelectedVersion(preferredVersion);
     } catch (error) {
@@ -131,9 +125,8 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
     setErrorMessage(null);
 
     try {
-      const response = await versionApi.publishVersion(articleId, locale, currentVersionId, { allowedRoles });
+      const response = await versionApi.publishVersion(articleId, locale, currentVersionId);
       setTranslation(response.translation);
-      setAllowedRoles(response.translation.allowedRoles);
       setSelectedVersion(response.version);
       setVersions((currentVersions) => replaceVersion(currentVersions, response.version));
       setMessage(t("article.publishSuccess"));
@@ -207,13 +200,10 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
         <section className="admin-version-workspace">
           <div className="admin-version-sidebar">
             <PublishPanel
-              allowedRoles={allowedRoles}
               currentVersionId={currentVersionId}
               isPublishing={isPublishing}
-              onAllowedRolesChange={setAllowedRoles}
               onPublish={() => void handlePublish()}
               publishedVersionId={publishedVersionId}
-              roleOptions={roleOptions}
             />
 
             <VersionList

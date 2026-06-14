@@ -60,6 +60,7 @@ export type UpdateArticleResponse = {
 export type GetArticleResponse = ArticleDetail;
 
 export type TranslationMetadataInput = {
+  allowedRoles?: string[];
   locale: ArticleLocale;
   title: string;
   slug: string;

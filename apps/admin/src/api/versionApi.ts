@@ -172,10 +172,13 @@ export const versionApi = {
     versionId: number,
     input: PublishVersionRequest = {}
   ): Promise<PublishVersionResponse> {
-    return httpClient.post<PublishVersionResponse>(`/admin/articles/${articleId}/${locale}/publish`, {
-      allowedRoles: input.allowedRoles ?? [],
-      versionId
-    });
+    const body: { allowedRoles?: string[]; versionId: number } = { versionId };
+
+    if (input.allowedRoles !== undefined) {
+      body.allowedRoles = input.allowedRoles;
+    }
+
+    return httpClient.post<PublishVersionResponse>(`/admin/articles/${articleId}/${locale}/publish`, body);
   },
   rollbackVersion(articleId: number, locale: ArticleLocale, targetVersionId: number): Promise<RollbackVersionResponse> {
     return httpClient.post<RollbackVersionResponse>(`/admin/articles/${articleId}/${locale}/rollback`, {
