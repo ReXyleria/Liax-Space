@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactElement } from "react";
 
 import { articleApi, type ArticleDetail, type ArticleLocale, type ArticleTranslation } from "../api/articleApi";
+import { attachmentApi, type Attachment } from "../api/attachmentApi";
 import { roleApi, type AdminRoleDefinition } from "../api/roleApi";
 import { translationApi } from "../api/translationApi";
 import { versionApi } from "../api/versionApi";
@@ -180,9 +181,11 @@ export function ArticleListPage(): ReactElement {
   const [forms, setForms] = useState<TranslationFormState>(() => emptyFormState());
   const [status, setStatus] = useState("draft");
   const [coverAttachmentId, setCoverAttachmentId] = useState("");
+  const [uploadedCoverAttachment, setUploadedCoverAttachment] = useState<Attachment | null>(null);
   const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isImportingMarkdown, setIsImportingMarkdown] = useState(false);
   const [importProgress, setImportProgress] = useState<number | null>(null);
   const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(null);
@@ -190,6 +193,7 @@ export function ArticleListPage(): ReactElement {
   const formatterLocale = useMemo(() => navigator.language || "zh-CN", []);
   const activeForm = forms[activeLocale];
   const activeTranslation = existingTranslations[activeLocale];
+  const editingArticleTitle = editingArticle ? preferredTranslation(editingArticle.translations)?.title : null;
   const canCreateArticle = hasAnyPermission(authState.user, ["article:create"]);
   const canEditArticle = hasAnyPermission(authState.user, ["article:update"]);
 
@@ -268,6 +272,7 @@ export function ArticleListPage(): ReactElement {
     setAllowedRoles(nextState.visibility);
     setStatus(detail.article.status || "draft");
     setCoverAttachmentId(detail.article.coverAttachmentId === null ? "" : String(detail.article.coverAttachmentId));
+    setUploadedCoverAttachment(null);
     setSelectedImportFile(null);
     setImportProgress(null);
     setIsGeneratingSeo(false);
@@ -281,11 +286,12 @@ export function ArticleListPage(): ReactElement {
   }
 
   function closeConfigModal(): void {
-    if (isSavingConfig || isGeneratingSeo || isImportingMarkdown) {
+    if (isSavingConfig || isGeneratingSeo || isUploadingCover || isImportingMarkdown) {
       return;
     }
 
     setEditingArticle(null);
+    setUploadedCoverAttachment(null);
     setSelectedImportFile(null);
     setImportProgress(null);
     setModalErrorMessage(null);
@@ -345,6 +351,41 @@ export function ArticleListPage(): ReactElement {
     return value;
   }
 
+  async function handleCoverImageSelected(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const input = event.currentTarget;
+    const file = input.files?.[0] ?? null;
+
+    if (!file) {
+      return;
+    }
+
+    const isImageFile = file.type.startsWith("image/") || /\.(?:avif|gif|jpe?g|png|webp)$/i.test(file.name);
+
+    if (!isImageFile) {
+      setModalErrorMessage(t("article.coverUploadImageRequired"));
+      setModalSuccessMessage(null);
+      input.value = "";
+      return;
+    }
+
+    setIsUploadingCover(true);
+    setModalErrorMessage(null);
+    setModalSuccessMessage(null);
+
+    try {
+      const result = await attachmentApi.uploadAttachment(file);
+
+      setCoverAttachmentId(String(result.attachment.id));
+      setUploadedCoverAttachment(result.attachment);
+      setModalSuccessMessage(t("article.coverUploaded"));
+    } catch (error) {
+      setModalErrorMessage(error instanceof Error ? error.message : t("article.coverUploadFailed"));
+    } finally {
+      setIsUploadingCover(false);
+      input.value = "";
+    }
+  }
+
   async function handleSaveConfig(): Promise<void> {
     if (!editingArticle) {
       return;
@@ -377,7 +418,7 @@ export function ArticleListPage(): ReactElement {
           seoDescription: toNullableValue(activeForm.seoDescription),
           seoTitle: toNullableValue(activeForm.seoTitle),
           slug: activeForm.slug.trim(),
-          summary: toNullableValue(activeForm.summary),
+          summary: toNullableValue(activeForm.seoDescription) ? null : toNullableValue(activeForm.summary),
           title: activeForm.title.trim()
         };
         const translationResponse = activeTranslation
@@ -548,7 +589,6 @@ export function ArticleListPage(): ReactElement {
             <table className="admin-article-table">
               <thead>
                 <tr>
-                  <th>{t("article.id")}</th>
                   <th>{t("article.field.title")}</th>
                   <th>{t("article.status")}</th>
                   <th>{t("article.translationStatus")}</th>
@@ -562,7 +602,6 @@ export function ArticleListPage(): ReactElement {
 
                   return (
                   <tr key={item.article.id}>
-                    <td>{item.article.id}</td>
                     <td className="admin-article-title-cell">
                       <strong>{titleTranslation?.title ?? "-"}</strong>
                       {titleTranslation ? <small>{titleTranslation.locale} · {titleTranslation.slug}</small> : null}
@@ -619,10 +658,10 @@ export function ArticleListPage(): ReactElement {
           >
             <header className="admin-modal__header">
               <div>
-                <p className="admin-kicker">{t("article.id")} #{editingArticle.article.id}</p>
-                <h3 id="article-config-title">{t("article.configTitle")}</h3>
+                <p className="admin-kicker">{t("nav.articles")}</p>
+                <h3 id="article-config-title">{editingArticleTitle ?? t("article.configTitle")}</h3>
               </div>
-              <button className="liax-button" disabled={isSavingConfig || isGeneratingSeo || isImportingMarkdown} onClick={closeConfigModal} type="button">
+              <button className="liax-button" disabled={isSavingConfig || isGeneratingSeo || isUploadingCover || isImportingMarkdown} onClick={closeConfigModal} type="button">
                 {t("article.cancel")}
               </button>
             </header>
@@ -643,18 +682,44 @@ export function ArticleListPage(): ReactElement {
                     <small>{t("article.statusHelp")}</small>
                   </label>
 
-                  <label className="admin-form-field">
-                    <span>{t("article.coverAttachmentId")}</span>
-                    <input
-                      disabled={isSavingConfig || isGeneratingSeo}
-                      min="1"
-                      onChange={(event) => setCoverAttachmentId(event.target.value)}
-                      placeholder="5"
-                      type="number"
-                      value={coverAttachmentId}
-                    />
-                    <small>{t("article.coverAttachmentHelp")}</small>
-                  </label>
+                  <div className="admin-cover-upload-panel">
+                    <label className="admin-form-field">
+                      <span>{t("article.coverImage")}</span>
+                      <input
+                        accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
+                        disabled={isSavingConfig || isGeneratingSeo || isUploadingCover}
+                        onChange={(event) => void handleCoverImageSelected(event)}
+                        type="file"
+                      />
+                      <small>{isUploadingCover ? t("article.coverUploading") : t("article.coverAttachmentHelp")}</small>
+                    </label>
+                    <div className="admin-cover-upload-panel__current">
+                      {uploadedCoverAttachment?.publicUrl ? (
+                        <img alt={uploadedCoverAttachment.originalFilename} src={uploadedCoverAttachment.publicUrl} />
+                      ) : null}
+                      <div>
+                        <strong>
+                          {uploadedCoverAttachment
+                            ? uploadedCoverAttachment.originalFilename
+                            : coverAttachmentId ? t("article.coverCurrent") : t("article.coverEmpty")}
+                        </strong>
+                        {coverAttachmentId ? <span>{t("article.coverSelected")}</span> : null}
+                      </div>
+                      {coverAttachmentId ? (
+                        <button
+                          className="liax-link"
+                          disabled={isSavingConfig || isGeneratingSeo || isUploadingCover}
+                          onClick={() => {
+                            setCoverAttachmentId("");
+                            setUploadedCoverAttachment(null);
+                          }}
+                          type="button"
+                        >
+                          {t("article.coverClear")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               </section>
 
@@ -742,7 +807,7 @@ export function ArticleListPage(): ReactElement {
               <div className="admin-form-actions">
                 <button
                   className="liax-button liax-button--primary"
-                  disabled={isSavingConfig || isGeneratingSeo || isImportingMarkdown}
+                  disabled={isSavingConfig || isGeneratingSeo || isUploadingCover || isImportingMarkdown}
                   onClick={() => void handleSaveConfig()}
                   type="button"
                 >

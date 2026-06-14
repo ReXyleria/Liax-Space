@@ -9,24 +9,26 @@ export function AttachmentPage(): ReactElement {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [search, setSearch] = useState("");
+  const [unusedOnly, setUnusedOnly] = useState(false);
   const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
-  async function loadAttachments(nextSearch = search): Promise<void> {
+  async function loadAttachments(nextSearch = search, nextUnusedOnly = unusedOnly): Promise<void> {
     setIsLoadingAttachments(true);
     setErrorMessage(null);
 
     try {
       const response = await attachmentApi.listAttachments({
-        search: nextSearch
+        search: nextSearch,
+        unusedOnly: nextUnusedOnly
       });
       setAttachments(Array.isArray(response.attachments) ? response.attachments : []);
       setSelectedIds([]);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : t("attachment.allLoadFailed"));
+      setErrorMessage(error instanceof Error ? error.message : t(nextUnusedOnly ? "attachment.unusedLoadFailed" : "attachment.allLoadFailed"));
     } finally {
       setIsLoadingAttachments(false);
     }
@@ -38,6 +40,13 @@ export function AttachmentPage(): ReactElement {
 
   function handleSearchChange(event: ChangeEvent<HTMLInputElement>): void {
     setSearch(event.target.value);
+  }
+
+  function handleUnusedOnlyChange(event: ChangeEvent<HTMLInputElement>): void {
+    const nextUnusedOnly = event.target.checked;
+
+    setUnusedOnly(nextUnusedOnly);
+    void loadAttachments(search, nextUnusedOnly);
   }
 
   function toggleSelected(id: number, checked: boolean): void {
@@ -63,12 +72,31 @@ export function AttachmentPage(): ReactElement {
     try {
       const result = await attachmentApi.deleteAttachments(selectedIds);
       setMessage(`${t("attachment.unusedDeleted")}: ${result.deleted}`);
-      await loadAttachments(search);
+      await loadAttachments(search, unusedOnly);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("attachment.allLoadFailed"));
     } finally {
       setIsDeleting(false);
     }
+  }
+
+  function formatBytes(value: number): string {
+    if (value >= 1024 * 1024) {
+      return `${(value / 1024 / 1024).toFixed(1)} MB`;
+    }
+
+    if (value >= 1024) {
+      return `${Math.round(value / 1024)} KB`;
+    }
+
+    return `${value} B`;
+  }
+
+  function formatDate(value: string): string {
+    return new Intl.DateTimeFormat(navigator.language || "zh-CN", {
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(new Date(value));
   }
 
   return (
@@ -87,11 +115,15 @@ export function AttachmentPage(): ReactElement {
         <div className="liax-card__body">
           <div className="admin-users-toolbar">
             <label className="admin-form-field">
-              <span>{t("attachment.searchAll")}</span>
+              <span>{t(unusedOnly ? "attachment.searchUnused" : "attachment.searchAll")}</span>
               <input onChange={handleSearchChange} type="search" value={search} />
             </label>
             <div className="admin-form-actions">
-              <button className="liax-button" disabled={isLoadingAttachments} onClick={() => void loadAttachments(search)} type="button">
+              <label className="admin-attachment-filter-toggle">
+                <input checked={unusedOnly} onChange={handleUnusedOnlyChange} type="checkbox" />
+                <span>{t("attachment.showUnusedOnly")}</span>
+              </label>
+              <button className="liax-button" disabled={isLoadingAttachments} onClick={() => void loadAttachments(search, unusedOnly)} type="button">
                 {t("users.searchAction")}
               </button>
               <button
@@ -108,46 +140,74 @@ export function AttachmentPage(): ReactElement {
           {isLoadingAttachments ? (
             <p className="admin-muted-text">{t("category.loading")}</p>
           ) : attachments.length === 0 ? (
-            <p className="admin-muted-text">{t("attachment.allEmpty")}</p>
+            <p className="admin-muted-text">{t(unusedOnly ? "attachment.unusedEmpty" : "attachment.allEmpty")}</p>
           ) : (
-            <div className="admin-table-card">
-              <table className="admin-article-table admin-users-table">
-                <thead>
-                  <tr>
-                    <th>
-                      <input
-                        aria-label={t("attachment.selectAll")}
-                        checked={selectedIds.length === attachments.length && attachments.length > 0}
-                        onChange={(event) => toggleAll(event.target.checked)}
-                        type="checkbox"
-                      />
-                    </th>
-                    <th>{t("attachment.id")}</th>
-                    <th>{t("attachment.filename")}</th>
-                    <th>URL</th>
-                    <th>SHA256</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {attachments.map((attachment) => (
-                    <tr key={attachment.id}>
-                      <td>
+            <>
+              <label className="admin-attachment-select-all">
+                <input
+                  aria-label={t("attachment.selectAll")}
+                  checked={selectedIds.length === attachments.length && attachments.length > 0}
+                  onChange={(event) => toggleAll(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>{t("attachment.selectAll")}</span>
+              </label>
+              <div className="admin-attachment-grid">
+                {attachments.map((attachment) => {
+                  const previewUrl = attachment.publicUrl;
+                  const canPreviewImage = Boolean(previewUrl) && attachment.mimeType.startsWith("image/");
+
+                  return (
+                    <article className="admin-attachment-card" key={attachment.id}>
+                      <label className="admin-attachment-card__select">
                         <input
-                          aria-label={`${t("attachment.select")} #${attachment.id}`}
+                          aria-label={`${t("attachment.select")} ${attachment.originalFilename}`}
                           checked={selectedIdSet.has(attachment.id)}
                           onChange={(event) => toggleSelected(attachment.id, event.target.checked)}
                           type="checkbox"
                         />
-                      </td>
-                      <td>{attachment.id}</td>
-                      <td>{attachment.originalFilename}</td>
-                      <td><code>{attachment.publicUrl ?? attachment.storageKey}</code></td>
-                      <td><code>{attachment.sha256.slice(0, 16)}...</code></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        <span>{attachment.originalFilename}</span>
+                      </label>
+
+                      {previewUrl ? (
+                        <a
+                          className="admin-attachment-preview"
+                          href={previewUrl}
+                          rel="noreferrer"
+                          target="_blank"
+                          title={t("attachment.openPreview")}
+                        >
+                          {canPreviewImage ? (
+                            <img alt={attachment.originalFilename} src={previewUrl} />
+                          ) : (
+                            <span>{attachment.mimeType || t("attachment.noPreview")}</span>
+                          )}
+                        </a>
+                      ) : (
+                        <div className="admin-attachment-preview admin-attachment-preview--empty">
+                          <span>{t("attachment.noPreview")}</span>
+                        </div>
+                      )}
+
+                      <dl className="admin-attachment-card__meta">
+                        <div>
+                          <dt>{t("attachment.size")}</dt>
+                          <dd>{formatBytes(attachment.sizeBytes)}</dd>
+                        </div>
+                        <div>
+                          <dt>{t("attachment.createdAt")}</dt>
+                          <dd>{formatDate(attachment.createdAt)}</dd>
+                        </div>
+                        <div>
+                          <dt>SHA256</dt>
+                          <dd><code>{attachment.sha256.slice(0, 16)}...</code></dd>
+                        </div>
+                      </dl>
+                    </article>
+                  );
+                })}
+              </div>
+            </>
           )}
 
           {message ? <p className="admin-success-text">{message}</p> : null}

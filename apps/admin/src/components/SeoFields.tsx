@@ -29,6 +29,7 @@ export function SeoFields({
   value
 }: SeoFieldsProps): ReactElement {
   const t = useT();
+  const hasSeoDescription = value.seoDescription.trim().length > 0;
 
   function updateField(field: keyof TranslationMetadataFormValue, nextValue: string): void {
     onChange({
@@ -96,15 +97,19 @@ export function SeoFields({
         />
       </label>
 
-      <label className="admin-form-field">
-        <span>{t("article.field.summary")}</span>
-        <textarea
-          disabled={disabled}
-          onChange={(event) => updateField("summary", event.target.value)}
-          rows={4}
-          value={value.summary}
-        />
-      </label>
+      {hasSeoDescription ? (
+        <p className="admin-muted-text">{t("article.summarySkippedWhenSeoDescription")}</p>
+      ) : (
+        <label className="admin-form-field">
+          <span>{t("article.field.summary")}</span>
+          <textarea
+            disabled={disabled}
+            onChange={(event) => updateField("summary", event.target.value)}
+            rows={4}
+            value={value.summary}
+          />
+        </label>
+      )}
     </div>
   );
 }
