@@ -30,6 +30,7 @@ describe("public search page rendering", () => {
 
     assert.match(html, /<a class="liax-public-avatar" href="\/console" aria-label="Console"/);
     assert.match(html, /data-public-search-overlay-trigger/);
+    assert.match(html, /href="\/en\/contact"/);
     assert.match(html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\)/);
     assert.doesNotMatch(html, /href="\/en\/account"/);
   });

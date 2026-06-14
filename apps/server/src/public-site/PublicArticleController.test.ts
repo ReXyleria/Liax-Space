@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import type { SearchResult } from "../search/SearchService.js";
-import { renderArchiveBody, renderArticleCards, renderGuestbookBody, renderHomePage, renderMomentsBody, renderPublicSectionPage, renderTagCards } from "./PublicArticleController.js";
+import { renderArchiveBody, renderArticleCards, renderContactBody, renderGuestbookBody, renderHomePage, renderMomentsBody, renderPublicSectionPage, renderTagCards } from "./PublicArticleController.js";
 
 function createSearchResult(overrides: Partial<SearchResult> = {}): SearchResult {
   return {
@@ -121,6 +121,7 @@ describe("public section page rendering", () => {
     assert.match(html, /data-language-switch-placeholder="true"/);
     assert.match(html, /<a class="liax-public-avatar" href="\/console" aria-label="Console"/);
     assert.match(html, /data-public-search-overlay-trigger/);
+    assert.match(html, /href="\/en\/contact"/);
     assert.match(html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\)/);
   });
 
@@ -236,5 +237,18 @@ describe("public section page rendering", () => {
 
     assert.match(html, /<span>4 阅读<\/span>/);
     assert.match(html, /class="liax-article-meta"/);
+  });
+
+  it("renders a dedicated contact section from site settings", () => {
+    const body = renderContactBody("zh-CN", {
+      "home.contactItems.zh-CN": "邮箱:hello@example.com\n主页:https://example.com"
+    });
+    const page = renderPublicSectionPage("zh-CN", "zh", "contact", body);
+
+    assert.match(page, /<title>联系 · Liax Space<\/title>/);
+    assert.match(page, /href="\/zh\/contact"/);
+    assert.match(page, /href="mailto:hello@example\.com"/);
+    assert.match(page, /href="https:\/\/example\.com"/);
+    assert.match(page, /这些联系方式与首页保持一致/);
   });
 });

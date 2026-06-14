@@ -22,6 +22,7 @@ describe("public route locale matching", () => {
 
   it("maps legacy article list routes to the current posts section", () => {
     assert.equal(mapLegacyPublicSection("articles"), "posts");
+    assert.equal(mapLegacyPublicSection("contact"), "contact");
     assert.equal(mapLegacyPublicSection("guestbook"), "guestbook");
     assert.equal(mapLegacyPublicSection("search"), "search");
     assert.equal(mapLegacyPublicSection("missing"), null);

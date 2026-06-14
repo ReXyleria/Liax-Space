@@ -83,6 +83,7 @@ function renderPublicMenuLinks(localePrefix: "zh" | "en", isZh: boolean): string
           <a href="/${localePrefix}/tags">${isZh ? "标签" : "Tags"}</a>
           <a href="/${localePrefix}/moments">${isZh ? "瞬间" : "Moments"}</a>
           <a href="/${localePrefix}/guestbook">${isZh ? "留言" : "Guestbook"}</a>
+          <a href="/${localePrefix}/contact">${isZh ? "联系" : "Contact"}</a>
           <a href="/${localePrefix}/archives">${isZh ? "归档" : "Archives"}</a>`;
 }
 

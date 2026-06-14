@@ -124,6 +124,7 @@ function renderPublicMenuLinks(prefix: LocalePrefix, isZh: boolean): string {
           <a href="/${prefix}/tags">${isZh ? "标签" : "Tags"}</a>
           <a href="/${prefix}/moments">${isZh ? "瞬间" : "Moments"}</a>
           <a href="/${prefix}/guestbook">${isZh ? "留言" : "Guestbook"}</a>
+          <a href="/${prefix}/contact">${isZh ? "联系" : "Contact"}</a>
           <a href="/${prefix}/archives">${isZh ? "归档" : "Archives"}</a>`;
 }
 
@@ -950,6 +951,7 @@ ${renderLanguageSwitchScript()}
 const publicSectionLabels = {
   account: { en: "Account", zh: "个人" },
   archives: { en: "Archives", zh: "归档" },
+  contact: { en: "Contact", zh: "联系" },
   guestbook: { en: "Guestbook", zh: "留言" },
   moments: { en: "Moments", zh: "瞬间" },
   posts: { en: "Articles", zh: "文章" },
@@ -1259,6 +1261,25 @@ export function renderGuestbookBody(
       </form>
       <h2 class="liax-guestbook-list-title">${isZh ? "公开留言" : "Public messages"}</h2>
       ${renderGuestbookEntries(locale, entries)}`;
+}
+
+export function renderContactBody(locale: ArticleLocale, settings: SiteSettings): string {
+  const isZh = locale === "zh-CN";
+  const items = parseHomeContactItems(settings, isZh);
+
+  return `<p class="liax-section-description">${escapeHtml(isZh ? "这些联系方式与首页保持一致，由站点设置统一维护。" : "These contact methods match the home page and are managed from site settings.")}</p>
+      <div class="liax-contact-list" aria-label="${escapeHtml(isZh ? "联系方式" : "Contact methods")}">
+${items.map((item) => {
+  const valueHtml = item.href
+    ? `<a href="${escapeHtml(item.href)}">${escapeHtml(item.value)}</a>`
+    : `<span>${escapeHtml(item.value)}</span>`;
+
+  return `        <article class="liax-contact-card">
+          <strong>${escapeHtml(item.label)}</strong>
+          ${valueHtml}
+        </article>`;
+}).join("\n")}
+      </div>`;
 }
 
 function renderAccountBody(locale: ArticleLocale): string {
@@ -1670,6 +1691,46 @@ ${renderThemeCssVariables(settings)}
       border-radius: 8px;
       background: var(--color-surface-muted);
       padding: 18px;
+    }
+
+    .liax-contact-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-top: 24px;
+    }
+
+    .liax-contact-card {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 18px;
+    }
+
+    .liax-contact-card strong {
+      color: #6f6a5d;
+      font-size: 13px;
+      font-weight: 820;
+    }
+
+    .liax-contact-card a,
+    .liax-contact-card span {
+      min-width: 0;
+      color: var(--color-text);
+      font-size: 18px;
+      font-weight: 760;
+      overflow-wrap: anywhere;
+      text-decoration: none;
+    }
+
+    .liax-contact-card a:hover,
+    .liax-contact-card a:focus-visible {
+      color: var(--color-accent);
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
     }
 
     .liax-tag-grid {
@@ -2290,6 +2351,11 @@ export class PublicArticleController {
         renderGuestbookBody(locale, prefix, entries, { submitted: readGuestbookSubmitted(request.query.submitted) }),
         settings
       ));
+      return;
+    }
+
+    if (section === "contact") {
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderContactBody(locale, settings), settings));
       return;
     }
 

@@ -19,6 +19,7 @@ const legacyPublicLocalePrefixMap: Record<LegacyPublicLocalePrefix, PublicLocale
 const legacySectionMap: Record<string, string> = {
   articles: "posts",
   archives: "archives",
+  contact: "contact",
   guestbook: "guestbook",
   moments: "moments",
   posts: "posts",
