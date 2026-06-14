@@ -1,7 +1,26 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { renderGuestbookBody, renderHomePage, renderMomentsBody, renderPublicSectionPage, renderTagCards } from "./PublicArticleController.js";
+import type { SearchResult } from "../search/SearchService.js";
+import { renderArchiveBody, renderGuestbookBody, renderHomePage, renderMomentsBody, renderPublicSectionPage, renderTagCards } from "./PublicArticleController.js";
+
+function createSearchResult(overrides: Partial<SearchResult> = {}): SearchResult {
+  return {
+    articleId: 1,
+    articleStatus: "published",
+    locale: "zh-CN",
+    publishStatus: "published",
+    publishedAt: new Date("2026-05-01T08:00:00.000Z"),
+    seoDescription: null,
+    seoTitle: null,
+    slug: "example",
+    summary: null,
+    title: "示例文章",
+    updatedAt: new Date("2026-05-01T08:00:00.000Z"),
+    url: null,
+    ...overrides
+  };
+}
 
 describe("public home page rendering", () => {
   it("renders contact items without a separate contact title", () => {
@@ -188,5 +207,24 @@ describe("public section page rendering", () => {
 
     assert.match(zhHtml, /2 篇文章/);
     assert.match(enHtml, /1 article/);
+  });
+
+  it("renders archive month article counts like the legacy archive page", () => {
+    const zhHtml = renderArchiveBody("zh-CN", "zh", [
+      createSearchResult({ articleId: 1, slug: "first", title: "第一篇" }),
+      createSearchResult({ articleId: 2, slug: "second", title: "第二篇", publishedAt: new Date("2026-05-20T08:00:00.000Z") })
+    ]);
+    const enHtml = renderArchiveBody("en-US", "en", [
+      createSearchResult({
+        articleId: 3,
+        locale: "en-US",
+        publishedAt: new Date("2026-06-01T08:00:00.000Z"),
+        slug: "third",
+        title: "Third article"
+      })
+    ]);
+
+    assert.match(zhHtml, /<span>2026-05<\/span><small>2 篇文章<\/small>/);
+    assert.match(enHtml, /<span>2026-06<\/span><small>1 article<\/small>/);
   });
 });

@@ -963,7 +963,7 @@ function isPublicSection(value: string): value is PublicSection {
   return value in publicSectionLabels;
 }
 
-function formatTagArticleCount(locale: ArticleLocale, count: number): string {
+function formatPublicArticleCount(locale: ArticleLocale, count: number): string {
   if (locale === "zh-CN") {
     return `${count} 篇文章`;
   }
@@ -988,7 +988,7 @@ export function renderTagCards(locale: ArticleLocale, tags: TagDetail[]): string
   }
 
   return `<ul class="liax-tag-grid">
-${localizedTags.map((tag) => `        <li><a href="/${locale === "zh-CN" ? "zh" : "en"}/tags/${escapeHtml(tag.slug)}"><span>#</span><strong>${escapeHtml(tag.name)}</strong><code>${escapeHtml(tag.slug)}</code><small>${escapeHtml(formatTagArticleCount(locale, tag.articleCount))}</small></a></li>`).join("\n")}
+${localizedTags.map((tag) => `        <li><a href="/${locale === "zh-CN" ? "zh" : "en"}/tags/${escapeHtml(tag.slug)}"><span>#</span><strong>${escapeHtml(tag.name)}</strong><code>${escapeHtml(tag.slug)}</code><small>${escapeHtml(formatPublicArticleCount(locale, tag.articleCount))}</small></a></li>`).join("\n")}
       </ul>`;
 }
 
@@ -1011,7 +1011,7 @@ ${articles.map((article) => {
       </div>`;
 }
 
-function renderArchiveBody(locale: ArticleLocale, prefix: LocalePrefix, articles: SearchResult[]): string {
+export function renderArchiveBody(locale: ArticleLocale, prefix: LocalePrefix, articles: SearchResult[]): string {
   const isZh = locale === "zh-CN";
 
   if (articles.length === 0) {
@@ -1030,7 +1030,7 @@ function renderArchiveBody(locale: ArticleLocale, prefix: LocalePrefix, articles
 
   return `<div class="liax-archive-timeline">
 ${[...grouped.entries()].map(([groupLabel, groupArticles]) => `        <section class="liax-archive-group">
-          <h2>${escapeHtml(groupLabel)}</h2>
+          <h2><span>${escapeHtml(groupLabel)}</span><small>${escapeHtml(formatPublicArticleCount(locale, groupArticles.length))}</small></h2>
           <ol>
 ${groupArticles.map((article) => {
   const date = article.publishedAt ? new Date(article.publishedAt) : null;
@@ -1775,9 +1775,19 @@ ${renderThemeCssVariables(settings)}
     }
 
     .liax-archive-group h2 {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: baseline;
       margin: 0;
       color: var(--color-accent);
       font-size: 18px;
+    }
+
+    .liax-archive-group h2 small {
+      color: #6f6a5d;
+      font-size: 13px;
+      font-weight: 760;
     }
 
     .liax-archive-group ol {
