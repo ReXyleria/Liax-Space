@@ -64,7 +64,7 @@ export type PublishVersionRequest = {
   publishedAt?: string | null;
 };
 
-const markdownChunkSize = 256 * 1024;
+const markdownChunkSize = 1024 * 1024;
 
 function parseJsonResponse(value: string): unknown {
   if (!value) {

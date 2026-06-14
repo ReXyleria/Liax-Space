@@ -48,6 +48,17 @@ export type GetMarkdownChunkInput = {
   versionId: number;
 };
 
+type CachedMarkdownVersion = {
+  articleId: number;
+  cachedAt: number;
+  locale: ArticleVersionLocale;
+  mdContent: string;
+  versionId: number;
+};
+
+const markdownCacheMaxAgeMs = 10 * 60 * 1000;
+const markdownCacheMaxEntries = 2;
+
 function validationError(message: string): AppError {
   return new AppError(message, {
     code: errorCodes.validationFailed,
@@ -141,6 +152,8 @@ function parseNonNegativeInteger(value: unknown, fieldName: string): number {
 }
 
 export class ArticleVersionService {
+  private readonly markdownCache = new Map<number, CachedMarkdownVersion>();
+
   constructor(
     private readonly articleRepository = new ArticleRepository(),
     private readonly translationRepository = new ArticleTranslationRepository(),
@@ -263,21 +276,27 @@ export class ArticleVersionService {
     const locale = parseLocale(input.locale);
     const offset = parseNonNegativeInteger(input.offset, "offset");
     const limit = parsePositiveInteger(input.limit, "limit");
-    const chunk = await this.versionRepository.findMarkdownChunk({
-      limit,
-      offset,
-      versionId: input.versionId
-    });
+    const cached = this.getCachedMarkdownVersion(input.versionId);
+    const source = cached ?? await this.cacheMarkdownVersion(
+      await this.getVersion(input.articleId, locale, input.versionId)
+    );
 
-    if (!chunk) {
-      throw notFoundError("Article version not found.");
-    }
-
-    if (chunk.articleId !== input.articleId || chunk.locale !== locale) {
+    if (source.articleId !== input.articleId || source.locale !== locale) {
       throw validationError("versionId must belong to articleId and locale.");
     }
 
-    return chunk;
+    const totalLength = source.mdContent.length;
+    const nextOffset = Math.min(offset + limit, totalLength);
+
+    return {
+      articleId: source.articleId,
+      locale: source.locale,
+      mdContent: source.mdContent.slice(offset, nextOffset),
+      nextOffset,
+      offset,
+      totalLength,
+      versionId: source.versionId
+    };
   }
 
   async rollbackVersion(input: RollbackArticleVersionInput): Promise<RollbackArticleVersionResult> {
@@ -346,6 +365,47 @@ export class ArticleVersionService {
     }
 
     return version;
+  }
+
+  private cacheMarkdownVersion(version: ArticleVersion): CachedMarkdownVersion {
+    const cachedVersion = {
+      articleId: version.articleId,
+      cachedAt: Date.now(),
+      locale: version.locale,
+      mdContent: version.mdContent,
+      versionId: version.id
+    };
+
+    this.pruneMarkdownCache();
+    this.markdownCache.set(version.id, cachedVersion);
+
+    while (this.markdownCache.size > markdownCacheMaxEntries) {
+      const oldestKey = this.markdownCache.keys().next().value;
+
+      if (oldestKey === undefined) {
+        break;
+      }
+
+      this.markdownCache.delete(oldestKey);
+    }
+
+    return cachedVersion;
+  }
+
+  private getCachedMarkdownVersion(versionId: number): CachedMarkdownVersion | null {
+    this.pruneMarkdownCache();
+
+    return this.markdownCache.get(versionId) ?? null;
+  }
+
+  private pruneMarkdownCache(): void {
+    const expiresBefore = Date.now() - markdownCacheMaxAgeMs;
+
+    for (const [versionId, cachedVersion] of this.markdownCache) {
+      if (cachedVersion.cachedAt < expiresBefore) {
+        this.markdownCache.delete(versionId);
+      }
+    }
   }
 
   private async requireArticleAndTranslation(articleId: number, locale: ArticleVersionLocale): Promise<void> {
