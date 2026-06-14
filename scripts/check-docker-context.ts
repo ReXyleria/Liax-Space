@@ -60,6 +60,8 @@ const requiredFiles = [
   "apps/server/src/jobs/runRestore.ts",
   "apps/server/src/jobs/runRebuildHtml.ts",
   "apps/server/src/jobs/runCheckConsistency.ts",
+  "apps/server/src/jobs/LegacyPublicDataSyncJob.ts",
+  "apps/server/src/jobs/runSyncLegacyPublicData.ts",
   "apps/server/src/jobs/runCleanupRenderedHtml.ts",
   "apps/server/src/jobs/runCleanupUnusedAttachments.ts",
   "apps/server/src/setup/createSetupToken.ts",
@@ -67,6 +69,7 @@ const requiredFiles = [
   "scripts/create-setup-token.ts",
   "scripts/rebuild-html.ts",
   "scripts/check-consistency.ts",
+  "scripts/sync-legacy-public-data.ts",
   "scripts/check-install-chain.ts",
   "scripts/backup.ts",
   "scripts/restore.ts",
@@ -444,6 +447,7 @@ function checkRootScriptEntrypoints(): CheckResult[] {
 
   const expectedRootScripts = [
     '"check:consistency": "node scripts/check-consistency.ts"',
+    '"sync:legacy-public-data": "node scripts/sync-legacy-public-data.ts"',
     '"check:install": "node scripts/check-install-chain.ts"',
     '"create-setup-token": "node scripts/create-setup-token.ts"',
     '"rebuild-html": "node scripts/rebuild-html.ts"',
@@ -479,6 +483,7 @@ function checkServerProdEntrypoints(): CheckResult[] {
     '"restore:prod": "node dist/jobs/runRestore.js"',
     '"rebuild-html:prod": "node dist/jobs/runRebuildHtml.js"',
     '"check-consistency:prod": "node dist/jobs/runCheckConsistency.js"',
+    '"sync-legacy-public-data:prod": "node dist/jobs/runSyncLegacyPublicData.js"',
     '"cleanup-rendered-html:prod": "node dist/jobs/runCleanupRenderedHtml.js"',
     '"cleanup-unused-attachments:prod": "node dist/jobs/runCleanupUnusedAttachments.js"'
   ];

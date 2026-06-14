@@ -14,6 +14,7 @@
     "check:design": "node scripts/check-design-tokens.ts",
     "check:env": "node scripts/check-env.ts",
     "check:consistency": "node scripts/check-consistency.ts",
+    "sync:legacy-public-data": "node scripts/sync-legacy-public-data.ts",
     "check:acceptance": "node scripts/check-acceptance.ts",
     "check:docker-context": "node scripts/check-docker-context.ts",
     "check:install": "node scripts/check-install-chain.ts",
