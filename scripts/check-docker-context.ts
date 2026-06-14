@@ -225,7 +225,13 @@ function checkCompose(): CheckResult[] {
     "scripts:",
     "/var/run/docker.sock"
   ];
-  const foundDisallowedMounts = disallowedMounts.filter((term) => content.includes(term));
+  const volumeLikeLines = content
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("- "));
+  const foundDisallowedMounts = disallowedMounts.filter((term) =>
+    volumeLikeLines.some((line) => line.includes(term))
+  );
 
   const checks: Array<[boolean, string, string]> = [
     [
@@ -288,6 +294,30 @@ function checkCompose(): CheckResult[] {
       foundDisallowedMounts.length === 0,
       "Compose app service does not mount source trees, scripts, tests, docs, workspace packages, or Docker socket.",
       `Compose must not mount development-only paths or Docker socket: ${foundDisallowedMounts.join(", ")}.`
+    ],
+    [
+      content.includes("legacy-sync:") &&
+        content.includes('profiles: ["legacy-sync"]') &&
+        content.includes('command: ["node", "apps/server/dist/jobs/runSyncLegacyPublicData.js"]'),
+      "Compose defines a profiled legacy public data sync job.",
+      "Compose must define a legacy-sync profile service that runs the compiled legacy sync job."
+    ],
+    [
+      content.includes("LEGACY_DATABASE_HOST: ${LEGACY_DATABASE_HOST:-liax-space-mysql}") &&
+        content.includes("LEGACY_DATABASE_PORT: ${LEGACY_DATABASE_PORT:-3306}") &&
+        content.includes("LEGACY_DATABASE_NAME: ${LEGACY_DATABASE_NAME:-liax_space}") &&
+        content.includes("LEGACY_DATABASE_USER: ${LEGACY_DATABASE_USER:-root}") &&
+        content.includes("LEGACY_DATABASE_PASSWORD: ${LEGACY_DATABASE_PASSWORD:-root}"),
+      "Compose passes explicit legacy database settings to the legacy sync job.",
+      "Compose legacy sync job must receive explicit LEGACY_DATABASE_* settings."
+    ],
+    [
+      content.includes("networks:") &&
+        content.includes("- legacy") &&
+        content.includes("external: true") &&
+        content.includes("name: ${LEGACY_DOCKER_NETWORK:-liax_space_default}"),
+      "Compose connects the profiled legacy sync job to the legacy Docker network only when requested.",
+      "Compose must define an external legacy Docker network for the profiled legacy sync job."
     ]
   ];
 
