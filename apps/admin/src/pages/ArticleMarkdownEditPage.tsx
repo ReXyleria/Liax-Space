@@ -7,6 +7,7 @@ import { translationApi } from "../api/translationApi";
 import { versionApi } from "../api/versionApi";
 import {
   extractHeadingsFromMarkdown,
+  largeMarkdownDocumentThreshold,
   MarkdownEditor,
   shouldUsePlainMarkdownEditor,
   type EditorHeading
@@ -37,6 +38,8 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const [baseVersionId, setBaseVersionId] = useState<number | null>(null);
   const [mdContent, setMdContent] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isHydratingContent, setIsHydratingContent] = useState(false);
+  const [forcePlainEditor, setForcePlainEditor] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
@@ -44,17 +47,28 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const lastSavedContentRef = useRef("");
   const mdContentRef = useRef("");
+  const isHydratingContentRef = useRef(false);
   const autoSaveTimerRef = useRef<number | null>(null);
   const suppressNextAutoSaveRef = useRef(false);
   const sourceLocale = oppositeLocale(locale);
   const pageTitle = useMemo(() => `${t("article.markdownTitle")} #${articleId} - ${locale}`, [articleId, locale, t]);
-  const headings = useMemo(() => shouldUsePlainMarkdownEditor(mdContent) ? [] : extractHeadingsFromMarkdown(mdContent), [mdContent]);
+  const headings = useMemo(
+    () => forcePlainEditor || shouldUsePlainMarkdownEditor(mdContent) ? [] : extractHeadingsFromMarkdown(mdContent),
+    [forcePlainEditor, mdContent]
+  );
+
+  function setHydratingContent(nextValue: boolean): void {
+    isHydratingContentRef.current = nextValue;
+    setIsHydratingContent(nextValue);
+  }
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadInitialContent(): Promise<void> {
       setIsLoading(true);
+      setHydratingContent(false);
+      setForcePlainEditor(false);
       setMessage(null);
       setErrorMessage(null);
 
@@ -65,19 +79,44 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
           ? await versionApi.listVersionSummaries(articleId, locale)
           : { versions: [] };
         const latestVersion = versionsResponse.versions[0] ?? null;
+        const shouldForcePlainEditor = Boolean(
+          latestVersion && (latestVersion.contentSizeBytes ?? 0) >= largeMarkdownDocumentThreshold
+        );
+
+        if (isMounted) {
+          setTranslation(activeTranslation);
+          setBaseVersionId(latestVersion?.id ?? null);
+          setForcePlainEditor(shouldForcePlainEditor);
+        }
+
         const nextMarkdown = latestVersion
-          ? await versionApi.getVersionMarkdown(articleId, locale, latestVersion.id)
+          ? await versionApi.getVersionMarkdown(articleId, locale, latestVersion.id, {
+              onProgress: ({ content, done }) => {
+                if (!isMounted || !shouldForcePlainEditor) {
+                  return;
+                }
+
+                mdContentRef.current = content;
+                lastSavedContentRef.current = content;
+                setMdContent(content);
+                setHydratingContent(!done);
+                setIsLoading(false);
+              }
+            })
           : "";
 
         if (isMounted) {
           setTranslation(activeTranslation);
           setBaseVersionId(latestVersion?.id ?? null);
+          setForcePlainEditor(shouldForcePlainEditor);
           setMdContent(nextMarkdown);
           mdContentRef.current = nextMarkdown;
           lastSavedContentRef.current = nextMarkdown;
+          setHydratingContent(false);
         }
       } catch (error) {
         if (isMounted) {
+          setHydratingContent(false);
           setErrorMessage(error instanceof Error ? error.message : t("article.markdownLoadFailed"));
         }
       } finally {
@@ -102,6 +141,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
 
     if (
       isLoading ||
+      isHydratingContent ||
       isSaving ||
       isAutoSaving ||
       !translation ||
@@ -120,9 +160,14 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
         window.clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [baseVersionId, isAutoSaving, isLoading, isSaving, mdContent, translation]);
+  }, [baseVersionId, isAutoSaving, isHydratingContent, isLoading, isSaving, mdContent, translation]);
 
   async function saveContent(options: { auto: boolean }): Promise<void> {
+    if (isHydratingContentRef.current) {
+      setErrorMessage(t("article.markdownLoading"));
+      return;
+    }
+
     if (!translation) {
       setErrorMessage(t("article.markdownNeedsMetadata"));
       return;
@@ -281,7 +326,8 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                 ) : null}
 
                 <MarkdownEditor
-                  disabled={isSaving || isTranslating}
+                  disabled={isSaving || isTranslating || isHydratingContent}
+                  forcePlainTextMode={forcePlainEditor}
                   onChange={handleEditorChange}
                   onDraftChange={(value) => {
                     suppressNextAutoSaveRef.current = false;
@@ -294,7 +340,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                 <div className="admin-form-actions">
                   <button
                     className="liax-button"
-                    disabled={isTranslating}
+                    disabled={isTranslating || isHydratingContent}
                     onClick={() => void handleTranslateContent()}
                     type="button"
                   >
@@ -302,7 +348,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                   </button>
                   <button
                     className="liax-button liax-button--primary"
-                    disabled={isSaving || !translation}
+                    disabled={isSaving || isHydratingContent || !translation}
                     onClick={() => void handleSave()}
                     type="button"
                   >
@@ -311,6 +357,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                 </div>
 
                 {isAutoSaving ? <p className="admin-muted-text">{t("article.autoSaving")}</p> : null}
+                {isHydratingContent ? <p className="admin-muted-text">{t("article.markdownLoading")}</p> : null}
                 {message ? <p className="admin-success-text">{message}</p> : null}
                 {errorMessage ? <p className="admin-error-text">{errorMessage}</p> : null}
               </>

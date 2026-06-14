@@ -64,7 +64,19 @@ export type PublishVersionRequest = {
   publishedAt?: string | null;
 };
 
-const markdownChunkSize = 1024 * 1024;
+export type MarkdownLoadProgress = {
+  content: string;
+  done: boolean;
+  loadedLength: number;
+  totalLength: number;
+};
+
+export type MarkdownLoadOptions = {
+  onProgress?: (progress: MarkdownLoadProgress) => void;
+};
+
+const initialMarkdownChunkSize = 256 * 1024;
+const markdownChunkSize = 2 * 1024 * 1024;
 
 function parseJsonResponse(value: string): unknown {
   if (!value) {
@@ -144,16 +156,16 @@ function uploadMarkdownFile(
   });
 }
 
-function appendMarkdownChunkQuery(path: string, offset: number): string {
+function appendMarkdownChunkQuery(path: string, offset: number, limit: number): string {
   const separator = path.includes("?") ? "&" : "?";
 
-  return `${path}${separator}offset=${offset}&limit=${markdownChunkSize}`;
+  return `${path}${separator}offset=${offset}&limit=${limit}`;
 }
 
-async function fetchMarkdownText(path: string): Promise<string> {
+async function fetchMarkdownText(path: string, options: MarkdownLoadOptions = {}): Promise<string> {
   const token = readAuthToken();
   const headers = new Headers();
-  const chunks: string[] = [];
+  let markdown = "";
   let offset = 0;
 
   if (token) {
@@ -161,7 +173,8 @@ async function fetchMarkdownText(path: string): Promise<string> {
   }
 
   while (true) {
-    const response = await fetch(buildApiUrl(appendMarkdownChunkQuery(path, offset)), { headers });
+    const limit = offset === 0 ? initialMarkdownChunkSize : markdownChunkSize;
+    const response = await fetch(buildApiUrl(appendMarkdownChunkQuery(path, offset, limit)), { headers });
     const responseText = await response.text();
 
     if (!response.ok) {
@@ -176,7 +189,7 @@ async function fetchMarkdownText(path: string): Promise<string> {
       });
     }
 
-    chunks.push(responseText);
+    markdown += responseText;
 
     const totalLength = Number(response.headers.get("x-markdown-total-length") ?? responseText.length);
     const nextOffset = Number(response.headers.get("x-markdown-next-offset") ?? offset + responseText.length);
@@ -185,8 +198,17 @@ async function fetchMarkdownText(path: string): Promise<string> {
       throw new Error("Markdown chunk response is missing progress metadata.");
     }
 
-    if (totalLength === 0 || nextOffset >= totalLength) {
-      return chunks.join("");
+    const done = totalLength === 0 || nextOffset >= totalLength;
+
+    options.onProgress?.({
+      content: markdown,
+      done,
+      loadedLength: nextOffset,
+      totalLength
+    });
+
+    if (done) {
+      return markdown;
     }
 
     if (nextOffset <= offset) {
@@ -207,8 +229,13 @@ export const versionApi = {
   getVersion(articleId: number, locale: ArticleLocale, versionId: number): Promise<GetVersionResponse> {
     return httpClient.get<GetVersionResponse>(`/admin/articles/${articleId}/${locale}/versions/${versionId}`);
   },
-  getVersionMarkdown(articleId: number, locale: ArticleLocale, versionId: number): Promise<string> {
-    return fetchMarkdownText(`/admin/articles/${articleId}/${locale}/versions/${versionId}/markdown`);
+  getVersionMarkdown(
+    articleId: number,
+    locale: ArticleLocale,
+    versionId: number,
+    options?: MarkdownLoadOptions
+  ): Promise<string> {
+    return fetchMarkdownText(`/admin/articles/${articleId}/${locale}/versions/${versionId}/markdown`, options);
   },
   importMarkdownFile(
     articleId: number,

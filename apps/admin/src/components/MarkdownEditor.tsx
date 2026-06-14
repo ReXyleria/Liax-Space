@@ -13,6 +13,7 @@ import { useT } from "../i18n/useT";
 
 export type MarkdownEditorProps = {
   disabled?: boolean;
+  forcePlainTextMode?: boolean;
   onDraftChange?: (value: string) => void;
   onUploadImage?: (file: File) => Promise<{ markdown: string; previewUrl: string }>;
   value: string;
@@ -545,7 +546,14 @@ function htmlToMarkdown(root: HTMLElement): string {
     .join("\n\n");
 }
 
-export function MarkdownEditor({ disabled = false, onChange, onDraftChange, onUploadImage, value }: MarkdownEditorProps): ReactElement {
+export function MarkdownEditor({
+  disabled = false,
+  forcePlainTextMode = false,
+  onChange,
+  onDraftChange,
+  onUploadImage,
+  value
+}: MarkdownEditorProps): ReactElement {
   const t = useT();
   const editorShellRef = useRef<HTMLElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -562,7 +570,7 @@ export function MarkdownEditor({ disabled = false, onChange, onDraftChange, onUp
   const [selectedMathExpression, setSelectedMathExpression] = useState<string | null>(null);
   const [selectedTableContext, setSelectedTableContext] = useState<SelectedTableContext | null>(null);
   const [slashMenu, setSlashMenu] = useState<SlashMenuState | null>(null);
-  const isLargeDocument = shouldUsePlainMarkdownEditor(value);
+  const isLargeDocument = forcePlainTextMode || shouldUsePlainMarkdownEditor(value);
   const isSourceMode = editorMode === "source" || isLargeDocument;
   const selectedTableToolbarStyle: CSSProperties | undefined = selectedTableContext
     ? {

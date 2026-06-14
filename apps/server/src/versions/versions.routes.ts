@@ -12,6 +12,8 @@ const articleVersionService = new ArticleVersionService();
 const auditLogService = new AuditLogService();
 const maxMarkdownImportSizeBytes = 20 * 1024 * 1024;
 const maxMarkdownMultipartBodyBytes = maxMarkdownImportSizeBytes + 1024 * 1024;
+const defaultMarkdownChunkSizeBytes = 256 * 1024;
+const maxMarkdownChunkSizeBytes = 2 * 1024 * 1024;
 
 export const versionRoutes = Router();
 
@@ -398,7 +400,7 @@ versionRoutes.get(
     if (request.query.offset !== undefined || request.query.limit !== undefined) {
       const chunk = await articleVersionService.getMarkdownChunk({
         articleId,
-        limit: readPositiveQuery(request.query.limit, "limit", 256 * 1024, 512 * 1024),
+        limit: readPositiveQuery(request.query.limit, "limit", defaultMarkdownChunkSizeBytes, maxMarkdownChunkSizeBytes),
         locale: request.params.locale,
         offset: readNonNegativeQuery(request.query.offset, "offset", 0),
         versionId
