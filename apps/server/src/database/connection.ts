@@ -3,6 +3,8 @@ import { env } from "../config/index.js";
 
 let pool: Pool | null = null;
 
+const databaseConnectTimeoutMs = 10_000;
+
 export function getDatabasePool(): Pool {
   if (!pool) {
     pool = createPool({
@@ -13,6 +15,7 @@ export function getDatabasePool(): Pool {
       password: env.database.password,
       waitForConnections: true,
       connectionLimit: 10,
+      connectTimeout: databaseConnectTimeoutMs,
       namedPlaceholders: true
     });
   }
@@ -29,4 +32,3 @@ export async function closeDatabasePool(): Promise<void> {
   pool = null;
   await currentPool.end();
 }
-

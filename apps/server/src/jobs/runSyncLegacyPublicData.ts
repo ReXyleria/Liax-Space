@@ -3,6 +3,8 @@ import { createPool } from "mysql2/promise";
 import { closeDatabasePool, getDatabasePool } from "../database/connection.js";
 import { LegacyPublicDataSyncJob } from "./LegacyPublicDataSyncJob.js";
 
+const legacyDatabaseConnectTimeoutMs = 10_000;
+
 type LegacyDatabaseEnv = {
   database: string;
   host: string;
@@ -35,9 +37,14 @@ function readLegacyDatabaseEnv(): LegacyDatabaseEnv {
   };
 }
 
+function logProgress(message: string): void {
+  console.error(`[legacy-sync] ${message}`);
+}
+
 async function main(): Promise<void> {
   const apply = process.argv.slice(2).includes("--apply");
   const legacyEnv = readLegacyDatabaseEnv();
+  logProgress(`starting ${apply ? "apply" : "dry-run"}`);
   const legacyPool = createPool({
     database: legacyEnv.database,
     host: legacyEnv.host,
@@ -45,13 +52,18 @@ async function main(): Promise<void> {
     port: legacyEnv.port,
     user: legacyEnv.user,
     waitForConnections: true,
-    connectionLimit: 2
+    connectionLimit: 2,
+    connectTimeout: legacyDatabaseConnectTimeoutMs
   });
+
+  logProgress("connecting target database");
   const targetConnection = await getDatabasePool().getConnection();
+  logProgress("connected target database");
 
   try {
-    const result = await new LegacyPublicDataSyncJob(legacyPool, targetConnection).run({ apply });
+    const result = await new LegacyPublicDataSyncJob(legacyPool, targetConnection).run({ apply, onProgress: logProgress });
     console.log(JSON.stringify(result, null, 2));
+    logProgress("finished");
 
     if (!apply) {
       console.error("Dry run only. Re-run with --apply after explicit approval to write target data.");

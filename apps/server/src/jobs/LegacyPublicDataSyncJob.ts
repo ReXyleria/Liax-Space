@@ -44,6 +44,7 @@ type TargetArticleSlugRow = RowDataPacket & {
 
 export type LegacyPublicDataSyncOptions = {
   apply: boolean;
+  onProgress?: (message: string) => void;
 };
 
 export type LegacyPublicDataSyncResult = {
@@ -111,12 +112,17 @@ export class LegacyPublicDataSyncJob {
   ) {}
 
   async run(options: LegacyPublicDataSyncOptions): Promise<LegacyPublicDataSyncResult> {
+    options.onProgress?.("reading target public data counts");
     const targetCounts = await this.getTargetCounts();
-    const [legacyTags, legacyArticleTags, legacyMoments] = await Promise.all([
-      this.listLegacyTags(),
-      this.listLegacyArticleTags(),
-      this.listLegacyMoments()
-    ]);
+
+    options.onProgress?.("reading legacy tags");
+    const legacyTags = await this.listLegacyTags();
+
+    options.onProgress?.("reading legacy article tag links");
+    const legacyArticleTags = await this.listLegacyArticleTags();
+
+    options.onProgress?.("reading legacy moments");
+    const legacyMoments = await this.listLegacyMoments();
 
     const baseResult: LegacyPublicDataSyncResult = {
       applied: false,
@@ -134,6 +140,7 @@ export class LegacyPublicDataSyncJob {
     };
 
     if (!options.apply) {
+      options.onProgress?.("dry run complete");
       return baseResult;
     }
 
@@ -142,10 +149,12 @@ export class LegacyPublicDataSyncJob {
     }
 
     await this.targetDatabase.beginTransaction();
+    options.onProgress?.("target transaction started");
 
     try {
       const tagIdBySlug = new Map<string, number>();
 
+      options.onProgress?.("inserting target tags");
       for (const tag of legacyTags) {
         const [result] = await this.targetDatabase.execute<ResultSetHeader>(
           "INSERT INTO tags (created_at) VALUES (?)",
@@ -162,8 +171,10 @@ export class LegacyPublicDataSyncJob {
         baseResult.tagTranslationsInserted += 2;
       }
 
+      options.onProgress?.("reading target article ids");
       const articleIdBySlug = await this.getTargetArticleIdsBySlug();
 
+      options.onProgress?.("inserting target article tag links");
       for (const articleTag of legacyArticleTags) {
         const articleId = articleIdBySlug.get(articleTag.articleSlug);
         const tagId = tagIdBySlug.get(articleTag.tagSlug);
@@ -180,6 +191,7 @@ export class LegacyPublicDataSyncJob {
         baseResult.articleTagLinksInserted += 1;
       }
 
+      options.onProgress?.("inserting target moments");
       for (const moment of legacyMoments) {
         const images = normalizeLegacyImages(moment.images);
         const status = mapLegacyMomentStatus(moment.visibility, moment.deletedAt);
@@ -202,6 +214,7 @@ export class LegacyPublicDataSyncJob {
 
       await this.targetDatabase.commit();
       baseResult.applied = true;
+      options.onProgress?.("target transaction committed");
 
       return baseResult;
     } catch (error) {
