@@ -4,6 +4,7 @@ import type { AdminPermission } from "../api/roleApi";
 import { hasAnyPermission } from "../auth/permissions";
 import { settingsApi } from "../api/settingsApi";
 import { LanguageSwitchButton } from "../effects/language-wipe/LanguageSwitchButton";
+import { readStoredLocale } from "../i18n/localeStorage";
 import { useT } from "../i18n/useT";
 import { authStore, type AuthState } from "../stores/authStore";
 import { siteAppearanceUpdatedEventName } from "../theme/siteTheme";
@@ -38,6 +39,10 @@ function readLogoSettings(settings: Record<string, unknown>): { logoAlt: string;
   };
 }
 
+function readPublicHomeHref(): string {
+  return readStoredLocale() === "en-US" ? "/en" : "/zh";
+}
+
 export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): ReactElement {
   const t = useT();
   const [authState, setAuthState] = useState<AuthState>(() => authStore.getSnapshot());
@@ -45,6 +50,7 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
   const [siteLogoAlt, setSiteLogoAlt] = useState("Liax Space");
   const [siteLogoUrl, setSiteLogoUrl] = useState<string | null>(null);
   const [activeHash, setActiveHash] = useState(currentHash);
+  const publicHomeHref = readPublicHomeHref();
   const visibleAvatarUrl = avatarUrl ?? loadedAvatarUrl;
   const navGroups: Array<{ key: string; items: NavItem[] }> = [
     {
@@ -181,12 +187,12 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
   return (
     <div className="admin-layout">
       <aside className="admin-sidebar" aria-label={t("nav.main")}>
-        <div className="admin-sidebar__brand" aria-label="Liax Space">
+        <a className="admin-sidebar__brand" href={publicHomeHref} aria-label="Liax Space">
           <span className="admin-sidebar__logo" aria-hidden={siteLogoUrl ? undefined : "true"}>
             {siteLogoUrl ? <img alt={siteLogoAlt} src={siteLogoUrl} /> : "LS"}
           </span>
           <span>Liax Space</span>
-        </div>
+        </a>
         <nav className="admin-nav" aria-label={t("nav.main")}>
           {visibleNavGroups.map((group) => (
             <section className="admin-nav__group" aria-label={t(group.key)} key={group.key}>
@@ -214,7 +220,7 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
           </div>
           <div className="admin-topbar__actions">
             <LanguageSwitchButton />
-            <a className="admin-topbar__avatar" href="#profile" aria-label={t("settings.personal")}>
+            <a className="admin-topbar__avatar" href={publicHomeHref} aria-label="Liax Space">
               {visibleAvatarUrl ? <img alt="" src={visibleAvatarUrl} /> : "A"}
             </a>
           </div>

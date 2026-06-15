@@ -83,7 +83,6 @@ function renderPublicMenuLinks(localePrefix: "zh" | "en", isZh: boolean): string
           <a href="/${localePrefix}/tags">${isZh ? "标签" : "Tags"}</a>
           <a href="/${localePrefix}/moments">${isZh ? "瞬间" : "Moments"}</a>
           <a href="/${localePrefix}/guestbook">${isZh ? "留言" : "Guestbook"}</a>
-          <a href="/${localePrefix}/contact">${isZh ? "联系" : "Contact"}</a>
           <a href="/${localePrefix}/archives">${isZh ? "归档" : "Archives"}</a>`;
 }
 
@@ -234,22 +233,20 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
       font-weight: 800;
     }
 
-    .liax-public-header__center,
-    .liax-public-menu {
-      flex-wrap: nowrap;
-      justify-content: end;
+    .liax-public-header__center {
+      display: grid;
+      grid-template-columns: minmax(0, auto) 44px;
+      align-items: center;
+      gap: 10px;
       min-width: 0;
     }
 
-    .liax-public-header__center {
-      display: grid;
-      grid-template-columns: 44px minmax(0, auto);
-      align-items: center;
-      gap: 10px;
-    }
-
     .liax-public-menu {
-      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: repeat(6, 86px);
+      gap: 6px;
+      justify-content: end;
+      min-width: 0;
       position: relative;
       z-index: 1;
     }
@@ -268,7 +265,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
       flex: 0 0 auto;
       display: inline-flex;
       justify-content: center;
-      width: auto;
+      width: 86px;
       padding: 6px 7px;
       font-size: 14px;
       font-weight: 760;
@@ -624,10 +621,10 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
         <span>Liax Space</span>
       </a>
       <div class="liax-public-header__center">
-        ${renderSearchLanguageSwitch(localePrefix, query)}
         <nav class="liax-public-menu" aria-label="Primary">
           ${renderPublicMenuLinks(localePrefix, isZh)}
         </nav>
+        ${renderSearchLanguageSwitch(localePrefix, query)}
       </div>
       <div class="liax-public-header__tools">
         ${renderPublicSearchForm(localePrefix, isZh, "inline", query)}

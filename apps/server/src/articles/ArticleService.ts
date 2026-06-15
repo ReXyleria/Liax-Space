@@ -154,7 +154,7 @@ function parseAllowedRoles(value: unknown): string[] | undefined {
     }
 
     return role.trim();
-  }))];
+  }))].filter((role) => role !== "admin");
 }
 
 function parseLocale(value: unknown): ArticleLocale {

@@ -21,6 +21,10 @@ type TranslationFormState = Record<ArticleLocale, TranslationMetadataFormValue>;
 type ExistingTranslationState = Record<ArticleLocale, ArticleTranslation | null>;
 type VisibilityState = Record<ArticleLocale, string[]>;
 
+function editableVisibleRoles(roles: string[]): string[] {
+  return roles.filter((role) => role !== "admin");
+}
+
 function formatDate(value: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
@@ -123,7 +127,7 @@ function buildTranslationState(detail: ArticleDetail): {
   for (const translation of detail.translations) {
     existingTranslations[translation.locale] = translation;
     forms[translation.locale] = toFormValue(translation);
-    visibility[translation.locale] = translation.allowedRoles ?? [];
+    visibility[translation.locale] = editableVisibleRoles(translation.allowedRoles ?? []);
   }
 
   return { existingTranslations, forms, visibility };
@@ -211,7 +215,7 @@ export function ArticleListPage(): ReactElement {
         const response = await roleApi.listRoles();
 
         if (isMounted) {
-          setRoleOptions(response.roles);
+          setRoleOptions(response.roles.filter((role) => role.roleKey !== "admin"));
         }
       } catch {
         if (isMounted) {
@@ -414,7 +418,7 @@ export function ArticleListPage(): ReactElement {
       if (shouldSaveMetadata) {
         const payload = {
           publishedAt: activeTranslation?.publishedVersionId != null ? toPublishedAtPayload(activeForm.publishedAt) : undefined,
-          allowedRoles: allowedRoles[activeLocale] ?? [],
+          allowedRoles: editableVisibleRoles(allowedRoles[activeLocale] ?? []),
           seoDescription: toNullableValue(activeForm.seoDescription),
           seoTitle: toNullableValue(activeForm.seoTitle),
           slug: activeForm.slug.trim(),

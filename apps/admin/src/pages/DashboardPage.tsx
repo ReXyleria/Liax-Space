@@ -10,6 +10,14 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat().format(value);
 }
 
+function formatPercent(value: number, total: number): string {
+  if (total <= 0) {
+    return "0%";
+  }
+
+  return `${Math.round((value / total) * 100)}%`;
+}
+
 function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString() : "-";
 }
@@ -18,11 +26,13 @@ function maxVisits(items: DashboardMetric[]): number {
   return Math.max(1, ...items.map((item) => item.visits));
 }
 
-function MetricBars({ items, labelFor }: {
+function MetricBars({ items, labelFor, showShare = false }: {
   items: DashboardMetric[];
   labelFor: (item: DashboardMetric) => string;
+  showShare?: boolean;
 }): ReactElement {
   const max = maxVisits(items);
+  const total = items.reduce((sum, item) => sum + item.visits, 0);
 
   if (items.length === 0) {
     return <p className="admin-muted-text">-</p>;
@@ -34,10 +44,10 @@ function MetricBars({ items, labelFor }: {
         <div className="admin-dashboard-bar" key={`${labelFor(item)}-${item.visits}`}>
           <div className="admin-dashboard-bar__meta">
             <span>{labelFor(item)}</span>
-            <strong>{formatNumber(item.visits)}</strong>
+            <strong>{formatNumber(item.visits)}{showShare ? ` · ${formatPercent(item.visits, total)}` : ""}</strong>
           </div>
           <div className="admin-dashboard-bar__track">
-            <span style={{ width: `${Math.max(4, (item.visits / max) * 100)}%` }} />
+            <span style={{ width: `${Math.max(4, ((showShare ? item.visits / Math.max(total, 1) : item.visits / max) * 100))}%` }} />
           </div>
         </div>
       ))}
@@ -61,9 +71,7 @@ export function DashboardPage(): ReactElement {
       { key: "dashboard.stat.moments", value: dashboard.totals.moments },
       { key: "dashboard.stat.users", value: dashboard.totals.users },
       { key: "dashboard.stat.comments", value: dashboard.totals.comments },
-      { key: "dashboard.stat.guestbook", value: dashboard.totals.guestbook },
-      { key: "dashboard.stat.todayVisits", value: dashboard.totals.todayVisits },
-      { key: "dashboard.stat.rangeVisits", value: dashboard.totals.visits }
+      { key: "dashboard.stat.guestbook", value: dashboard.totals.guestbook }
     ];
   }, [dashboard]);
 
@@ -133,37 +141,10 @@ export function DashboardPage(): ReactElement {
           <section className="admin-dashboard-grid" aria-label={t("dashboard.analytics")}>
             <article className="liax-card admin-dashboard-panel">
               <div className="liax-card__header">
-                <h3>{t("dashboard.dailyVisits")}</h3>
-              </div>
-              <div className="liax-card__body">
-                <MetricBars items={dashboard.dailyVisits} labelFor={(item) => item.date ?? "-"} />
-              </div>
-            </article>
-
-            <article className="liax-card admin-dashboard-panel">
-              <div className="liax-card__header">
-                <h3>{t("dashboard.countryVisits")}</h3>
-              </div>
-              <div className="liax-card__body">
-                <MetricBars items={dashboard.countryVisits} labelFor={(item) => item.label ?? "-"} />
-              </div>
-            </article>
-
-            <article className="liax-card admin-dashboard-panel">
-              <div className="liax-card__header">
                 <h3>{t("dashboard.visitDevices")}</h3>
               </div>
               <div className="liax-card__body">
-                <MetricBars items={dashboard.visitDevices} labelFor={(item) => t(`dashboard.device.${item.label ?? "unknown"}` as never)} />
-              </div>
-            </article>
-
-            <article className="liax-card admin-dashboard-panel">
-              <div className="liax-card__header">
-                <h3>{t("dashboard.loginDevices")}</h3>
-              </div>
-              <div className="liax-card__body">
-                <MetricBars items={dashboard.loginDevices} labelFor={(item) => t(`dashboard.device.${item.label ?? "unknown"}` as never)} />
+                <MetricBars items={dashboard.visitDevices} labelFor={(item) => t(`dashboard.device.${item.label ?? "unknown"}` as never)} showShare />
               </div>
             </article>
           </section>

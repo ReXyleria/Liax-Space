@@ -6,16 +6,16 @@ function escapeHtml(value: string): string {
 
 function renderLanguageSwitchPlaceholder(input: TemplateRenderInput): string {
   const alternates = input.alternates ?? [];
-  const links = alternates.length > 0
-    ? alternates.map((alternate) => {
-      const label = alternate.hreflang === "zh-CN" ? "切换到中文" : "Switch language";
-      const visibleLabel = alternate.hreflang === "zh-CN" ? "中" : "EN";
-      return `      <a class="liax-button liax-language-icon-button" aria-label="${escapeHtml(label)}" data-locale-target="${escapeHtml(alternate.hreflang)}" href="${escapeHtml(alternate.href)}">
+  const targetLocale = input.locale === "zh-CN" ? "en-US" : "zh-CN";
+  const targetAlternate = alternates.find((alternate) => alternate.hreflang === targetLocale);
+  const label = targetLocale === "zh-CN" ? "切换到中文" : "Switch to English";
+  const visibleLabel = targetLocale === "zh-CN" ? "中" : "EN";
+  const links = targetAlternate
+    ? `      <a class="liax-button liax-language-icon-button" aria-label="${escapeHtml(label)}" data-locale-target="${escapeHtml(targetAlternate.hreflang)}" href="${escapeHtml(targetAlternate.href)}">
         <span aria-hidden="true">${visibleLabel}</span>
-      </a>`;
-    }).join("\n")
+      </a>`
     : `      <button class="liax-button liax-language-icon-button" data-locale-target="" disabled type="button">
-        <span aria-hidden="true">EN</span>
+        <span aria-hidden="true">${visibleLabel}</span>
       </button>`;
 
   return `    <nav class="liax-language-switch" aria-label="Language switch" data-language-switch-placeholder="true">
@@ -657,15 +657,15 @@ export class TemplateRenderer {
 
     .liax-public-header__center {
       display: grid;
-      grid-template-columns: 44px minmax(0, auto);
+      grid-template-columns: minmax(0, auto) 44px;
       justify-content: end;
       align-items: center;
       gap: 10px;
     }
 
     .liax-public-menu {
-      flex: 1 1 auto;
-      flex-wrap: nowrap;
+      display: grid;
+      grid-template-columns: repeat(6, 86px);
       justify-content: flex-end;
       min-width: 0;
       position: relative;
@@ -680,7 +680,7 @@ export class TemplateRenderer {
       text-decoration: none;
       display: inline-flex;
       justify-content: center;
-      width: auto;
+      width: 86px;
       padding: 6px 7px;
       white-space: nowrap;
     }
@@ -840,18 +840,31 @@ export class TemplateRenderer {
 
     .liax-article-card {
       box-sizing: border-box;
-      width: min(1440px, calc(100% - clamp(32px, 6vw, 96px)));
-      margin: 24px auto 48px;
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-      background: var(--color-surface);
+      width: 100%;
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
       color: var(--color-text);
-      padding: 40px;
+      padding: clamp(24px, 4vw, 56px);
+    }
+
+    .liax-article-header {
+      border-bottom: 1px solid var(--color-border);
+      margin: 0 0 clamp(24px, 4vw, 44px);
+      padding: 0 0 clamp(18px, 3vw, 30px);
+    }
+
+    .liax-article-header h1 {
+      font-size: clamp(34px, 5vw, 74px);
+      letter-spacing: 0;
+      line-height: 1.04;
+      margin: 0;
     }
 
     .liax-article-body {
       max-width: 100%;
-      margin: 0 auto;
+      margin: 0;
     }
 
     h1,
@@ -1042,9 +1055,9 @@ export class TemplateRenderer {
       }
 
       .liax-article-card {
-        width: calc(100% - 24px);
-        margin: 18px auto 40px;
-        padding: 24px;
+        width: 100%;
+        margin: 0;
+        padding: 22px 16px 36px;
       }
     }
 
@@ -1130,10 +1143,10 @@ export class TemplateRenderer {
         <span>Liax Space</span>
       </a>
       <div class="liax-public-header__center">
-${languageSwitchHtml}
         <nav class="liax-public-menu" aria-label="Primary">
           ${renderPublicMenuLinks(localePrefix, input.locale ?? "en-US")}
         </nav>
+${languageSwitchHtml}
       </div>
       <div class="liax-public-header__tools">
         ${renderPublicSearchForm(localePrefix, input.locale ?? "en-US", "inline")}
@@ -1143,6 +1156,9 @@ ${languageSwitchHtml}
     </header>
     ${renderPublicSidebar(localePrefix, input.locale ?? "en-US")}
     <main class="liax-article-card">
+      <header class="liax-article-header">
+        <h1>${title}</h1>
+      </header>
       <article class="liax-article-body">
 ${input.bodyHtml}
       </article>

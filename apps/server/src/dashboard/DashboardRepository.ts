@@ -18,11 +18,6 @@ export type RecentPublishedArticle = {
   publishedAt: Date | null;
 };
 
-export type LoginDeviceCount = {
-  userAgent: string | null;
-  total: number;
-};
-
 export class DashboardRepository {
   async getTotals(): Promise<DashboardTotals> {
     const pool = getDatabasePool();
@@ -74,21 +69,4 @@ export class DashboardRepository {
     }));
   }
 
-  async listLoginDevices(startDate: Date): Promise<LoginDeviceCount[]> {
-    const pool = getDatabasePool();
-    const [rows] = await pool.execute<Array<RowDataPacket & { user_agent: string | null; total: number }>>(
-      `SELECT user_agent, COUNT(*) AS total
-       FROM audit_logs
-       WHERE action IN ('auth.login_success', 'auth.login_challenge')
-         AND created_at >= ?
-       GROUP BY user_agent
-       ORDER BY total DESC`,
-      [startDate]
-    );
-
-    return rows.map((row) => ({
-      total: row.total,
-      userAgent: row.user_agent
-    }));
-  }
 }

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { RequestHandler } from "express";
 
+import { readDeviceType } from "./deviceType.js";
 import { VisitRepository } from "./VisitRepository.js";
 
 const maxHeaderLength = 512;
@@ -47,28 +48,6 @@ function readClientIp(request: Parameters<RequestHandler>[0]): string | null {
 
 function hashIp(ip: string | null): string | null {
   return ip ? createHash("sha256").update(ip).digest("hex") : null;
-}
-
-function readDeviceType(userAgent: string | null): string {
-  const value = userAgent?.toLowerCase() ?? "";
-
-  if (!value) {
-    return "unknown";
-  }
-
-  if (/bot|crawl|spider|slurp|bingpreview/.test(value)) {
-    return "bot";
-  }
-
-  if (/ipad|tablet|kindle|silk/.test(value)) {
-    return "tablet";
-  }
-
-  if (/mobile|android|iphone|ipod|windows phone/.test(value)) {
-    return "mobile";
-  }
-
-  return "desktop";
 }
 
 function shouldTrack(request: Parameters<RequestHandler>[0]): boolean {

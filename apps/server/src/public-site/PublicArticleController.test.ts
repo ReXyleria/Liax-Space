@@ -24,21 +24,18 @@ function createSearchResult(overrides: Partial<SearchResult> = {}): SearchResult
 }
 
 describe("public home page rendering", () => {
-  it("renders contact items without a separate contact title", () => {
+  it("does not render contact methods or a contact page entry on the home page", () => {
     const html = renderHomePage("zh-CN", "zh", {
       "home.contactItems": "邮箱:hello@example.com\nQQ:123456\n主页:https://example.com"
     });
 
-    assert.match(html, /邮箱/);
-    assert.match(html, /hello@example\.com/);
-    assert.match(html, /QQ/);
-    assert.match(html, /123456/);
-    assert.match(html, /主页/);
-    assert.doesNotMatch(html, />联系作者</);
-    assert.doesNotMatch(html, /<strong>/);
+    assert.doesNotMatch(html, /<aside class="liax-home-contact"/);
+    assert.doesNotMatch(html, /hello@example\.com/);
+    assert.doesNotMatch(html, /href="\/zh\/contact"/);
+    assert.doesNotMatch(html, />联系</);
   });
 
-  it("renders locale-specific contact labels when configured", () => {
+  it("keeps locale-specific contact settings off the home page", () => {
     const zhHtml = renderHomePage("zh-CN", "zh", {
       "home.contactItems.en-US": "Email:hello@example.com\nWebsite:https://example.com",
       "home.contactItems.zh-CN": "邮箱:hello@example.com\n主页:https://example.com"
@@ -48,20 +45,21 @@ describe("public home page rendering", () => {
       "home.contactItems.zh-CN": "邮箱:hello@example.com\n主页:https://example.com"
     });
 
-    assert.match(zhHtml, /邮箱/);
-    assert.match(zhHtml, /主页/);
+    assert.doesNotMatch(zhHtml, /邮箱/);
+    assert.doesNotMatch(zhHtml, /主页/);
     assert.doesNotMatch(zhHtml, /Website/);
-    assert.match(enHtml, /Email/);
-    assert.match(enHtml, /Website/);
+    assert.doesNotMatch(enHtml, /Email/);
+    assert.doesNotMatch(enHtml, /Website/);
     assert.doesNotMatch(enHtml, /邮箱/);
   });
 
-  it("does not leak legacy Chinese contact labels into the English page", () => {
+  it("keeps legacy contact settings off the English home page", () => {
     const html = renderHomePage("en-US", "en", {
       "home.contactItems": "邮箱:hello@example.com\nQQ:123456"
     });
 
-    assert.match(html, /Email/);
+    assert.doesNotMatch(html, /Email/);
+    assert.doesNotMatch(html, /QQ/);
     assert.doesNotMatch(html, /邮箱/);
   });
 
@@ -92,6 +90,7 @@ describe("public home page rendering", () => {
     assert.match(html, /class="liax-public-search-form liax-public-search-form--sidebar"/);
     assert.match(html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\)/);
     assert.match(html, /data-public-sidebar-toggle/);
+    assert.doesNotMatch(html, /href="\/en\/contact"/);
     assert.doesNotMatch(html, /href="\/en\/account"/);
     assert.doesNotMatch(html, /background-image:\s*url\(/i);
     assert.doesNotMatch(html, /linear-gradient\([^)]*(blue|purple|violet)/i);
@@ -121,7 +120,7 @@ describe("public section page rendering", () => {
     assert.match(html, /data-language-switch-placeholder="true"/);
     assert.match(html, /<a class="liax-public-avatar" href="\/console" aria-label="Console"/);
     assert.match(html, /data-public-search-overlay-trigger/);
-    assert.match(html, /href="\/en\/contact"/);
+    assert.doesNotMatch(html, /href="\/en\/contact"/);
     assert.match(html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\)/);
   });
 
@@ -249,6 +248,6 @@ describe("public section page rendering", () => {
     assert.match(page, /href="\/zh\/contact"/);
     assert.match(page, /href="mailto:hello@example\.com"/);
     assert.match(page, /href="https:\/\/example\.com"/);
-    assert.match(page, /这些联系方式与首页保持一致/);
+    assert.match(page, /这些联系方式由站点设置统一维护/);
   });
 });

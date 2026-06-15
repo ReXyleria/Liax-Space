@@ -1025,7 +1025,7 @@ describe("admin article integration flow", () => {
     assert.equal(oldHtmlAfterFailure, oldHtml);
   });
 
-  it("preserves configured article visibility when publishing without a role payload", async () => {
+  it("does not persist Administer in article visibility because admins always see everything", async () => {
     const state = new TestState();
     const services = await createServices(state);
     const modules = await modulesPromise;
@@ -1066,7 +1066,7 @@ describe("admin article integration flow", () => {
       versionId: version.version.id
     });
 
-    assert.deepEqual(result.translation.allowedRoles, ["admin"]);
+    assert.deepEqual(result.translation.allowedRoles, []);
   });
 
   it("does not fallback public articles to another locale", async () => {

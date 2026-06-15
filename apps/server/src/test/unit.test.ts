@@ -5,6 +5,7 @@ import "../config/env.test.js";
 import "../common/sha256.test.js";
 import "../common/fs/atomicWriteFile.test.js";
 import "../common/fs/ensureDir.test.js";
+import "../analytics/deviceType.test.js";
 import "../jobs/CleanupUnusedAttachmentsJob.test.js";
 import "../jobs/LegacyPublicDataSyncJob.test.js";
 import "../settings/SiteSettingsService.test.js";

@@ -124,7 +124,6 @@ function renderPublicMenuLinks(prefix: LocalePrefix, isZh: boolean): string {
           <a href="/${prefix}/tags">${isZh ? "标签" : "Tags"}</a>
           <a href="/${prefix}/moments">${isZh ? "瞬间" : "Moments"}</a>
           <a href="/${prefix}/guestbook">${isZh ? "留言" : "Guestbook"}</a>
-          <a href="/${prefix}/contact">${isZh ? "联系" : "Contact"}</a>
           <a href="/${prefix}/archives">${isZh ? "归档" : "Archives"}</a>`;
 }
 
@@ -327,14 +326,6 @@ function renderHomeContactItem(item: HomeContactItem): string {
         </span>`;
 }
 
-function renderHomeContactBox(settings: SiteSettings, isZh: boolean): string {
-  const items = parseHomeContactItems(settings, isZh);
-
-  return `<aside class="liax-home-contact" aria-label="${isZh ? "联系方式" : "Contact methods"}">
-        ${items.map(renderHomeContactItem).join("\n        ")}
-      </aside>`;
-}
-
 export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, settings: SiteSettings): string {
   const isZh = locale === "zh-CN";
   const title = "Liax Space";
@@ -350,8 +341,6 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
   );
   const icpNumber = readStringSetting(settings, "home.icpNumber", isZh ? "备案号待配置" : "ICP pending");
   const icpUrl = readUrlSetting(settings, "home.icpUrl", "https://beian.miit.gov.cn");
-  const contactBox = renderHomeContactBox(settings, isZh);
-
   return `<!doctype html>
 <html lang="${locale}">
 <head>
@@ -467,7 +456,7 @@ ${renderThemeCssVariables(settings)}
 
     .liax-public-header__center {
       display: grid;
-      grid-template-columns: 44px minmax(0, auto);
+      grid-template-columns: minmax(0, auto) 44px;
       justify-content: end;
       align-items: center;
       gap: 10px;
@@ -482,8 +471,8 @@ ${renderThemeCssVariables(settings)}
     }
 
     .liax-public-menu {
-      flex: 1 1 auto;
-      flex-wrap: nowrap;
+      display: grid;
+      grid-template-columns: repeat(6, 86px);
       justify-content: flex-end;
       gap: 6px;
       min-width: 0;
@@ -495,7 +484,7 @@ ${renderThemeCssVariables(settings)}
       flex: 0 0 auto;
       display: inline-flex;
       justify-content: center;
-      width: auto;
+      width: 86px;
       padding: 6px 7px;
     }
 
@@ -919,10 +908,10 @@ ${renderThemeCssVariables(settings)}
         <span>Liax Space</span>
       </a>
       <div class="liax-public-header__center">
-        ${switchHtml}
         <nav class="liax-public-menu" aria-label="Primary">
           ${renderPublicMenuLinks(prefix, isZh)}
         </nav>
+        ${switchHtml}
       </div>
       <div class="liax-public-header__tools">
         ${renderPublicSearchForm(prefix, isZh, "inline")}
@@ -936,7 +925,6 @@ ${renderThemeCssVariables(settings)}
         <div class="liax-home-author">${isZh ? "作者" : "Author"} · Liax</div>
         <h1 class="liax-home-title">${escapeHtml(signature)}</h1>
       </section>
-      ${contactBox}
     </main>
     <footer class="liax-home-footer">
       <span>${escapeHtml(brandInfo)}</span>
@@ -1267,7 +1255,7 @@ export function renderContactBody(locale: ArticleLocale, settings: SiteSettings)
   const isZh = locale === "zh-CN";
   const items = parseHomeContactItems(settings, isZh);
 
-  return `<p class="liax-section-description">${escapeHtml(isZh ? "这些联系方式与首页保持一致，由站点设置统一维护。" : "These contact methods match the home page and are managed from site settings.")}</p>
+  return `<p class="liax-section-description">${escapeHtml(isZh ? "这些联系方式由站点设置统一维护。" : "These contact methods are managed from site settings.")}</p>
       <div class="liax-contact-list" aria-label="${escapeHtml(isZh ? "联系方式" : "Contact methods")}">
 ${items.map((item) => {
   const valueHtml = item.href
@@ -1409,7 +1397,7 @@ ${renderThemeCssVariables(settings)}
       flex: 0 0 auto;
       display: inline-flex;
       justify-content: center;
-      width: auto;
+      width: 86px;
       padding: 6px 7px;
       font-weight: 760;
       text-decoration: none;
@@ -1440,20 +1428,17 @@ ${renderThemeCssVariables(settings)}
       object-fit: cover;
     }
 
-    .liax-public-header__center,
     .liax-public-menu {
-      flex-wrap: nowrap;
+      display: grid;
+      grid-template-columns: repeat(6, 86px);
       justify-content: end;
+      gap: 6px;
       min-width: 0;
-    }
-
-    .liax-public-menu {
-      flex: 1 1 auto;
     }
 
     .liax-public-header__center {
       display: grid;
-      grid-template-columns: 44px minmax(0, auto);
+      grid-template-columns: minmax(0, auto) 44px;
       align-items: center;
       gap: 10px;
       min-width: 0;
@@ -2238,10 +2223,10 @@ ${renderThemeCssVariables(settings)}
         <span>Liax Space</span>
       </a>
       <div class="liax-public-header__center">
-        ${switchHtml}
         <nav class="liax-public-menu" aria-label="Primary">
           ${renderPublicMenuLinks(prefix, isZh)}
         </nav>
+        ${switchHtml}
       </div>
       <div class="liax-public-header__tools">
         ${renderPublicSearchForm(prefix, isZh, "inline")}

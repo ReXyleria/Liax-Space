@@ -37,7 +37,10 @@ describe("MarkdownRenderer", () => {
 
   it("wraps sanitized body HTML in the article template", async () => {
     const result = await new MarkdownRenderer().render({
-      alternates: [{ hreflang: "en-US", href: "https://example.com/en/posts/title" }],
+      alternates: [
+        { hreflang: "zh-CN", href: "https://example.com/zh/posts/title" },
+        { hreflang: "en-US", href: "https://example.com/en/posts/title" }
+      ],
       canonicalUrl: "https://example.com/zh/posts/title",
       contentHash: "content-hash",
       description: "中文摘要",
@@ -55,6 +58,8 @@ describe("MarkdownRenderer", () => {
     assert.match(result.html, /<link rel="alternate" hreflang="en-US" href="https:\/\/example\.com\/en\/posts\/title">/);
     assert.match(result.html, /data-language-switch-placeholder="true"/);
     assert.match(result.html, /data-locale-target="en-US"/);
+    assert.doesNotMatch(result.html, /data-locale-target="zh-CN"/);
+    assert.match(result.html, /<header class="liax-article-header">\s*<h1>中文标题<\/h1>\s*<\/header>/);
     assert.match(result.html, /--color-page: #faf9f5;/);
     assert.match(result.html, /--color-surface: #ffffff;/);
     assert.match(result.html, /--color-surface-muted: #f5f4ed;/);
@@ -70,7 +75,7 @@ describe("MarkdownRenderer", () => {
     assert.match(headerRule, /height: 76px;/);
     assert.match(headerRule, /border-bottom: 1px solid var\(--color-border\);/);
     assert.doesNotMatch(headerRule, /border-radius/);
-    assert.match(result.html, /width: min\(1440px, calc\(100% - clamp\(32px, 6vw, 96px\)\)\);/);
+    assert.match(result.html, /\.liax-article-card\s*\{[\s\S]*?width: 100%;[\s\S]*?border: 0;[\s\S]*?background: transparent;/);
     assert.match(result.html, /class="liax-button liax-language-icon-button"/);
     assert.doesNotMatch(result.html, /liax-button--brand liax-language-icon-button/);
     assert.match(result.html, /<a class="liax-public-avatar" href="\/console" aria-label="Console"/);

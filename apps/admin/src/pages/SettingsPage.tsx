@@ -1,5 +1,6 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useState, type ChangeEvent, type ReactElement } from "react";
 
+import { attachmentApi } from "../api/attachmentApi";
 import { settingsApi } from "../api/settingsApi";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
@@ -86,6 +87,8 @@ const defaultSmtpSettings: SmtpSettingsForm = {
   user: ""
 };
 
+const allowedLogoTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
 function readSiteString(settings: Record<string, unknown>, key: string, fallback: string): string {
   const value = settings[key];
 
@@ -153,6 +156,7 @@ export function SettingsPage(): ReactElement {
   const [smtpSettings, setSmtpSettings] = useState<SmtpSettingsForm>(defaultSmtpSettings);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSite, setIsSavingSite] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isSavingAi, setIsSavingAi] = useState(false);
   const [isSavingSmtp, setIsSavingSmtp] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -272,6 +276,43 @@ export function SettingsPage(): ReactElement {
       setErrorMessage(error instanceof Error ? error.message : t("settings.siteSaveFailed"));
     } finally {
       setIsSavingSite(false);
+    }
+  }
+
+  async function handleLogoFileChange(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    setMessage(null);
+    setErrorMessage(null);
+
+    if (!allowedLogoTypes.has(file.type)) {
+      setErrorMessage(t("settings.siteLogoUnsupported"));
+      return;
+    }
+
+    setIsUploadingLogo(true);
+
+    try {
+      const response = await attachmentApi.uploadAttachment(file);
+
+      if (!response.attachment.publicUrl) {
+        throw new Error(t("settings.siteLogoUploadFailed"));
+      }
+
+      setHomeSettings((current) => ({
+        ...current,
+        logoUrl: response.attachment.publicUrl ?? ""
+      }));
+      setMessage(t("settings.siteLogoUploaded"));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("settings.siteLogoUploadFailed"));
+    } finally {
+      setIsUploadingLogo(false);
     }
   }
 
@@ -428,16 +469,38 @@ export function SettingsPage(): ReactElement {
                   onChange={(event) => setHomeSettings((current) => ({ ...current, icpUrl: event.target.value }))}
                 />
               </label>
-              <label className="admin-form-field admin-home-settings-grid__wide">
-                <span>{t("settings.siteLogoUrl")}</span>
-                <input
-                  placeholder="https://example.com/logo.png"
-                  type="url"
-                  value={homeSettings.logoUrl}
-                  onChange={(event) => setHomeSettings((current) => ({ ...current, logoUrl: event.target.value }))}
-                />
-                <small>{t("settings.siteLogoUrlHelp")}</small>
-              </label>
+              <div className="admin-form-field admin-home-settings-grid__wide">
+                <span>{t("settings.siteLogoImage")}</span>
+                <div className="admin-site-logo-upload">
+                  <div className="admin-site-logo-upload__preview" aria-label={t("settings.siteLogoPreview")}>
+                    {homeSettings.logoUrl ? <img alt={homeSettings.logoAlt || "Liax Space"} src={homeSettings.logoUrl} /> : <span>LS</span>}
+                  </div>
+                  <div className="admin-site-logo-upload__actions">
+                    <p className="admin-muted-text">{homeSettings.logoUrl ? t("settings.siteLogoConfigured") : t("settings.siteLogoEmpty")}</p>
+                    <div className="admin-form-actions">
+                      <label className="liax-button liax-button--primary admin-avatar-file-label">
+                        <input
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="admin-avatar-file-input"
+                          disabled={isUploadingLogo || isSavingSite}
+                          onChange={(event) => void handleLogoFileChange(event)}
+                          type="file"
+                        />
+                        <span>{isUploadingLogo ? t("settings.siteLogoUploading") : t("settings.siteLogoUpload")}</span>
+                      </label>
+                      <button
+                        className="liax-button"
+                        disabled={isUploadingLogo || isSavingSite || !homeSettings.logoUrl}
+                        onClick={() => setHomeSettings((current) => ({ ...current, logoUrl: "" }))}
+                        type="button"
+                      >
+                        {t("settings.siteLogoClear")}
+                      </button>
+                    </div>
+                    <small>{t("settings.siteLogoUrlHelp")}</small>
+                  </div>
+                </div>
+              </div>
               <label className="admin-form-field">
                 <span>{t("settings.siteLogoAlt")}</span>
                 <input
@@ -465,7 +528,7 @@ export function SettingsPage(): ReactElement {
               </label>
             </div>
             <div className="admin-form-actions">
-              <button className="liax-button liax-button--primary" disabled={isSavingSite} onClick={() => void handleSaveHomeSettings()} type="button">
+              <button className="liax-button liax-button--primary" disabled={isSavingSite || isUploadingLogo} onClick={() => void handleSaveHomeSettings()} type="button">
                 {isSavingSite ? t("settings.saving") : t("settings.save")}
               </button>
             </div>

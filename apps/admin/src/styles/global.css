@@ -66,6 +66,12 @@ canvas {
   color: var(--color-text);
   font-size: 18px;
   font-weight: 750;
+  text-decoration: none;
+}
+
+.admin-sidebar__brand:hover,
+.admin-sidebar__brand:focus-visible {
+  color: var(--color-text);
 }
 
 .admin-sidebar__logo {
@@ -1525,6 +1531,38 @@ canvas {
 
 .admin-profile-avatar-actions {
   margin-top: 14px;
+}
+
+.admin-site-logo-upload {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.admin-site-logo-upload__preview {
+  display: grid;
+  width: 88px;
+  aspect-ratio: 1;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-weight: 800;
+}
+
+.admin-site-logo-upload__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-site-logo-upload__actions {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
 
 .admin-avatar-file-label {
