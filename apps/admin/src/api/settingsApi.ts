@@ -22,6 +22,64 @@ export type SiteSettingsResponse = {
   settings: SiteSettings;
 };
 
+export type SeoPushProvider = "baidu" | "google" | "indexnow";
+export type SeoPushStatus = "failed" | "skipped" | "success";
+
+export type SeoPushSubmission = {
+  id: number;
+  provider: SeoPushProvider;
+  status: SeoPushStatus;
+  submittedCount: number;
+  statusCode: number | null;
+  requestUrl: string | null;
+  message: string | null;
+  urls: string[];
+  createdAt: string;
+};
+
+export type SeoPushSubmissionsResponse = {
+  submissions: SeoPushSubmission[];
+};
+
+export type MailTemplateKey = "guestbook.notification";
+export type MailLogStatus = "failed" | "skipped" | "success";
+
+export type MailTemplate = {
+  id: number;
+  key: MailTemplateKey;
+  locale: SupportedLocale;
+  subject: string;
+  bodyText: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MailLog = {
+  id: number;
+  templateKey: string;
+  recipient: string;
+  subject: string;
+  status: MailLogStatus;
+  message: string | null;
+  providerResponse: string | null;
+  relatedType: string | null;
+  relatedId: number | null;
+  createdAt: string;
+};
+
+export type MailTemplatesResponse = {
+  templates: MailTemplate[];
+};
+
+export type MailTemplateResponse = {
+  template: MailTemplate;
+};
+
+export type MailLogsResponse = {
+  logs: MailLog[];
+};
+
 export type UpdateUserPreferencesRequest = {
   avatar_attachment_id?: number | null;
   locale?: SupportedLocale;
@@ -86,6 +144,25 @@ export const settingsApi = {
   },
   updateSiteSettings(input: SiteSettings): Promise<SiteSettingsResponse> {
     return httpClient.patch<SiteSettingsResponse>("/admin/settings/site", input);
+  },
+  listSeoPushSubmissions(): Promise<SeoPushSubmissionsResponse> {
+    return httpClient.get<SeoPushSubmissionsResponse>("/admin/seo/push/submissions");
+  },
+  submitSeoPush(input: { providers?: SeoPushProvider[]; urls?: string[] } = {}): Promise<SeoPushSubmissionsResponse> {
+    return httpClient.post<SeoPushSubmissionsResponse>("/admin/seo/push/submit", input);
+  },
+  listMailTemplates(): Promise<MailTemplatesResponse> {
+    return httpClient.get<MailTemplatesResponse>("/admin/mail/templates");
+  },
+  updateMailTemplate(input: Pick<MailTemplate, "bodyText" | "enabled" | "key" | "locale" | "subject">): Promise<MailTemplateResponse> {
+    return httpClient.patch<MailTemplateResponse>(`/admin/mail/templates/${encodeURIComponent(input.key)}/${input.locale}`, {
+      bodyText: input.bodyText,
+      enabled: input.enabled,
+      subject: input.subject
+    });
+  },
+  listMailLogs(): Promise<MailLogsResponse> {
+    return httpClient.get<MailLogsResponse>("/admin/mail/logs?limit=50");
   },
   getUserPreferences(): Promise<UserPreferencesResponse> {
     return httpClient.get<UserPreferencesResponse>("/admin/me/preferences");

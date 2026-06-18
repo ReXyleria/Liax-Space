@@ -26,8 +26,11 @@ export type DashboardSummary = {
     comments: number;
     guestbook: number;
     moments: number;
+    loginEvents: number;
+    loginUsers: number;
   };
-  visitDevices: DashboardMetric[];
+  loginCountries: DashboardMetric[];
+  loginDevices: DashboardMetric[];
   recentPublished: DashboardArticle[];
   popularPages: DashboardMetric[];
 };

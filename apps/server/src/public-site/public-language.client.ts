@@ -24,6 +24,14 @@ const overlayDurationMs = 900;
 let isSwitchingLanguage = false;
 let activeSearchOverlay: HTMLElement | null = null;
 
+function removeDuplicateLanguageSwitches(): void {
+  document.querySelectorAll<HTMLElement>(".liax-public-header .liax-language-switch[data-language-switch-placeholder]").forEach((node, index) => {
+    if (index > 0) {
+      node.remove();
+    }
+  });
+}
+
 function setSidebarOpen(layer: HTMLElement, isOpen: boolean): void {
   layer.classList.toggle("is-open", isOpen);
   layer.setAttribute("aria-hidden", isOpen ? "false" : "true");
@@ -35,12 +43,6 @@ function setSidebarOpen(layer: HTMLElement, isOpen: boolean): void {
   document.querySelectorAll<HTMLElement>(sidebarToggleSelector).forEach((toggle) => {
     toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
   });
-
-  if (isOpen) {
-    window.setTimeout(() => {
-      layer.querySelector<HTMLInputElement>(".liax-public-sidebar .liax-public-search")?.focus();
-    }, prefersReducedMotion() ? 0 : 180);
-  }
 }
 
 function closeSidebars(): void {
@@ -235,6 +237,8 @@ function updateHeadFromTarget(targetDocument: Document): void {
 }
 
 function replacePageFromTarget(targetDocument: Document): void {
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
   const currentHeader = document.querySelector<HTMLElement>(".liax-public-header");
   const targetHeader = targetDocument.querySelector<HTMLElement>(".liax-public-header");
   const currentMain = document.querySelector<HTMLElement>("main");
@@ -263,7 +267,8 @@ function replacePageFromTarget(targetDocument: Document): void {
   }
 
   updateHeadFromTarget(targetDocument);
-  window.scrollTo({ top: 0 });
+  removeDuplicateLanguageSwitches();
+  window.scrollTo({ left: scrollX, top: scrollY });
 }
 
 function createOverlay(targetDocument: Document, origin: { x: number; y: number }): HTMLElement {
@@ -406,6 +411,9 @@ function closeSearchOverlay(): void {
 
   const overlay = activeSearchOverlay;
   activeSearchOverlay = null;
+  document.querySelectorAll(searchInputSelector).forEach((input) => {
+    input.removeAttribute("aria-hidden");
+  });
 
   if (prefersReducedMotion()) {
     overlay.remove();
@@ -429,6 +437,10 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
   const input = document.createElement("input");
   const hint = document.createElement("p");
   const label = searchPlaceholder();
+
+  document.querySelectorAll(searchInputSelector).forEach((input) => {
+    input.setAttribute("aria-hidden", "true");
+  });
 
   overlay.dataset.publicSearchOverlay = "true";
   Object.assign(overlay.style, {
@@ -599,3 +611,5 @@ document.addEventListener("click", (event) => {
   event.preventDefault();
   void switchLanguage(target, event);
 });
+
+removeDuplicateLanguageSwitches();

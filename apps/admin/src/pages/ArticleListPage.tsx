@@ -603,14 +603,21 @@ export function ArticleListPage(): ReactElement {
               <tbody>
                 {articles.map((item) => {
                   const titleTranslation = preferredTranslation(item.translations);
+                  const displayTitle = titleTranslation?.title?.trim()
+                    ? titleTranslation.title
+                    : t("article.untitledDraft").replace("{id}", String(item.article.id));
 
                   return (
                   <tr key={item.article.id}>
                     <td className="admin-article-title-cell">
-                      <strong>{titleTranslation?.title ?? "-"}</strong>
-                      {titleTranslation ? <small>{titleTranslation.locale} · {titleTranslation.slug}</small> : null}
+                      <strong>{displayTitle}</strong>
+                      <small>
+                        {titleTranslation
+                          ? `${titleTranslation.locale} · ${titleTranslation.slug}`
+                          : `${t("article.id")} ${item.article.id}`}
+                      </small>
                     </td>
-                    <td>{item.article.status}</td>
+                    <td>{t(`article.status.${item.article.status}`)}</td>
                     <td>
                       <div className="admin-translation-badges">
                         {articleLocales.map((locale) => {
@@ -628,16 +635,16 @@ export function ArticleListPage(): ReactElement {
                     <td>
                       {canEditArticle ? (
                         <div className="admin-article-actions">
+                          <a className="liax-button liax-button--primary" href={`#articles/${item.article.id}/edit`}>
+                            {t("article.editContent")}
+                          </a>
                           <button
                             className="liax-button"
                             onClick={() => openConfigModal(item)}
                             type="button"
                           >
-                            {t("article.editConfig")}
+                            {t("article.configure")}
                           </button>
-                          <a className="liax-link" href={`#articles/${item.article.id}/edit`}>
-                            {t("article.openFullEditor")}
-                          </a>
                         </div>
                       ) : (
                         <span className="admin-muted-text">{t("article.readOnly")}</span>

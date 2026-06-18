@@ -14,7 +14,9 @@ export function AttachmentPage(): ReactElement {
   const [isDeleting, setIsDeleting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [brokenPreviewIds, setBrokenPreviewIds] = useState<number[]>([]);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const brokenPreviewIdSet = useMemo(() => new Set(brokenPreviewIds), [brokenPreviewIds]);
 
   async function loadAttachments(nextSearch = search, nextUnusedOnly = unusedOnly): Promise<void> {
     setIsLoadingAttachments(true);
@@ -27,6 +29,7 @@ export function AttachmentPage(): ReactElement {
       });
       setAttachments(Array.isArray(response.attachments) ? response.attachments : []);
       setSelectedIds([]);
+      setBrokenPreviewIds([]);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t(nextUnusedOnly ? "attachment.unusedLoadFailed" : "attachment.allLoadFailed"));
     } finally {
@@ -62,6 +65,10 @@ export function AttachmentPage(): ReactElement {
   async function deleteSelected(): Promise<void> {
     if (selectedIds.length === 0) {
       setErrorMessage(t("users.selectRequired"));
+      return;
+    }
+
+    if (!window.confirm(t("attachment.deleteUnusedConfirm"))) {
       return;
     }
 
@@ -127,7 +134,7 @@ export function AttachmentPage(): ReactElement {
                 {t("users.searchAction")}
               </button>
               <button
-                className="liax-button liax-button--primary"
+                className="liax-button liax-button--danger"
                 disabled={isDeleting || selectedIds.length === 0}
                 onClick={() => void deleteSelected()}
                 type="button"
@@ -156,6 +163,7 @@ export function AttachmentPage(): ReactElement {
                 {attachments.map((attachment) => {
                   const previewUrl = attachment.publicUrl;
                   const canPreviewImage = Boolean(previewUrl) && attachment.mimeType.startsWith("image/");
+                  const isBrokenPreview = brokenPreviewIdSet.has(attachment.id);
 
                   return (
                     <article className="admin-attachment-card" key={attachment.id}>
@@ -169,7 +177,16 @@ export function AttachmentPage(): ReactElement {
                         <span>{attachment.originalFilename}</span>
                       </label>
 
-                      {previewUrl ? (
+                      <div className="admin-attachment-status-row">
+                        <span className="admin-attachment-status" data-status={attachment.isUsed ? "used" : "unused"}>
+                          {t(attachment.isUsed ? "attachment.statusReferenced" : "attachment.statusUnused")}
+                        </span>
+                        <span className="admin-attachment-status" data-status={!previewUrl || isBrokenPreview ? "missing" : "available"}>
+                          {t(!previewUrl ? "attachment.statusMissingUrl" : isBrokenPreview ? "attachment.previewFailed" : "attachment.statusAvailable")}
+                        </span>
+                      </div>
+
+                      {previewUrl && !isBrokenPreview ? (
                         <a
                           className="admin-attachment-preview"
                           href={previewUrl}
@@ -178,7 +195,15 @@ export function AttachmentPage(): ReactElement {
                           title={t("attachment.openPreview")}
                         >
                           {canPreviewImage ? (
-                            <img alt={attachment.originalFilename} src={previewUrl} />
+                            <img
+                              alt={attachment.originalFilename}
+                              onError={() => {
+                                setBrokenPreviewIds((currentIds) => (
+                                  currentIds.includes(attachment.id) ? currentIds : [...currentIds, attachment.id]
+                                ));
+                              }}
+                              src={previewUrl}
+                            />
                           ) : (
                             <span>{attachment.mimeType || t("attachment.noPreview")}</span>
                           )}

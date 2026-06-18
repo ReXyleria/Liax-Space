@@ -59,6 +59,7 @@ export function DashboardPage(): ReactElement {
   const t = useT();
   const [range, setRange] = useState<DashboardRange>(7);
   const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
+  const [animationVersion, setAnimationVersion] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const statCards = useMemo(() => {
@@ -67,11 +68,11 @@ export function DashboardPage(): ReactElement {
     }
 
     return [
-      { key: "dashboard.stat.articles", value: dashboard.totals.articles },
-      { key: "dashboard.stat.moments", value: dashboard.totals.moments },
+      { key: "dashboard.stat.loginEvents", value: dashboard.totals.loginEvents },
+      { key: "dashboard.stat.loginUsers", value: dashboard.totals.loginUsers },
       { key: "dashboard.stat.users", value: dashboard.totals.users },
-      { key: "dashboard.stat.comments", value: dashboard.totals.comments },
-      { key: "dashboard.stat.guestbook", value: dashboard.totals.guestbook }
+      { key: "dashboard.stat.articles", value: dashboard.totals.articles },
+      { key: "dashboard.stat.moments", value: dashboard.totals.moments }
     ];
   }, [dashboard]);
 
@@ -85,6 +86,7 @@ export function DashboardPage(): ReactElement {
       .then((response) => {
         if (isMounted) {
           setDashboard(response.dashboard);
+          setAnimationVersion((current) => current + 1);
         }
       })
       .catch((error) => {
@@ -129,7 +131,7 @@ export function DashboardPage(): ReactElement {
 
       {dashboard ? (
         <>
-          <section className="admin-dashboard-stats" aria-label={t("dashboard.overview")}>
+          <section className="admin-dashboard-stats" aria-label={t("dashboard.overview")} key={`stats-${animationVersion}`}>
             {statCards.map((card) => (
               <article className="liax-card admin-dashboard-stat" key={card.key}>
                 <p>{t(card.key as never)}</p>
@@ -138,13 +140,22 @@ export function DashboardPage(): ReactElement {
             ))}
           </section>
 
-          <section className="admin-dashboard-grid" aria-label={t("dashboard.analytics")}>
+          <section className="admin-dashboard-grid" aria-label={t("dashboard.analytics")} key={`analytics-${animationVersion}`}>
             <article className="liax-card admin-dashboard-panel">
               <div className="liax-card__header">
-                <h3>{t("dashboard.visitDevices")}</h3>
+                <h3>{t("dashboard.loginCountries")}</h3>
               </div>
               <div className="liax-card__body">
-                <MetricBars items={dashboard.visitDevices} labelFor={(item) => t(`dashboard.device.${item.label ?? "unknown"}` as never)} showShare />
+                <MetricBars items={dashboard.loginCountries} labelFor={(item) => item.label ?? t("dashboard.unknown")} showShare />
+              </div>
+            </article>
+
+            <article className="liax-card admin-dashboard-panel">
+              <div className="liax-card__header">
+                <h3>{t("dashboard.loginDevices")}</h3>
+              </div>
+              <div className="liax-card__body">
+                <MetricBars items={dashboard.loginDevices} labelFor={(item) => item.label ?? t("dashboard.unknown")} showShare />
               </div>
             </article>
           </section>

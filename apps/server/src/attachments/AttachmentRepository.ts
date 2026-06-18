@@ -12,6 +12,7 @@ type AttachmentRow = RowDataPacket & {
   mime_type: string;
   size_bytes: number;
   sha256: string;
+  is_used?: number;
   created_at: Date;
   deleted_at: Date | null;
 };
@@ -29,6 +30,22 @@ const attachmentColumns = [
   "deleted_at"
 ].join(", ");
 
+const attachmentInUseWhere = `EXISTS (SELECT 1 FROM article_version_attachments ava WHERE ava.attachment_id = a.id)
+        OR EXISTS (SELECT 1 FROM user_preferences up WHERE up.avatar_attachment_id = a.id)
+        OR EXISTS (
+          SELECT 1
+          FROM site_settings ss
+          WHERE ss.\`key\` = 'site.logoUrl'
+            AND JSON_UNQUOTE(ss.value_json) = a.public_url
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM moments m
+          WHERE m.deleted_at IS NULL
+            AND a.public_url IS NOT NULL
+            AND JSON_CONTAINS(m.images_json, JSON_QUOTE(a.public_url))
+        )`;
+
 function mapAttachmentRow(row: AttachmentRow): Attachment {
   return {
     id: row.id,
@@ -39,6 +56,7 @@ function mapAttachmentRow(row: AttachmentRow): Attachment {
     mimeType: row.mime_type,
     sizeBytes: row.size_bytes,
     sha256: row.sha256,
+    isUsed: row.is_used === undefined ? undefined : row.is_used === 1,
     createdAt: row.created_at,
     deletedAt: row.deleted_at
   };
@@ -54,7 +72,7 @@ export class AttachmentRepository {
     const clauses = ["a.deleted_at IS NULL"];
 
     if (input.unusedOnly === true) {
-      clauses.push("NOT EXISTS (SELECT 1 FROM article_version_attachments ava WHERE ava.attachment_id = a.id)");
+      clauses.push(`NOT (${attachmentInUseWhere})`);
     }
 
     if (search) {
@@ -63,7 +81,8 @@ export class AttachmentRepository {
     }
 
     const [rows] = await pool.execute<AttachmentRow[]>(
-      `SELECT ${attachmentColumns.split(", ").map((column) => `a.${column}`).join(", ")}
+      `SELECT ${attachmentColumns.split(", ").map((column) => `a.${column}`).join(", ")},
+              CASE WHEN (${attachmentInUseWhere}) THEN 1 ELSE 0 END AS is_used
        FROM attachments a
        WHERE ${clauses.join(" AND ")}
        ORDER BY a.created_at DESC
@@ -122,11 +141,7 @@ export class AttachmentRepository {
        SET deleted_at = ?
        WHERE id IN (${placeholders})
          AND deleted_at IS NULL
-         AND NOT EXISTS (
-           SELECT 1
-           FROM article_version_attachments ava
-           WHERE ava.attachment_id = attachments.id
-         )`,
+         AND NOT (${attachmentInUseWhere.replace(/\ba\./gu, "attachments.")})`,
       [deletedAt, ...ids]
     );
 

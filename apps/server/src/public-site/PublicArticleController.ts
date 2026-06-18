@@ -11,6 +11,7 @@ import { logger } from "../common/logger.js";
 import { storagePaths } from "../config/paths.js";
 import { GuestbookRepository } from "../guestbook/GuestbookRepository.js";
 import type { CreateGuestbookEntryInput, GuestbookEntry } from "../guestbook/guestbook.types.js";
+import { MailService } from "../mail/MailService.js";
 import { MomentRepository } from "../moments/MomentRepository.js";
 import type { Moment } from "../moments/moments.types.js";
 import { renderLanguageSwitchScript } from "../renderer/TemplateRenderer.js";
@@ -18,6 +19,7 @@ import { SearchService, type SearchResult } from "../search/SearchService.js";
 import { SettingsRepository } from "../settings/SettingsRepository.js";
 import type { SiteSettings } from "../settings/settings.types.js";
 import { TagRepository, type TagDetail } from "../tags/TagRepository.js";
+import { UserRepository } from "../users/UserRepository.js";
 
 type LocalePrefix = "zh" | "en";
 
@@ -176,6 +178,19 @@ function readUrlSetting(settings: SiteSettings, key: string, fallback: string): 
   }
 }
 
+function isPublicAssetUrl(value: string): boolean {
+  if (value.startsWith("/") && !value.startsWith("//") && !/[\u0000-\u001f]/u.test(value)) {
+    return true;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 type PublicThemePresetId = "clear-graphite" | "quiet-garden" | "warm-minimal";
 
 const publicThemePresets: Record<PublicThemePresetId, Record<string, string>> = {
@@ -243,12 +258,13 @@ function readLogoUrl(settings: SiteSettings): string | null {
     return null;
   }
 
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
-  } catch {
-    return null;
-  }
+  const normalized = value.trim();
+  return isPublicAssetUrl(normalized) ? normalized : null;
+}
+
+function renderFaviconLink(settings: SiteSettings): string {
+  const logoUrl = readLogoUrl(settings);
+  return `<link rel="icon" href="${escapeHtml(logoUrl ?? "/favicon.svg")}">`;
 }
 
 function renderPublicLogo(settings: SiteSettings): string {
@@ -260,6 +276,373 @@ function renderPublicLogo(settings: SiteSettings): string {
   }
 
   return `<span class="liax-public-logo"><img alt="${escapeHtml(logoAlt)}" src="${escapeHtml(logoUrl)}"></span>`;
+}
+
+function renderPublicAvatar(avatarUrl: string | null): string {
+  if (!avatarUrl || !isPublicAssetUrl(avatarUrl)) {
+    return `<a class="liax-public-avatar" href="/console" aria-label="Console">A</a>`;
+  }
+
+  return `<a class="liax-public-avatar" href="/console" aria-label="Console"><img alt="" src="${escapeHtml(avatarUrl)}"></a>`;
+}
+
+function readCodeInjection(settings: SiteSettings, key: "codeInjection.contentHead" | "codeInjection.footer" | "codeInjection.globalHead"): string {
+  const value = settings[key];
+
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function renderHeadInjection(settings: SiteSettings, includeContentHead: boolean): string {
+  const parts = [
+    readCodeInjection(settings, "codeInjection.globalHead"),
+    includeContentHead ? readCodeInjection(settings, "codeInjection.contentHead") : ""
+  ].filter(Boolean);
+
+  return parts.length > 0 ? `${parts.join("\n")}\n` : "";
+}
+
+function renderFooterInjection(settings: SiteSettings): string {
+  const footerInjection = readCodeInjection(settings, "codeInjection.footer");
+
+  return footerInjection ? `\n${footerInjection}` : "";
+}
+
+type PublishedArticleChrome = {
+  locale: ArticleLocale;
+  prefix: LocalePrefix;
+  publishedAt: Date | null;
+  visitCount: number;
+  newerArticle: SearchResult | null;
+  olderArticle: SearchResult | null;
+};
+
+function formatArticleDate(locale: ArticleLocale, date: Date | null): string {
+  if (!date || !Number.isFinite(date.getTime())) {
+    return "";
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
+function renderPublishedArticleChrome(meta: PublishedArticleChrome | null): string {
+  if (!meta) {
+    return "";
+  }
+
+  const isZh = meta.locale === "zh-CN";
+  const dateLabel = formatArticleDate(meta.locale, meta.publishedAt);
+  const readLabel = meta.visitCount > 0
+    ? (isZh ? `${meta.visitCount} 阅读` : `${meta.visitCount} ${meta.visitCount === 1 ? "read" : "reads"}`)
+    : "";
+  const metaItems = [
+    dateLabel ? `<time datetime="${escapeHtml(dateLabel)}">${escapeHtml(dateLabel)}</time>` : "",
+    readLabel ? `<span>${escapeHtml(readLabel)}</span>` : ""
+  ].filter(Boolean);
+  const navItems = [
+    meta.olderArticle?.url
+      ? `<a href="${escapeHtml(meta.olderArticle.url)}"><span>${escapeHtml(isZh ? "上一篇" : "Previous")}</span><strong>${escapeHtml(meta.olderArticle.title)}</strong></a>`
+      : "",
+    meta.newerArticle?.url
+      ? `<a href="${escapeHtml(meta.newerArticle.url)}"><span>${escapeHtml(isZh ? "下一篇" : "Next")}</span><strong>${escapeHtml(meta.newerArticle.title)}</strong></a>`
+      : ""
+  ].filter(Boolean);
+
+  return `<div class="liax-article-utility">
+          <a href="/${meta.prefix}/posts">${escapeHtml(isZh ? "返回文章列表" : "Back to articles")}</a>
+          ${metaItems.length > 0 ? `<p>${metaItems.join("<span aria-hidden=\"true\">/</span>")}</p>` : ""}
+        </div>
+        ${navItems.length > 0 ? `<nav class="liax-article-neighbor-nav" aria-label="${escapeHtml(isZh ? "相邻文章" : "Neighbor articles")}">${navItems.join("")}</nav>` : ""}`;
+}
+
+function patchPublishedArticleHtml(
+  html: string,
+  settings: SiteSettings,
+  avatarUrl: string | null,
+  articleChrome: PublishedArticleChrome | null = null
+): string {
+  const logoHtml = renderPublicLogo(settings);
+  const avatarHtml = renderPublicAvatar(avatarUrl);
+  const faviconHtml = renderFaviconLink(settings);
+  const headInjection = renderHeadInjection(settings, true);
+  const footerInjection = renderFooterInjection(settings);
+  const articleChromeHtml = renderPublishedArticleChrome(articleChrome);
+  let patched = html
+    .replace(/<link rel="icon" href="[^"]*">/u, faviconHtml)
+    .replace(/<span class="liax-public-logo"(?: aria-hidden="true")?>[\s\S]*?<\/span>/u, logoHtml)
+    .replace(/<a class="liax-public-avatar" href="\/console" aria-label="Console">[\s\S]*?<\/a>/u, avatarHtml)
+    .replace(/window\.scrollTo\(\{ top: 0 \}\);/gu, "window.scrollTo({ left: window.scrollX, top: window.scrollY });");
+
+  if (articleChromeHtml && !patched.includes("liax-article-utility")) {
+    const nextPatched = patched.replace(
+      /(<header class="liax-article-header">[\s\S]*?<h1>[\s\S]*?<\/h1>)([\s\S]*?<\/header>)/u,
+      `$1
+        ${articleChromeHtml}
+      </header>`
+    );
+
+    patched = nextPatched === patched
+      ? patched.replace(
+        /(<article class="liax-article-body">\s*)(<h1>[\s\S]*?<\/h1>)/u,
+        `$1<header class="liax-article-header">
+        $2
+        ${articleChromeHtml}
+      </header>`
+      )
+      : nextPatched;
+  }
+
+  if (headInjection) {
+    patched = patched.replace("</head>", `${headInjection}</head>`);
+  }
+
+  if (footerInjection) {
+    patched = patched.replace("</body>", `${footerInjection}\n</body>`);
+  }
+
+  if (!patched.includes("data-liax-published-chrome-patch")) {
+    patched = patched.replace(
+      "</style>",
+      `    [data-liax-published-chrome-patch] { display: none; }
+    html,
+    body {
+      scrollbar-width: none;
+    }
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      display: none;
+    }
+    .liax-public-logo,
+    .liax-public-avatar {
+      overflow: hidden;
+    }
+    .liax-public-logo img,
+    .liax-public-avatar img,
+    .liax-article-body img,
+    .liax-article-body video {
+      max-width: 100%;
+      height: auto;
+    }
+    .liax-public-logo img,
+    .liax-public-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .liax-article-body pre,
+    .liax-article-body table {
+      max-width: 100%;
+      overflow-x: auto;
+    }
+    .liax-article-body pre {
+      position: relative;
+    }
+    .liax-code-frame {
+      padding-top: 44px;
+    }
+    .liax-code-copy {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      border: 1px solid rgb(192 202 245 / 24%);
+      border-radius: 6px;
+      background: #24283b;
+      color: #c0caf5;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 760;
+      line-height: 1;
+      padding: 7px 9px;
+    }
+    .liax-code-copy:hover,
+    .liax-code-copy:focus-visible {
+      border-color: #7aa2f7;
+      color: #7aa2f7;
+      outline: 0;
+    }
+    .liax-article-utility {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      align-items: center;
+      margin-top: 18px;
+      color: #6f6a5d;
+      font-size: 14px;
+      font-weight: 760;
+    }
+    .liax-article-utility a,
+    .liax-article-neighbor-nav a {
+      color: var(--color-accent);
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+    .liax-article-utility p {
+      display: inline-flex;
+      gap: 8px;
+      margin: 0;
+    }
+    .liax-article-neighbor-nav {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .liax-article-neighbor-nav a {
+      display: grid;
+      gap: 4px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 12px;
+      text-decoration: none;
+    }
+    .liax-article-neighbor-nav span {
+      color: #6f6a5d;
+      font-size: 12px;
+      font-weight: 760;
+    }
+    .liax-article-neighbor-nav strong {
+      color: var(--color-text);
+      overflow-wrap: anywhere;
+    }
+    .liax-article-toc {
+      display: grid;
+      gap: 10px;
+      width: min(760px, 100%);
+      margin: 0 0 clamp(22px, 4vw, 38px);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 14px 16px;
+    }
+    .liax-article-toc strong {
+      font-size: 14px;
+      font-weight: 820;
+    }
+    .liax-article-toc ol {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .liax-article-toc li[data-level="3"] {
+      padding-left: 16px;
+    }
+    .liax-article-toc li[data-level="4"] {
+      padding-left: 32px;
+    }
+    .liax-article-toc a {
+      color: var(--color-text);
+      font-size: 14px;
+      font-weight: 720;
+      text-decoration: none;
+    }
+    .liax-article-toc a:hover,
+    .liax-article-toc a:focus-visible {
+      color: var(--color-accent);
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+  </style>
+  <meta data-liax-published-chrome-patch="true">`
+    );
+  }
+
+  if (!patched.includes("data-liax-article-image-error-patch")) {
+    patched = patched.replace(
+      "</body>",
+      `<script data-liax-article-image-error-patch="true">
+document.querySelectorAll(".liax-public-header .liax-language-switch[data-language-switch-placeholder]").forEach((node, index) => {
+  if (index > 0) {
+    node.remove();
+  }
+});
+document.querySelectorAll(".liax-article-body img").forEach((image) => {
+  image.addEventListener("error", () => image.remove(), { once: true });
+});
+function liaxArticleText(key) {
+  const isZh = document.documentElement.lang.toLowerCase().startsWith("zh");
+  const text = {
+    toc: isZh ? "标题目录" : "Contents",
+    copy: isZh ? "复制" : "Copy",
+    copied: isZh ? "已复制" : "Copied"
+  };
+  return text[key] || key;
+}
+function liaxArticleSlug(text, index) {
+  const normalized = text.trim().toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, "-").replace(/^-+|-+$/gu, "");
+  return normalized || "section-" + (index + 1);
+}
+function liaxEnhanceArticlePage() {
+  const body = document.querySelector(".liax-article-body");
+  if (!body) {
+    return;
+  }
+  const headings = Array.from(body.querySelectorAll("h2, h3, h4"));
+  if (headings.length > 0 && !document.querySelector(".liax-article-toc")) {
+    const usedIds = new Set();
+    const nav = document.createElement("nav");
+    const title = document.createElement("strong");
+    const list = document.createElement("ol");
+    nav.className = "liax-article-toc";
+    nav.setAttribute("aria-label", liaxArticleText("toc"));
+    title.textContent = liaxArticleText("toc");
+    headings.forEach((heading, index) => {
+      const baseId = heading.id || liaxArticleSlug(heading.textContent || "", index);
+      let nextId = baseId;
+      let suffix = 2;
+      while (usedIds.has(nextId) || (document.getElementById(nextId) && document.getElementById(nextId) !== heading)) {
+        nextId = baseId + "-" + suffix;
+        suffix += 1;
+      }
+      usedIds.add(nextId);
+      heading.id = nextId;
+      const item = document.createElement("li");
+      const link = document.createElement("a");
+      item.dataset.level = heading.tagName.slice(1);
+      link.href = "#" + nextId;
+      link.textContent = heading.textContent || nextId;
+      item.append(link);
+      list.append(item);
+    });
+    nav.append(title, list);
+    const header = document.querySelector(".liax-article-header");
+    if (header?.parentNode) {
+      header.insertAdjacentElement("afterend", nav);
+    } else {
+      body.insertAdjacentElement("beforebegin", nav);
+    }
+  }
+  body.querySelectorAll("pre").forEach((pre) => {
+    if (pre.querySelector(".liax-code-copy")) {
+      return;
+    }
+    pre.classList.add("liax-code-frame");
+    const button = document.createElement("button");
+    button.className = "liax-code-copy";
+    button.type = "button";
+    button.textContent = liaxArticleText("copy");
+    button.addEventListener("click", async () => {
+      const code = pre.querySelector("code")?.textContent || pre.textContent || "";
+      try {
+        await navigator.clipboard?.writeText(code);
+        button.textContent = liaxArticleText("copied");
+        window.setTimeout(() => {
+          button.textContent = liaxArticleText("copy");
+        }, 1400);
+      } catch {}
+    });
+    pre.append(button);
+  });
+}
+liaxEnhanceArticlePage();
+</script>
+</body>`
+    );
+  }
+
+  return patched;
 }
 
 function includesCjk(value: string): boolean {
@@ -292,9 +675,8 @@ function contactHref(label: string, value: string): string | null {
 
 function parseHomeContactItems(settings: SiteSettings, isZh: boolean): HomeContactItem[] {
   const localeKey = isZh ? "home.contactItems.zh-CN" : "home.contactItems.en-US";
-  const defaultItems = isZh ? "邮箱:hello@example.com\nQQ:123456" : "Email:hello@example.com\nQQ:123456";
   const legacyItems = readStringSetting(settings, "home.contactItems", "");
-  const legacyFallback = legacyItems && (isZh || !includesCjk(legacyItems)) ? legacyItems : defaultItems;
+  const legacyFallback = legacyItems && (isZh || !includesCjk(legacyItems)) ? legacyItems : "";
   const rawItems = readStringSetting(settings, localeKey, legacyFallback);
 
   return rawItems
@@ -326,7 +708,23 @@ function renderHomeContactItem(item: HomeContactItem): string {
         </span>`;
 }
 
-export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, settings: SiteSettings): string {
+function renderHomeEntryLinks(prefix: LocalePrefix, isZh: boolean): string {
+  const links = [
+    { href: `/${prefix}/posts`, title: isZh ? "文章" : "Articles", meta: isZh ? "阅读长文与笔记" : "Long-form notes" },
+    { href: `/${prefix}/moments`, title: isZh ? "瞬间" : "Moments", meta: isZh ? "浏览短内容" : "Short updates" },
+    { href: `/${prefix}/tags`, title: isZh ? "标签" : "Tags", meta: isZh ? "按主题进入" : "Browse by topic" },
+    { href: `/${prefix}/search`, title: isZh ? "搜索" : "Search", meta: isZh ? "查找公开内容" : "Find public content" }
+  ];
+
+  return `<nav class="liax-home-entry-grid" aria-label="${escapeHtml(isZh ? "内容入口" : "Content entry")}">
+${links.map((link) => `        <a href="${escapeHtml(link.href)}">
+          <span>${escapeHtml(link.title)}</span>
+          <small>${escapeHtml(link.meta)}</small>
+        </a>`).join("\n")}
+      </nav>`;
+}
+
+export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, settings: SiteSettings, avatarUrl: string | null = null): string {
   const isZh = locale === "zh-CN";
   const title = "Liax Space";
   const description = isZh ? "一个中英文双语言的温暖极简内容空间。" : "A warm minimal bilingual content space.";
@@ -339,8 +737,12 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
     "home.brandInfo",
     isZh ? "Liax Space · 温暖极简内容空间" : "Liax Space · Warm minimal content space"
   );
-  const icpNumber = readStringSetting(settings, "home.icpNumber", isZh ? "备案号待配置" : "ICP pending");
+  const rawIcpNumber = readStringSetting(settings, "home.icpNumber", "");
+  const icpNumber = rawIcpNumber === "备案号待配置" || rawIcpNumber === "ICP pending" ? "" : rawIcpNumber;
   const icpUrl = readUrlSetting(settings, "home.icpUrl", "https://beian.miit.gov.cn");
+  const icpHtml = icpNumber
+    ? `<a href="${escapeHtml(icpUrl)}" rel="noopener noreferrer" target="_blank">${escapeHtml(icpNumber)}</a>`
+    : "";
   return `<!doctype html>
 <html lang="${locale}">
 <head>
@@ -349,6 +751,8 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
   <meta name="description" content="${escapeHtml(description)}">
   <link rel="canonical" href="/${prefix}">
   <link rel="alternate" hreflang="${alternateLocale}" href="/${alternatePrefix}">
+  ${renderFaviconLink(settings)}
+  ${renderHeadInjection(settings, false)}
   <title>${escapeHtml(title)}</title>
   <style>
     :root {
@@ -369,11 +773,17 @@ ${renderThemeCssVariables(settings)}
     body {
       min-height: 100%;
       margin: 0;
+      scrollbar-width: none;
       background: var(--color-page);
       color: var(--color-text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       text-rendering: geometricPrecision;
       -webkit-font-smoothing: antialiased;
+    }
+
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      display: none;
     }
 
     .liax-public-shell {
@@ -388,11 +798,13 @@ ${renderThemeCssVariables(settings)}
 
     .liax-public-header,
     main,
+    .liax-home-entry-grid,
     .liax-home-footer {
       animation: liax-page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
     }
 
-    main {
+    main,
+    .liax-home-entry-grid {
       animation-delay: 70ms;
     }
 
@@ -448,7 +860,8 @@ ${renderThemeCssVariables(settings)}
       overflow: hidden;
     }
 
-    .liax-public-logo img {
+    .liax-public-logo img,
+    .liax-public-avatar img {
       width: 100%;
       height: 100%;
       object-fit: cover;
@@ -704,6 +1117,48 @@ ${renderThemeCssVariables(settings)}
       letter-spacing: 0;
     }
 
+    .liax-home-entry-grid {
+      display: grid;
+      gap: 10px;
+      justify-self: end;
+      width: 100%;
+      max-width: 320px;
+    }
+
+    .liax-home-entry-grid a {
+      display: grid;
+      gap: 4px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
+      box-shadow: 0 12px 38px rgba(20, 20, 19, 0.04);
+      color: var(--color-text);
+      padding: 14px 16px;
+      text-decoration: none;
+      transition: border-color 180ms ease, color 180ms ease, transform 180ms ease;
+    }
+
+    .liax-home-entry-grid a:hover,
+    .liax-home-entry-grid a:focus-visible {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+      outline: 0;
+      transform: translateY(-1px);
+    }
+
+    .liax-home-entry-grid span {
+      font-size: 18px;
+      font-weight: 820;
+      line-height: 1.2;
+    }
+
+    .liax-home-entry-grid small {
+      color: rgb(20 20 19 / 66%);
+      font-size: 13px;
+      font-weight: 720;
+      line-height: 1.35;
+    }
+
     .liax-home-contact {
       display: grid;
       gap: 12px;
@@ -769,6 +1224,11 @@ ${renderThemeCssVariables(settings)}
         justify-self: start;
         max-width: 420px;
       }
+
+      .liax-home-entry-grid {
+        justify-self: start;
+        max-width: 520px;
+      }
     }
 
     @media (max-width: 860px) {
@@ -816,8 +1276,18 @@ ${renderThemeCssVariables(settings)}
         box-sizing: border-box;
       }
 
+      .liax-home-entry-grid {
+        justify-self: stretch;
+        max-width: none;
+        width: 100%;
+      }
+
       .liax-home-title {
-        font-size: clamp(52px, 18vw, 96px);
+        font-size: 48px;
+      }
+
+      .liax-home-entry-grid span {
+        font-size: 17px;
       }
 
       .liax-home-footer {
@@ -889,6 +1359,7 @@ ${renderThemeCssVariables(settings)}
     @media (prefers-reduced-motion: reduce) {
       .liax-public-header,
       main,
+      .liax-home-entry-grid,
       .liax-home-footer {
         animation: none;
       }
@@ -916,21 +1387,22 @@ ${renderThemeCssVariables(settings)}
       <div class="liax-public-header__tools">
         ${renderPublicSearchForm(prefix, isZh, "inline")}
         ${renderPublicMenuToggle(isZh)}
-        <a class="liax-public-avatar" href="/console" aria-label="Console">A</a>
+        ${renderPublicAvatar(avatarUrl)}
       </div>
     </header>
     ${renderPublicSidebar(prefix, isZh)}
     <main>
       <section>
-        <div class="liax-home-author">${isZh ? "作者" : "Author"} · Liax</div>
         <h1 class="liax-home-title">${escapeHtml(signature)}</h1>
       </section>
+      ${renderHomeEntryLinks(prefix, isZh)}
     </main>
     <footer class="liax-home-footer">
       <span>${escapeHtml(brandInfo)}</span>
-      <a href="${escapeHtml(icpUrl)}" rel="noopener noreferrer" target="_blank">${escapeHtml(icpNumber)}</a>
+      ${icpHtml}
     </footer>
   </div>
+${renderFooterInjection(settings)}
 ${renderLanguageSwitchScript()}
 </body>
 </html>`;
@@ -981,12 +1453,14 @@ export function renderTagCards(locale: ArticleLocale, tags: TagDetail[]): string
     }] : [];
   });
 
-  if (localizedTags.length === 0) {
+  const visibleTags = localizedTags.filter((tag) => tag.articleCount > 0);
+
+  if (visibleTags.length === 0) {
     return `<p class="liax-section-empty">${locale === "zh-CN" ? "当前语言还没有标签。" : "No tags are available in this language yet."}</p>`;
   }
 
   return `<ul class="liax-tag-grid">
-${localizedTags.map((tag) => `        <li><a href="/${locale === "zh-CN" ? "zh" : "en"}/tags/${escapeHtml(tag.slug)}"><span>#</span><strong>${escapeHtml(tag.name)}</strong><code>${escapeHtml(tag.slug)}</code><small>${escapeHtml(formatPublicArticleCount(locale, tag.articleCount))}</small></a></li>`).join("\n")}
+${visibleTags.map((tag) => `        <li><a href="/${locale === "zh-CN" ? "zh" : "en"}/tags/${escapeHtml(tag.slug)}"><span>#</span><strong>${escapeHtml(tag.name)}</strong><code>${escapeHtml(tag.slug)}</code><small>${escapeHtml(formatPublicArticleCount(locale, tag.articleCount))}</small></a></li>`).join("\n")}
       </ul>`;
 }
 
@@ -1089,7 +1563,7 @@ ${moments.map((moment) => {
   const images = moment.images.length > 0
     ? `
           <div class="liax-moment-images">
-${moment.images.map((image) => `            <img alt="" loading="lazy" src="${escapeHtml(image)}">`).join("\n")}
+${moment.images.map((image) => `            <img alt="" loading="lazy" onerror="this.remove()" src="${escapeHtml(image)}">`).join("\n")}
           </div>`
     : "";
 
@@ -1195,13 +1669,14 @@ ${state.errors.map((error) => `            <li>${escapeHtml(error)}</li>`).join(
 
 function renderGuestbookEntries(locale: ArticleLocale, entries: GuestbookEntry[]): string {
   const isZh = locale === "zh-CN";
+  const visibleEntries = entries.filter((entry) => !/^(?:AutoTestBot|QA user)$/iu.test(entry.authorName.trim()));
 
-  if (entries.length === 0) {
+  if (visibleEntries.length === 0) {
     return `<p class="liax-section-empty">${isZh ? "暂无公开留言。" : "No public messages yet."}</p>`;
   }
 
   return `<div class="liax-guestbook-list" aria-label="${isZh ? "公开留言" : "Public messages"}">
-${entries.map((entry) => {
+${visibleEntries.map((entry) => {
   const dateLabel = entry.createdAt.toISOString().slice(0, 10);
 
   return `        <article class="liax-guestbook-entry">
@@ -1224,21 +1699,24 @@ export function renderGuestbookBody(
   const isZh = locale === "zh-CN";
   const values = state.values ?? {};
   const notifyOnlyChecked = values.notifyOnly ? " checked" : "";
+  const nameInvalid = isZh ? "请填写昵称。" : "Please enter your name.";
+  const emailInvalid = isZh ? "请填写正确邮箱，或留空。" : "Enter a valid email address, or leave it empty.";
+  const messageInvalid = isZh ? "请填写留言内容。" : "Please enter a message.";
 
   return `<p class="liax-section-description">${escapeHtml(isZh ? "邮箱不会在前台公开。公开留言会自动通过并展示；重要留言可选择只发送给站主。" : "Email addresses are never shown publicly. Public messages are displayed immediately; important notes can be sent only to the site owner.")}</p>
       ${renderGuestbookStatus(locale, state)}
       <form class="liax-guestbook-form" action="/${prefix}/guestbook" method="post">
         <label>
           <span>${isZh ? "昵称" : "Name"}</span>
-          <input name="authorName" autocomplete="name" maxlength="80" required value="${escapeHtml(values.authorName ?? "")}">
+          <input name="authorName" autocomplete="name" maxlength="80" required oninvalid="this.setCustomValidity('${escapeHtml(nameInvalid)}')" oninput="this.setCustomValidity('')" value="${escapeHtml(values.authorName ?? "")}">
         </label>
         <label>
           <span>${isZh ? "邮箱" : "Email"}</span>
-          <input name="email" autocomplete="email" maxlength="255" type="email" value="${escapeHtml(values.email ?? "")}">
+          <input name="email" autocomplete="email" maxlength="255" type="email" oninvalid="this.setCustomValidity('${escapeHtml(emailInvalid)}')" oninput="this.setCustomValidity('')" value="${escapeHtml(values.email ?? "")}">
         </label>
         <label class="liax-guestbook-form__message">
           <span>${isZh ? "留言" : "Message"}</span>
-          <textarea name="content" maxlength="1000" required rows="6">${escapeHtml(values.content ?? "")}</textarea>
+          <textarea name="content" maxlength="1000" required rows="3" oninvalid="this.setCustomValidity('${escapeHtml(messageInvalid)}')" oninput="this.setCustomValidity('')">${escapeHtml(values.content ?? "")}</textarea>
         </label>
         <label class="liax-guestbook-form__notify">
           <input name="notifyOnly" type="checkbox" value="true"${notifyOnlyChecked}>
@@ -1254,6 +1732,10 @@ export function renderGuestbookBody(
 export function renderContactBody(locale: ArticleLocale, settings: SiteSettings): string {
   const isZh = locale === "zh-CN";
   const items = parseHomeContactItems(settings, isZh);
+
+  if (items.length === 0) {
+    return `<p class="liax-section-empty">${escapeHtml(isZh ? "暂未配置公开联系方式。" : "No public contact methods are configured yet.")}</p>`;
+  }
 
   return `<p class="liax-section-description">${escapeHtml(isZh ? "这些联系方式由站点设置统一维护。" : "These contact methods are managed from site settings.")}</p>
       <div class="liax-contact-list" aria-label="${escapeHtml(isZh ? "联系方式" : "Contact methods")}">
@@ -1275,8 +1757,9 @@ function renderAccountBody(locale: ArticleLocale): string {
 
   return `<div class="liax-account-card">
         <p class="liax-section-eyebrow">${escapeHtml(isZh ? "个人页面" : "Account")}</p>
-        <h2>${escapeHtml(isZh ? "Liax Space 访问入口" : "Liax Space access")}</h2>
-        <p>${escapeHtml(isZh ? "这里会承载个人偏好、登录状态和内容身份相关入口。当前版本先提供稳定跳转，避免头像点击落入无效页面。" : "This page is reserved for preferences, session state, and content identity. This version keeps the avatar target stable instead of sending users to a dead end.")}</p>
+        <h2>${escapeHtml(isZh ? "控制台入口" : "Console access")}</h2>
+        <p>${escapeHtml(isZh ? "个人头像入口已指向控制台登录页，公开站点不展示未完成的账号占位功能。" : "The avatar entry opens the console sign-in page. The public site does not expose unfinished account features.")}</p>
+        <p><a class="liax-section-back" href="/console">${escapeHtml(isZh ? "打开控制台" : "Open console")}</a></p>
       </div>`;
 }
 
@@ -1285,7 +1768,8 @@ export function renderPublicSectionPage(
   prefix: LocalePrefix,
   section: RenderablePublicSection,
   bodyHtml?: string,
-  settings: SiteSettings = {}
+  settings: SiteSettings = {},
+  avatarUrl: string | null = null
 ): string {
   const isZh = locale === "zh-CN";
   const label = section === "not-found" ? (isZh ? "页面未找到" : "Page not found") : (isZh ? publicSectionLabels[section].zh : publicSectionLabels[section].en);
@@ -1304,6 +1788,8 @@ export function renderPublicSectionPage(
   <meta name="description" content="${escapeHtml(description)}">
   <link rel="canonical" href="/${prefix}/${section}">
   <link rel="alternate" hreflang="${alternateLocale}" href="/${alternatePrefix}/${section}">
+  ${renderFaviconLink(settings)}
+  ${renderHeadInjection(settings, false)}
   <title>${escapeHtml(label)} · Liax Space</title>
   <style>
     :root {
@@ -1324,11 +1810,17 @@ ${renderThemeCssVariables(settings)}
     body {
       min-height: 100%;
       margin: 0;
+      scrollbar-width: none;
       background: var(--color-page);
       color: var(--color-text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       text-rendering: geometricPrecision;
       -webkit-font-smoothing: antialiased;
+    }
+
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      display: none;
     }
 
     .liax-public-shell {
@@ -1422,7 +1914,8 @@ ${renderThemeCssVariables(settings)}
       overflow: hidden;
     }
 
-    .liax-public-logo img {
+    .liax-public-logo img,
+    .liax-public-avatar img {
       width: 100%;
       height: 100%;
       object-fit: cover;
@@ -1935,13 +2428,14 @@ ${renderThemeCssVariables(settings)}
 
     .liax-guestbook-form {
       display: grid;
-      gap: 16px;
-      max-width: 760px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      max-width: 460px;
       margin-top: 24px;
       border: 1px solid var(--color-border);
       border-radius: 8px;
       background: var(--color-surface-muted);
-      padding: 20px;
+      padding: 16px;
     }
 
     .liax-guestbook-form label {
@@ -1965,8 +2459,15 @@ ${renderThemeCssVariables(settings)}
     }
 
     .liax-guestbook-form textarea {
-      min-height: 140px;
+      min-height: 76px;
       resize: vertical;
+    }
+
+    .liax-guestbook-form__message,
+    .liax-guestbook-form__notify,
+    .liax-guestbook-form__help,
+    .liax-guestbook-form button {
+      grid-column: 1 / -1;
     }
 
     .liax-guestbook-form__notify {
@@ -2001,6 +2502,13 @@ ${renderThemeCssVariables(settings)}
       font: inherit;
       font-weight: 800;
       padding: 12px 18px;
+    }
+
+    @media (max-width: 620px) {
+      .liax-guestbook-form {
+        grid-template-columns: 1fr;
+        max-width: none;
+      }
     }
 
     .liax-guestbook-alert {
@@ -2231,7 +2739,7 @@ ${renderThemeCssVariables(settings)}
       <div class="liax-public-header__tools">
         ${renderPublicSearchForm(prefix, isZh, "inline")}
         ${renderPublicMenuToggle(isZh)}
-        <a class="liax-public-avatar" href="/console" aria-label="Console">A</a>
+        ${renderPublicAvatar(avatarUrl)}
       </div>
     </header>
     ${renderPublicSidebar(prefix, isZh)}
@@ -2240,6 +2748,7 @@ ${renderThemeCssVariables(settings)}
       ${bodyHtml ?? `<p>${escapeHtml(description)}</p>`}
     </main>
   </div>
+${renderFooterInjection(settings)}
 ${renderLanguageSwitchScript()}
 </body>
 </html>`;
@@ -2253,8 +2762,14 @@ function renderNotFoundBody(locale: ArticleLocale, prefix: LocalePrefix): string
       <p><a class="liax-section-back" href="/${prefix}/posts">${isZh ? "返回文章列表" : "Back to articles"}</a></p>`;
 }
 
-function sendPublicNotFound(response: Response, locale: ArticleLocale, prefix: LocalePrefix): void {
-  response.status(404).type("html").send(renderPublicSectionPage(locale, prefix, "not-found", renderNotFoundBody(locale, prefix)));
+function sendPublicNotFound(
+  response: Response,
+  locale: ArticleLocale,
+  prefix: LocalePrefix,
+  settings: SiteSettings = {},
+  avatarUrl: string | null = null
+): void {
+  response.status(404).type("html").send(renderPublicSectionPage(locale, prefix, "not-found", renderNotFoundBody(locale, prefix), settings, avatarUrl));
 }
 
 function renderForbiddenBody(locale: ArticleLocale, prefix: LocalePrefix): string {
@@ -2265,8 +2780,14 @@ function renderForbiddenBody(locale: ArticleLocale, prefix: LocalePrefix): strin
       <p><a class="liax-section-back" href="/${prefix}/posts">${isZh ? "返回文章列表" : "Back to articles"}</a></p>`;
 }
 
-function sendPublicForbidden(response: Response, locale: ArticleLocale, prefix: LocalePrefix): void {
-  response.status(403).type("html").send(renderPublicSectionPage(locale, prefix, "not-found", renderForbiddenBody(locale, prefix)));
+function sendPublicForbidden(
+  response: Response,
+  locale: ArticleLocale,
+  prefix: LocalePrefix,
+  settings: SiteSettings = {},
+  avatarUrl: string | null = null
+): void {
+  response.status(403).type("html").send(renderPublicSectionPage(locale, prefix, "not-found", renderForbiddenBody(locale, prefix), settings, avatarUrl));
 }
 
 export class PublicArticleController {
@@ -2277,8 +2798,80 @@ export class PublicArticleController {
     private readonly momentRepository = new MomentRepository(),
     private readonly settingsRepository = new SettingsRepository(),
     private readonly guestbookRepository = new GuestbookRepository(),
-    private readonly jwtService = new JwtService()
+    private readonly jwtService = new JwtService(),
+    private readonly userRepository = new UserRepository(),
+    private readonly mailService = new MailService()
   ) {}
+
+  private async readPublicAvatarUrl(): Promise<string | null> {
+    const userRepository = this.userRepository as Partial<UserRepository>;
+    const settingsRepository = this.settingsRepository as Partial<SettingsRepository>;
+
+    if (typeof userRepository.findAdminUser !== "function" || typeof settingsRepository.getUserPreferences !== "function") {
+      return null;
+    }
+
+    const adminUser = await userRepository.findAdminUser();
+
+    if (!adminUser) {
+      return null;
+    }
+
+    const preferences = await settingsRepository.getUserPreferences(adminUser.id);
+    const avatarUrl = preferences?.avatarPublicUrl ?? null;
+
+    return avatarUrl && isPublicAssetUrl(avatarUrl) ? avatarUrl : null;
+  }
+
+  private async readPublicChrome(): Promise<{ avatarUrl: string | null; settings: SiteSettings }> {
+    const settingsRepository = this.settingsRepository as Partial<SettingsRepository>;
+    let settings: SiteSettings = {};
+
+    if (typeof settingsRepository.getSiteSettings === "function") {
+      try {
+        settings = await this.settingsRepository.getSiteSettings();
+      } catch {
+        settings = {};
+      }
+    }
+
+    try {
+      return {
+        avatarUrl: await this.readPublicAvatarUrl(),
+        settings
+      };
+    } catch {
+      return {
+        avatarUrl: null,
+        settings
+      };
+    }
+  }
+
+  private async readPublishedArticleChrome(prefix: LocalePrefix, translation: ArticleTranslation): Promise<PublishedArticleChrome> {
+    const searchService = this.searchService as Partial<SearchService>;
+    let articles: SearchResult[] = [];
+
+    if (typeof searchService.searchPublic === "function") {
+      try {
+        articles = await this.searchService.searchPublic({ localePrefix: prefix, limit: 100 });
+      } catch {
+        articles = [];
+      }
+    }
+
+    const currentIndex = articles.findIndex((article) => article.articleId === translation.articleId && article.slug === translation.slug);
+    const currentArticle = currentIndex >= 0 ? articles[currentIndex] : null;
+
+    return {
+      locale: translation.locale,
+      newerArticle: currentIndex > 0 ? articles[currentIndex - 1] ?? null : null,
+      olderArticle: currentIndex >= 0 ? articles[currentIndex + 1] ?? null : null,
+      prefix,
+      publishedAt: translation.publishedAt,
+      visitCount: currentArticle?.visitCount ?? 0
+    };
+  }
 
   getHome = async (request: Request, response: Response): Promise<void> => {
     const prefix = request.params.localePrefix;
@@ -2287,9 +2880,9 @@ export class PublicArticleController {
       throw notFoundError();
     }
 
-    const settings = await this.settingsRepository.getSiteSettings();
+    const { avatarUrl, settings } = await this.readPublicChrome();
 
-    response.status(200).type("html").send(renderHomePage(localePrefixMap[prefix], prefix, settings));
+    response.status(200).type("html").send(renderHomePage(localePrefixMap[prefix], prefix, settings, avatarUrl));
   };
 
   getSection = async (request: Request, response: Response): Promise<void> => {
@@ -2301,29 +2894,29 @@ export class PublicArticleController {
     }
 
     const locale = localePrefixMap[prefix];
-    const settings = await this.settingsRepository.getSiteSettings();
+    const { avatarUrl, settings } = await this.readPublicChrome();
 
     if (section === "tags") {
       const tags = await this.tagRepository.listTags();
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderTagCards(locale, tags), settings));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderTagCards(locale, tags), settings, avatarUrl));
       return;
     }
 
     if (section === "posts") {
       const articles = await this.searchService.searchPublic({ localePrefix: prefix, limit: 100 });
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderPostsBody(locale, prefix, articles), settings));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderPostsBody(locale, prefix, articles), settings, avatarUrl));
       return;
     }
 
     if (section === "archives") {
       const articles = await this.searchService.searchPublic({ localePrefix: prefix, limit: 100 });
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderArchiveBody(locale, prefix, articles), settings));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderArchiveBody(locale, prefix, articles), settings, avatarUrl));
       return;
     }
 
     if (section === "moments") {
       const moments = await this.momentRepository.listMoments({ locale, limit: 100, status: "published" });
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderMomentsBody(locale, moments), settings));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderMomentsBody(locale, moments), settings, avatarUrl));
       return;
     }
 
@@ -2334,22 +2927,23 @@ export class PublicArticleController {
         prefix,
         section,
         renderGuestbookBody(locale, prefix, entries, { submitted: readGuestbookSubmitted(request.query.submitted) }),
-        settings
+        settings,
+        avatarUrl
       ));
       return;
     }
 
     if (section === "contact") {
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderContactBody(locale, settings), settings));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderContactBody(locale, settings), settings, avatarUrl));
       return;
     }
 
     if (section === "account") {
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderAccountBody(locale), settings));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderAccountBody(locale), settings, avatarUrl));
       return;
     }
 
-    response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, undefined, settings));
+    response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, undefined, settings, avatarUrl));
   };
 
   postGuestbook = async (request: Request, response: Response): Promise<void> => {
@@ -2364,7 +2958,7 @@ export class PublicArticleController {
 
     if (!parsed.input) {
       const entries = await this.guestbookRepository.listPublicEntries({ locale, limit: 50 });
-      const settings = await this.settingsRepository.getSiteSettings();
+      const { avatarUrl, settings } = await this.readPublicChrome();
       response.status(400).type("html").send(renderPublicSectionPage(
         locale,
         prefix,
@@ -2373,12 +2967,19 @@ export class PublicArticleController {
           errors: parsed.errors,
           values: parsed.values
         }),
-        settings
+        settings,
+        avatarUrl
       ));
       return;
     }
 
     const entry = await this.guestbookRepository.createEntry(parsed.input);
+    void this.mailService.sendGuestbookNotification(entry).catch((error: unknown) => {
+      logger.warn("guestbook notification failed", {
+        entryId: entry.id,
+        message: error instanceof Error ? error.message : "Unknown mail notification error."
+      });
+    });
     response.redirect(303, `/${prefix}/guestbook?submitted=${entry.notifyOnly ? "private" : "public"}`);
   };
 
@@ -2402,10 +3003,10 @@ export class PublicArticleController {
       limit: 100,
       tag: translation.slug
     });
-    const settings = await this.settingsRepository.getSiteSettings();
+    const { avatarUrl, settings } = await this.readPublicChrome();
 
     response.status(200).type("html").send(
-      renderPublicSectionPage(locale, prefix, "tags", renderTagDetailBody(locale, prefix, translation.name, translation.slug, articles), settings)
+      renderPublicSectionPage(locale, prefix, "tags", renderTagDetailBody(locale, prefix, translation.name, translation.slug, articles), settings, avatarUrl)
     );
   };
 
@@ -2419,14 +3020,15 @@ export class PublicArticleController {
     const locale = localePrefixMap[prefix];
     const slug = request.params.slug;
     const translation = await this.translationRepository.findPublicByLocaleAndSlug(locale, slug);
+    const { avatarUrl, settings } = await this.readPublicChrome();
 
     if (!translation || !isPublishedTranslation(translation)) {
-      sendPublicNotFound(response, locale, prefix);
+      sendPublicNotFound(response, locale, prefix, settings, avatarUrl);
       return;
     }
 
     if (!this.canViewTranslation(request, translation)) {
-      sendPublicForbidden(response, locale, prefix);
+      sendPublicForbidden(response, locale, prefix, settings, avatarUrl);
       return;
     }
 
@@ -2439,13 +3041,14 @@ export class PublicArticleController {
         slug,
         currentHtmlPath: translation.currentHtmlPath
       });
-      sendPublicNotFound(response, locale, prefix);
+      sendPublicNotFound(response, locale, prefix, settings, avatarUrl);
       return;
     }
 
     try {
       const html = await readFile(htmlPath, "utf8");
-      response.status(200).type("html").send(html);
+      const articleChrome = await this.readPublishedArticleChrome(prefix, translation);
+      response.status(200).type("html").send(patchPublishedArticleHtml(html, settings, avatarUrl, articleChrome));
     } catch (error) {
       if (isFileNotFound(error)) {
         logger.error("published rendered html file not found", {
@@ -2455,7 +3058,7 @@ export class PublicArticleController {
           currentHtmlPath: translation.currentHtmlPath,
           htmlPath
         });
-        sendPublicNotFound(response, locale, prefix);
+        sendPublicNotFound(response, locale, prefix, settings, avatarUrl);
         return;
       }
 

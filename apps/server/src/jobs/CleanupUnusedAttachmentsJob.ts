@@ -57,6 +57,27 @@ export const unusedAttachmentCleanupQuery = `SELECT id, storage_key, created_at
            WHERE referenced_attachment.deleted_at IS NULL
              AND referenced_attachment.storage_key = attachments.storage_key
          )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM attachments referenced_avatar
+           INNER JOIN user_preferences
+             ON user_preferences.avatar_attachment_id = referenced_avatar.id
+           WHERE referenced_avatar.deleted_at IS NULL
+             AND referenced_avatar.storage_key = attachments.storage_key
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM site_settings
+           WHERE site_settings.\`key\` = 'site.logoUrl'
+             AND JSON_UNQUOTE(site_settings.value_json) = attachments.public_url
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM moments
+           WHERE moments.deleted_at IS NULL
+             AND attachments.public_url IS NOT NULL
+             AND JSON_CONTAINS(moments.images_json, JSON_QUOTE(attachments.public_url))
+         )
        ORDER BY created_at ASC, id ASC`;
 
 function errorReason(error: unknown): string {

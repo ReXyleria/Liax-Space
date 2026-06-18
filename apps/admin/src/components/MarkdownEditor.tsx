@@ -34,7 +34,7 @@ type SelectedTableContext = {
   toolbarWidth: number;
 };
 
-type SlashMenuItemId = "image" | "heading" | "table" | "code" | "quote" | "math" | "toc";
+type SlashMenuItemId = "image" | "heading1" | "heading2" | "heading3" | "heading4" | "table" | "code" | "quote" | "math";
 
 type SlashMenuState = {
   activeIndex: number;
@@ -593,10 +593,28 @@ export function MarkdownEditor({
       label: t("article.slashImage")
     },
     {
-      description: t("article.slashHeadingDescription"),
-      id: "heading",
-      keywords: ["heading", "title", "h2", "标题"],
-      label: t("article.slashHeading")
+      description: t("article.slashHeading1Description"),
+      id: "heading1",
+      keywords: ["heading", "title", "h1", "一级标题", "标题"],
+      label: t("article.slashHeading1")
+    },
+    {
+      description: t("article.slashHeading2Description"),
+      id: "heading2",
+      keywords: ["heading", "title", "h2", "二级标题", "小标题"],
+      label: t("article.slashHeading2")
+    },
+    {
+      description: t("article.slashHeading3Description"),
+      id: "heading3",
+      keywords: ["heading", "title", "h3", "三级标题", "小标题"],
+      label: t("article.slashHeading3")
+    },
+    {
+      description: t("article.slashHeading4Description"),
+      id: "heading4",
+      keywords: ["heading", "title", "h4", "四级标题", "小标题"],
+      label: t("article.slashHeading4")
     },
     {
       description: t("article.slashTableDescription"),
@@ -621,12 +639,6 @@ export function MarkdownEditor({
       id: "math",
       keywords: ["math", "formula", "公式"],
       label: t("article.slashMath")
-    },
-    {
-      description: t("article.slashTocDescription"),
-      id: "toc",
-      keywords: ["toc", "outline", "目录"],
-      label: t("article.slashToc")
     }
   ] satisfies SlashMenuOption[]).filter((option) => option.id !== "image" || Boolean(onUploadImage));
   const visibleSlashMenuOptions = slashMenu ? filterSlashMenuOptions(slashMenuOptions, slashMenu.query) : [];
@@ -1225,7 +1237,7 @@ export function MarkdownEditor({
     syncMarkdownFromEditor();
   }
 
-  function insertSourceHeading(level: 2 | 3): void {
+  function insertSourceHeading(level: 1 | 2 | 3 | 4): void {
     applySourceSelectionTransform((selection) => {
       const prefix = `\n\n${"#".repeat(level)} `;
       const content = selection || "Heading";
@@ -1278,13 +1290,13 @@ export function MarkdownEditor({
     insertHtml('<span class="admin-editor-math" data-md-math="E=mc^2">E=mc^2</span> ');
   }
 
-  function insertHeadingBlock(): void {
+  function insertHeadingBlock(level: 1 | 2 | 3 | 4 = 2): void {
     if (isSourceMode) {
-      insertSourceHeading(2);
+      insertSourceHeading(level);
       return;
     }
 
-    insertHtml("<h2>Heading</h2><p><br></p>");
+    insertHtml(`<h${level}>Heading</h${level}><p><br></p>`);
   }
 
   function insertQuoteBlock(): void {
@@ -1294,15 +1306,6 @@ export function MarkdownEditor({
     }
 
     insertHtml("<blockquote>Quote</blockquote><p><br></p>");
-  }
-
-  function insertTocBlock(): void {
-    if (isSourceMode) {
-      insertSourceMarkdown("\n\n[[toc]]\n\n");
-      return;
-    }
-
-    insertHtml('<div class="admin-editor-toc" data-md-block="toc">Table of contents</div><p><br></p>');
   }
 
   function applySlashMenuOption(option: SlashMenuOption): void {
@@ -1319,8 +1322,14 @@ export function MarkdownEditor({
       return;
     }
 
-    if (option.id === "heading") {
-      insertHeadingBlock();
+    if (option.id === "heading1") {
+      insertHeadingBlock(1);
+    } else if (option.id === "heading2") {
+      insertHeadingBlock(2);
+    } else if (option.id === "heading3") {
+      insertHeadingBlock(3);
+    } else if (option.id === "heading4") {
+      insertHeadingBlock(4);
     } else if (option.id === "table") {
       insertTable();
     } else if (option.id === "code") {
@@ -1329,8 +1338,6 @@ export function MarkdownEditor({
       insertQuoteBlock();
     } else if (option.id === "math") {
       insertMath();
-    } else if (option.id === "toc") {
-      insertTocBlock();
     }
   }
 
@@ -1506,9 +1513,6 @@ export function MarkdownEditor({
         </button>
         <button disabled={disabled || !onUploadImage} onClick={chooseImageFile} type="button">
           {t("article.slashImage")}
-        </button>
-        <button disabled={disabled} onClick={insertTocBlock} type="button">
-          {t("article.slashToc")}
         </button>
         {isPastingImage ? <span className="admin-visual-editor__status">{t("attachment.uploading")}</span> : null}
       </div>

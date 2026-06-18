@@ -98,6 +98,20 @@ function assertOptionalHttpUrl(key: string, value: unknown): string {
   return assertHttpUrl(key, normalized);
 }
 
+function assertOptionalPublicAssetUrl(key: string, value: unknown): string {
+  const normalized = assertString(value, key, 500);
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized.startsWith("/") && !normalized.startsWith("//") && !/[\u0000-\u001f]/u.test(normalized)) {
+    return normalized;
+  }
+
+  return assertHttpUrl(key, normalized);
+}
+
 function assertTemperature(key: string, value: unknown): number {
   const temperature = typeof value === "string" ? Number(value.trim()) : value;
 
@@ -178,8 +192,23 @@ const knownSettingValidators: Record<string, SiteSettingValidator> = {
   "home.icpNumber": (key, value) => assertString(value, key, 120),
   "home.icpUrl": assertHttpUrl,
   "home.signature": (key, value) => assertString(value, key, 160),
+  "codeInjection.contentHead": (key, value) => assertString(value, key, 50000),
+  "codeInjection.footer": (key, value) => assertString(value, key, 50000),
+  "codeInjection.globalHead": (key, value) => assertString(value, key, 50000),
   "site.logoAlt": (key, value) => assertString(value, key, 120),
-  "site.logoUrl": assertOptionalHttpUrl,
+  "site.logoUrl": assertOptionalPublicAssetUrl,
+  "seoPush.baidu.enabled": assertBoolean,
+  "seoPush.baidu.key": (key, value) => assertString(value, key, 4000),
+  "seoPush.baidu.site": assertOptionalHttpUrl,
+  "seoPush.baidu.url": assertOptionalHttpUrl,
+  "seoPush.google.enabled": assertBoolean,
+  "seoPush.google.key": (key, value) => assertString(value, key, 4000),
+  "seoPush.google.site": assertOptionalHttpUrl,
+  "seoPush.google.url": assertOptionalHttpUrl,
+  "seoPush.indexnow.enabled": assertBoolean,
+  "seoPush.indexnow.key": (key, value) => assertString(value, key, 4000),
+  "seoPush.indexnow.site": (key, value) => assertString(value, key, 255),
+  "seoPush.indexnow.url": assertOptionalHttpUrl,
   "smtp.encryption": (key, value) => assertOneOf(value, key, smtpEncryptionModes),
   "smtp.from": assertEmailAddress,
   "smtp.fromName": (key, value) => assertString(value, key, 80),

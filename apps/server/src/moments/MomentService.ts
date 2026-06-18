@@ -107,24 +107,6 @@ function parseOptionalLocale(value: unknown): ArticleLocale | undefined {
   return value === undefined ? undefined : parseLocale(value);
 }
 
-function parseOptionalDateTime(value: unknown, fieldName: string): Date | undefined {
-  if (value === undefined || value === null || value === "") {
-    return undefined;
-  }
-
-  if (typeof value !== "string") {
-    throw validationError(`${fieldName} must be an ISO datetime string.`);
-  }
-
-  const date = new Date(value);
-
-  if (!Number.isFinite(date.getTime())) {
-    throw validationError(`${fieldName} must be a valid datetime.`);
-  }
-
-  return date;
-}
-
 function parseListInput(input: ListMomentsInput = {}): ListMomentsInput {
   return {
     includeDeleted: input.includeDeleted,
@@ -158,12 +140,11 @@ export class MomentService {
 
   async updateMoment(id: number, body: MomentBody): Promise<Moment> {
     const momentId = parsePositiveId(id, "momentId");
-    const existingMoment = await this.requireMoment(momentId);
+    await this.requireMoment(momentId);
     const status = body.status === undefined ? undefined : parseStatus(body.status);
-    const publishedAt = parseOptionalDateTime(body.publishedAt, "publishedAt");
 
-    if (publishedAt !== undefined && (status ?? existingMoment.status) !== "published") {
-      throw validationError("publishedAt can only be updated for published moments.");
+    if (body.publishedAt !== undefined) {
+      throw validationError("publishedAt cannot be updated directly. Use publish or unpublish actions.");
     }
 
     const moment = await this.momentRepository.updateMoment({
@@ -171,7 +152,6 @@ export class MomentService {
       id: momentId,
       images: parseOptionalImages(body.images),
       locale: parseOptionalLocale(body.locale),
-      publishedAt,
       status
     });
 

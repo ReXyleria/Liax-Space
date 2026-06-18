@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ClipboardEvent, type FormEvent, type ReactElement, type SyntheticEvent } from "react";
 
+import { attachmentApi } from "../api/attachmentApi";
 import type { ArticleLocale } from "../api/articleApi";
 import { momentApi, type Moment, type MomentStatus } from "../api/momentApi";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
-import { dateTimeLocalToIso, toDateTimeLocalValue } from "../utils/dateTime";
 
 const locales: ArticleLocale[] = ["zh-CN", "en-US"];
 const maxMomentLength = 500;
@@ -14,6 +14,11 @@ type MomentForm = {
   content: string;
   imagesText: string;
   status: MomentStatus;
+};
+
+type MomentDraft = {
+  content: string;
+  imagesText: string;
 };
 
 const initialForm: MomentForm = {
@@ -54,9 +59,10 @@ export function MomentsPage(): ReactElement {
   const [moments, setMoments] = useState<Moment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
+  const [isPastingImage, setIsPastingImage] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [publishedAtDrafts, setPublishedAtDrafts] = useState<Record<number, string>>({});
+  const [momentDrafts, setMomentDrafts] = useState<Record<number, MomentDraft>>({});
   const remainingCharacters = useMemo(() => maxMomentLength - form.content.length, [form.content]);
 
   async function loadMoments(): Promise<void> {
@@ -66,6 +72,13 @@ export function MomentsPage(): ReactElement {
     try {
       const response = await momentApi.listMoments();
       setMoments(sortMoments(response.moments));
+      setMomentDrafts(Object.fromEntries(response.moments.map((moment) => [
+        moment.id,
+        {
+          content: moment.content,
+          imagesText: moment.images.join("\n")
+        }
+      ])));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("moment.loadFailed"));
     } finally {
@@ -119,11 +132,6 @@ export function MomentsPage(): ReactElement {
     try {
       const response = await momentApi.publishMoment(moment.id);
       setMoments((currentMoments) => replaceMoment(currentMoments, response.moment));
-      setPublishedAtDrafts((currentDrafts) => {
-        const nextDrafts = { ...currentDrafts };
-        delete nextDrafts[moment.id];
-        return nextDrafts;
-      });
       setMessage(t("moment.published"));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("moment.publishFailed"));
@@ -140,11 +148,6 @@ export function MomentsPage(): ReactElement {
     try {
       const response = await momentApi.unpublishMoment(moment.id);
       setMoments((currentMoments) => replaceMoment(currentMoments, response.moment));
-      setPublishedAtDrafts((currentDrafts) => {
-        const nextDrafts = { ...currentDrafts };
-        delete nextDrafts[moment.id];
-        return nextDrafts;
-      });
       setMessage(t("moment.unpublished"));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("moment.unpublishFailed"));
@@ -161,7 +164,7 @@ export function MomentsPage(): ReactElement {
     try {
       await momentApi.deleteMoment(moment.id);
       setMoments((currentMoments) => currentMoments.filter((item) => item.id !== moment.id));
-      setPublishedAtDrafts((currentDrafts) => {
+      setMomentDrafts((currentDrafts) => {
         const nextDrafts = { ...currentDrafts };
         delete nextDrafts[moment.id];
         return nextDrafts;
@@ -174,15 +177,35 @@ export function MomentsPage(): ReactElement {
     }
   }
 
-  function momentPublishedAtValue(moment: Moment): string {
-    return publishedAtDrafts[moment.id] ?? toDateTimeLocalValue(moment.publishedAt);
+  function draftFor(moment: Moment): MomentDraft {
+    return momentDrafts[moment.id] ?? {
+      content: moment.content,
+      imagesText: moment.images.join("\n")
+    };
   }
 
-  async function updateMomentPublishedAt(moment: Moment): Promise<void> {
-    const publishedAt = dateTimeLocalToIso(momentPublishedAtValue(moment));
+  function updateMomentDraft(momentId: number, patch: Partial<MomentDraft>): void {
+    setMomentDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      [momentId]: {
+        content: currentDrafts[momentId]?.content ?? moments.find((moment) => moment.id === momentId)?.content ?? "",
+        imagesText: currentDrafts[momentId]?.imagesText ?? moments.find((moment) => moment.id === momentId)?.images.join("\n") ?? "",
+        ...patch
+      }
+    }));
+  }
 
-    if (!publishedAt) {
-      setErrorMessage(t("moment.publishedAtInvalid"));
+  async function saveMomentContent(moment: Moment): Promise<void> {
+    const draft = draftFor(moment);
+
+    if (!draft.content.trim()) {
+      setErrorMessage(t("moment.contentRequired"));
+      setMessage(null);
+      return;
+    }
+
+    if (draft.content.length > maxMomentLength) {
+      setErrorMessage(t("moment.tooLong"));
       setMessage(null);
       return;
     }
@@ -192,19 +215,92 @@ export function MomentsPage(): ReactElement {
     setErrorMessage(null);
 
     try {
-      const response = await momentApi.updateMoment(moment.id, { publishedAt });
-      setMoments((currentMoments) => replaceMoment(currentMoments, response.moment));
-      setPublishedAtDrafts((currentDrafts) => {
-        const nextDrafts = { ...currentDrafts };
-        delete nextDrafts[moment.id];
-        return nextDrafts;
+      const response = await momentApi.updateMoment(moment.id, {
+        content: draft.content,
+        images: parseImageUrls(draft.imagesText)
       });
-      setMessage(t("moment.publishedAtSaved"));
+      setMoments((currentMoments) => replaceMoment(currentMoments, response.moment));
+      setMomentDrafts((currentDrafts) => ({
+        ...currentDrafts,
+        [moment.id]: {
+          content: response.moment.content,
+          imagesText: response.moment.images.join("\n")
+        }
+      }));
+      setMessage(t("moment.contentSaved"));
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : t("moment.publishedAtSaveFailed"));
+      setErrorMessage(error instanceof Error ? error.message : t("moment.contentSaveFailed"));
     } finally {
       setIsWorking(false);
     }
+  }
+
+  async function handlePasteImages(
+    event: ClipboardEvent<HTMLTextAreaElement>,
+    target: "composer" | { momentId: number }
+  ): Promise<void> {
+    const imageFiles = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    setIsPastingImage(true);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const urls: string[] = [];
+
+      for (const file of imageFiles) {
+        const result = await attachmentApi.uploadAttachment(file);
+
+        if (result.attachment.publicUrl) {
+          urls.push(result.attachment.publicUrl);
+        }
+      }
+
+      if (urls.length === 0) {
+        throw new Error(t("attachment.uploadFailed"));
+      }
+
+      const appendUrls = (currentValue: string): string => {
+        const prefix = currentValue.trim() ? `${currentValue.trim()}\n` : "";
+        return `${prefix}${urls.join("\n")}`;
+      };
+
+      if (target === "composer") {
+        setForm((currentForm) => ({
+          ...currentForm,
+          imagesText: appendUrls(currentForm.imagesText)
+        }));
+      } else {
+        const targetMoment = moments.find((moment) => moment.id === target.momentId);
+
+        if (!targetMoment) {
+          return;
+        }
+
+        updateMomentDraft(target.momentId, {
+          imagesText: appendUrls(draftFor(targetMoment).imagesText)
+        });
+      }
+
+      setMessage(t("attachment.pasted"));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("attachment.uploadFailed"));
+    } finally {
+      setIsPastingImage(false);
+    }
+  }
+
+  function handleImageError(event: SyntheticEvent<HTMLImageElement>): void {
+    event.currentTarget.remove();
+  }
+
+  function momentCharactersLeft(moment: Moment): number {
+    return maxMomentLength - draftFor(moment).content.length;
   }
 
   return (
@@ -256,6 +352,7 @@ export function MomentsPage(): ReactElement {
               disabled={isWorking}
               maxLength={maxMomentLength}
               onChange={(event) => setForm((currentForm) => ({ ...currentForm, content: event.target.value }))}
+              onPaste={(event) => void handlePasteImages(event, "composer")}
               value={form.content}
             />
           </label>
@@ -265,6 +362,7 @@ export function MomentsPage(): ReactElement {
               className="admin-moment-image-field"
               disabled={isWorking}
               onChange={(event) => setForm((currentForm) => ({ ...currentForm, imagesText: event.target.value }))}
+              onPaste={(event) => void handlePasteImages(event, "composer")}
               placeholder={t("moment.imagesPlaceholder")}
               value={form.imagesText}
             />
@@ -276,6 +374,7 @@ export function MomentsPage(): ReactElement {
             <button className="liax-button liax-button--brand" disabled={isWorking} type="submit">
               {isWorking ? t("moment.saving") : t("moment.create")}
             </button>
+            {isPastingImage ? <span className="admin-muted-text">{t("attachment.uploading")}</span> : null}
           </div>
         </form>
       </section>
@@ -293,39 +392,42 @@ export function MomentsPage(): ReactElement {
                 <span className="admin-status-badge">{t(moment.status === "published" ? "moment.status.published" : "moment.status.draft")}</span>
                 <time>{formatDate(moment.publishedAt ?? moment.createdAt)}</time>
               </div>
-              <p>{moment.content}</p>
-              {moment.images.length > 0 ? (
+              <label className="admin-form-field">
+                <span>{t("moment.content")}</span>
+                <textarea
+                  className="admin-moment-textarea"
+                  disabled={isWorking}
+                  maxLength={maxMomentLength}
+                  onChange={(event) => updateMomentDraft(moment.id, { content: event.target.value })}
+                  onPaste={(event) => void handlePasteImages(event, { momentId: moment.id })}
+                  value={draftFor(moment).content}
+                />
+              </label>
+              <label className="admin-form-field">
+                <span>{t("moment.images")}</span>
+                <textarea
+                  className="admin-moment-image-field"
+                  disabled={isWorking}
+                  onChange={(event) => updateMomentDraft(moment.id, { imagesText: event.target.value })}
+                  onPaste={(event) => void handlePasteImages(event, { momentId: moment.id })}
+                  placeholder={t("moment.imagesPlaceholder")}
+                  value={draftFor(moment).imagesText}
+                />
+              </label>
+              <span className={momentCharactersLeft(moment) < 0 ? "admin-error-text" : "admin-muted-text"}>
+                {t("moment.charactersLeft")}: {momentCharactersLeft(moment)}
+              </span>
+              {parseImageUrls(draftFor(moment).imagesText).length > 0 ? (
                 <div className="admin-moment-images">
-                  {moment.images.map((image) => (
-                    <img alt="" key={image} loading="lazy" src={image} />
+                  {parseImageUrls(draftFor(moment).imagesText).map((image) => (
+                    <img alt="" key={image} loading="lazy" onError={handleImageError} src={image} />
                   ))}
                 </div>
               ) : null}
-              {moment.status === "published" ? (
-                <div className="admin-moment-published-time">
-                  <label className="admin-form-field">
-                    <span>{t("moment.publishedAt")}</span>
-                    <input
-                      disabled={isWorking}
-                      onChange={(event) => setPublishedAtDrafts((currentDrafts) => ({
-                        ...currentDrafts,
-                        [moment.id]: event.target.value
-                      }))}
-                      type="datetime-local"
-                      value={momentPublishedAtValue(moment)}
-                    />
-                  </label>
-                  <button
-                    className="liax-button"
-                    disabled={isWorking}
-                    onClick={() => void updateMomentPublishedAt(moment)}
-                    type="button"
-                  >
-                    {t("moment.publishedAtSave")}
-                  </button>
-                </div>
-              ) : null}
               <div className="admin-form-actions">
+                <button className="liax-button liax-button--primary" disabled={isWorking || isPastingImage} onClick={() => void saveMomentContent(moment)} type="button">
+                  {isWorking ? t("moment.saving") : t("moment.saveContent")}
+                </button>
                 {moment.status === "published" ? (
                   <button className="liax-button" disabled={isWorking} onClick={() => void unpublishMoment(moment)} type="button">
                     {t("moment.unpublish")}

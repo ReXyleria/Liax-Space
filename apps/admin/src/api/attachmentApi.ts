@@ -9,6 +9,7 @@ export type Attachment = {
   mimeType: string;
   sizeBytes: number;
   sha256: string;
+  isUsed?: boolean;
   createdAt: string;
   deletedAt: string | null;
 };

@@ -81,6 +81,14 @@ export function renderLanguageSwitchScript(): string {
   let isSwitching = false;
   let activeSearchOverlay = null;
 
+  function removeDuplicateLanguageSwitches() {
+    document.querySelectorAll(".liax-public-header .liax-language-switch[data-language-switch-placeholder]").forEach((node, index) => {
+      if (index > 0) {
+        node.remove();
+      }
+    });
+  }
+
   function setSidebarOpen(layer, isOpen) {
     layer.classList.toggle("is-open", isOpen);
     layer.setAttribute("aria-hidden", isOpen ? "false" : "true");
@@ -92,9 +100,6 @@ export function renderLanguageSwitchScript(): string {
     document.querySelectorAll(sidebarToggleSelector).forEach((toggle) => {
       toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
     });
-    if (isOpen) {
-      window.setTimeout(() => layer.querySelector(".liax-public-sidebar .liax-public-search")?.focus(), shouldReduceMotion() ? 0 : 180);
-    }
   }
 
   function closeSidebars() {
@@ -196,6 +201,8 @@ export function renderLanguageSwitchScript(): string {
   }
 
   function replaceFromTarget(targetDocument) {
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
     const currentHeader = document.querySelector(".liax-public-header");
     const targetHeader = targetDocument.querySelector(".liax-public-header");
     const currentMain = document.querySelector("main");
@@ -218,7 +225,9 @@ export function renderLanguageSwitchScript(): string {
       currentSidebar.replaceWith(targetSidebar.cloneNode(true));
     }
     updateHead(targetDocument);
-    window.scrollTo({ top: 0 });
+    removeDuplicateLanguageSwitches();
+    enhanceArticlePage();
+    window.scrollTo({ left: scrollX, top: scrollY });
   }
 
   function createOverlay(targetDocument, origin) {
@@ -321,6 +330,9 @@ export function renderLanguageSwitchScript(): string {
 
     const overlay = activeSearchOverlay;
     activeSearchOverlay = null;
+    document.querySelectorAll(searchInputSelector).forEach((input) => {
+      input.removeAttribute("aria-hidden");
+    });
 
     if (shouldReduceMotion()) {
       overlay.remove();
@@ -344,6 +356,10 @@ export function renderLanguageSwitchScript(): string {
     const input = document.createElement("input");
     const hint = document.createElement("p");
     const label = searchPlaceholder();
+
+    document.querySelectorAll(searchInputSelector).forEach((input) => {
+      input.setAttribute("aria-hidden", "true");
+    });
 
     overlay.dataset.publicSearchOverlay = "true";
     Object.assign(overlay.style, {
@@ -441,6 +457,86 @@ export function renderLanguageSwitchScript(): string {
     window.setTimeout(() => input.focus(), shouldReduceMotion() ? 0 : 180);
   }
 
+  function articleUiText(key) {
+    const isZh = document.documentElement.lang.toLowerCase().startsWith("zh");
+    const text = {
+      toc: isZh ? "标题目录" : "Contents",
+      copy: isZh ? "复制" : "Copy",
+      copied: isZh ? "已复制" : "Copied"
+    };
+    return text[key] || key;
+  }
+
+  function headingSlug(text, index) {
+    const normalized = text.trim().toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, "-").replace(/^-+|-+$/gu, "");
+    return normalized || "section-" + (index + 1);
+  }
+
+  function enhanceArticlePage() {
+    const body = document.querySelector(".liax-article-body");
+    if (!body) {
+      return;
+    }
+
+    const headings = Array.from(body.querySelectorAll("h2, h3, h4"));
+    if (headings.length > 0 && !document.querySelector(".liax-article-toc")) {
+      const usedIds = new Set();
+      const nav = document.createElement("nav");
+      const title = document.createElement("strong");
+      const list = document.createElement("ol");
+      nav.className = "liax-article-toc";
+      nav.setAttribute("aria-label", articleUiText("toc"));
+      title.textContent = articleUiText("toc");
+      headings.forEach((heading, index) => {
+        const baseId = heading.id || headingSlug(heading.textContent || "", index);
+        let nextId = baseId;
+        let suffix = 2;
+        while (usedIds.has(nextId) || (document.getElementById(nextId) && document.getElementById(nextId) !== heading)) {
+          nextId = baseId + "-" + suffix;
+          suffix += 1;
+        }
+        usedIds.add(nextId);
+        heading.id = nextId;
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        item.dataset.level = heading.tagName.slice(1);
+        link.href = "#" + nextId;
+        link.textContent = heading.textContent || nextId;
+        item.append(link);
+        list.append(item);
+      });
+      nav.append(title, list);
+      const header = document.querySelector(".liax-article-header");
+      if (header?.parentNode) {
+        header.insertAdjacentElement("afterend", nav);
+      } else {
+        body.insertAdjacentElement("beforebegin", nav);
+      }
+    }
+
+    body.querySelectorAll("pre").forEach((pre) => {
+      if (pre.querySelector(".liax-code-copy")) {
+        return;
+      }
+      pre.classList.add("liax-code-frame");
+      const button = document.createElement("button");
+      button.className = "liax-code-copy";
+      button.type = "button";
+      button.textContent = articleUiText("copy");
+      button.addEventListener("click", async () => {
+        const code = pre.querySelector("code")?.textContent || pre.textContent || "";
+        try {
+          await navigator.clipboard?.writeText(code);
+          button.textContent = articleUiText("copied");
+          window.setTimeout(() => {
+            button.textContent = articleUiText("copy");
+          }, 1400);
+        } catch {}
+      });
+      pre.append(button);
+    });
+  }
+
   document.addEventListener("click", (event) => {
     const input = event.target instanceof Element ? event.target.closest(searchInputSelector) : null;
     if (!input) {
@@ -530,6 +626,9 @@ export function renderLanguageSwitchScript(): string {
       isSwitching = false;
     }
   });
+
+  removeDuplicateLanguageSwitches();
+  enhanceArticlePage();
 })();
 </script>`;
 }
@@ -543,6 +642,7 @@ export class TemplateRenderer {
     const description = input.description?.trim() ?? "";
     const languageSwitchHtml = renderLanguageSwitchPlaceholder(input);
     const metadata = [
+      `<link rel="icon" href="/favicon.svg">`,
       `<meta name="description" content="${escapeHtml(description)}">`,
       input.canonicalUrl ? `<link rel="canonical" href="${escapeHtml(input.canonicalUrl)}">` : null,
       ...(input.alternates ?? []).map((alternate) => {
@@ -578,6 +678,7 @@ export class TemplateRenderer {
     html {
       background: var(--color-page);
       color: var(--color-text);
+      scrollbar-width: none;
     }
 
     body {
@@ -586,6 +687,18 @@ export class TemplateRenderer {
       color: var(--color-text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.7;
+      scrollbar-width: none;
+    }
+
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      display: none;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
     }
 
     .liax-public-shell {
@@ -644,6 +757,14 @@ export class TemplateRenderer {
       color: var(--color-primary-text);
       font-size: 12px;
       font-weight: 800;
+      overflow: hidden;
+    }
+
+    .liax-public-logo img,
+    .liax-public-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .liax-public-header__center,
@@ -862,9 +983,115 @@ export class TemplateRenderer {
       margin: 0;
     }
 
+    .liax-article-utility {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      align-items: center;
+      margin-top: 18px;
+      color: #6f6a5d;
+      font-size: 14px;
+      font-weight: 760;
+    }
+
+    .liax-article-utility a,
+    .liax-article-neighbor-nav a {
+      color: var(--color-accent);
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
+    .liax-article-utility p {
+      display: inline-flex;
+      gap: 8px;
+      margin: 0;
+    }
+
+    .liax-article-neighbor-nav {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .liax-article-neighbor-nav a {
+      display: grid;
+      gap: 4px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 12px;
+      text-decoration: none;
+    }
+
+    .liax-article-neighbor-nav span {
+      color: #6f6a5d;
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .liax-article-neighbor-nav strong {
+      color: var(--color-text);
+      overflow-wrap: anywhere;
+    }
+
+    .liax-article-toc {
+      display: grid;
+      gap: 10px;
+      width: min(760px, 100%);
+      margin: 0 0 clamp(22px, 4vw, 38px);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface-muted);
+      padding: 14px 16px;
+    }
+
+    .liax-article-toc strong {
+      font-size: 14px;
+      font-weight: 820;
+    }
+
+    .liax-article-toc ol {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .liax-article-toc li[data-level="3"] {
+      padding-left: 16px;
+    }
+
+    .liax-article-toc li[data-level="4"] {
+      padding-left: 32px;
+    }
+
+    .liax-article-toc a {
+      color: var(--color-text);
+      font-size: 14px;
+      font-weight: 720;
+      text-decoration: none;
+    }
+
+    .liax-article-toc a:hover,
+    .liax-article-toc a:focus-visible {
+      color: var(--color-accent);
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
     .liax-article-body {
       max-width: 100%;
       margin: 0;
+    }
+
+    .liax-article-body img,
+    .liax-article-body video {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
     }
 
     h1,
@@ -950,29 +1177,64 @@ export class TemplateRenderer {
       color: var(--color-text);
     }
 
-    pre,
     code {
-      background: var(--color-surface-muted);
-      border: 1px solid var(--color-border);
+      border: 1px solid rgb(80 86 124 / 54%);
       border-radius: 6px;
-    }
-
-    code {
+      background: #1a1b26;
+      color: #c0caf5;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
       padding: 0.1em 0.35em;
     }
 
     pre {
-      overflow: auto;
+      position: relative;
+      max-width: 100%;
+      overflow-x: auto;
+      border: 1px solid #2f3549;
+      border-radius: 8px;
+      background: #1a1b26;
+      color: #c0caf5;
       padding: 16px;
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+    }
+
+    .liax-code-frame {
+      padding-top: 44px;
+    }
+
+    .liax-code-copy {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      border: 1px solid rgb(192 202 245 / 24%);
+      border-radius: 6px;
+      background: #24283b;
+      color: #c0caf5;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 760;
+      line-height: 1;
+      padding: 7px 9px;
+    }
+
+    .liax-code-copy:hover,
+    .liax-code-copy:focus-visible {
+      border-color: #7aa2f7;
+      color: #7aa2f7;
+      outline: 0;
     }
 
     pre code {
       border: 0;
+      background: transparent;
+      color: inherit;
+      display: block;
       padding: 0;
     }
 
     .liax-code-keyword {
-      color: var(--color-accent);
+      color: #bb9af7;
       font-weight: 760;
     }
 
@@ -1165,6 +1427,11 @@ ${input.bodyHtml}
     </main>
   </div>
 ${renderLanguageSwitchScript()}
+<script>
+document.querySelectorAll(".liax-article-body img").forEach((image) => {
+  image.addEventListener("error", () => image.remove(), { once: true });
+});
+</script>
 </body>
 </html>`;
   }

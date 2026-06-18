@@ -83,6 +83,24 @@ function redirectLegacyArticle(request: Request, response: Response, next: NextF
   response.redirect(302, `/${prefix}/posts/${encodeURIComponent(request.params.slug)}${querySuffix(request)}`);
 }
 
+function redirectCurrentArticles(request: Request, response: Response, next: NextFunction): void {
+  if (!isPublicLocalePrefix(request.params.localePrefix)) {
+    next("route");
+    return;
+  }
+
+  response.redirect(302, `/${request.params.localePrefix}/posts${querySuffix(request)}`);
+}
+
+function redirectCurrentArticle(request: Request, response: Response, next: NextFunction): void {
+  if (!isPublicLocalePrefix(request.params.localePrefix)) {
+    next("route");
+    return;
+  }
+
+  response.redirect(302, `/${request.params.localePrefix}/posts/${encodeURIComponent(request.params.slug)}${querySuffix(request)}`);
+}
+
 function redirectLegacyTagDetail(request: Request, response: Response, next: NextFunction): void {
   const prefix = resolvePublicLocalePrefix(request.params.localePrefix);
 
@@ -107,6 +125,8 @@ function redirectLegacySection(request: Request, response: Response, next: NextF
 }
 
 publicRoutes.get("/:localePrefix", redirectLegacyHome);
+publicRoutes.get("/:localePrefix/articles", redirectCurrentArticles);
+publicRoutes.get("/:localePrefix/articles/:slug", redirectCurrentArticle);
 publicRoutes.get("/:localePrefix/articles/:slug", redirectLegacyArticle);
 publicRoutes.get("/:localePrefix/tags/:slug", redirectLegacyTagDetail);
 publicRoutes.get("/:localePrefix/:section", redirectLegacySection);

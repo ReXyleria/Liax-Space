@@ -1,5 +1,6 @@
 import type { Request } from "express";
 
+import { readDetailedOperatingSystem, readLoginCountry } from "../analytics/loginDimensions.js";
 import { AppError } from "../common/AppError.js";
 import { errorCodes } from "../common/errorCodes.js";
 import { AuditLogRepository } from "./AuditLogRepository.js";
@@ -117,6 +118,18 @@ function readUserAgent(request: Request): string | null {
   return typeof userAgent === "string" ? userAgent.slice(0, 512) : null;
 }
 
+function mergeLoginDimensions(metadata: unknown, request: Request, userAgent: string | null): unknown {
+  if (metadata !== null && metadata !== undefined && (typeof metadata !== "object" || Array.isArray(metadata))) {
+    return metadata;
+  }
+
+  return {
+    ...((metadata as Record<string, unknown> | null) ?? {}),
+    country: readLoginCountry(request.headers),
+    operatingSystem: readDetailedOperatingSystem(userAgent)
+  };
+}
+
 export class AuditLogService {
   constructor(private readonly auditLogRepository = new AuditLogRepository()) {}
 
@@ -130,11 +143,16 @@ export class AuditLogService {
 
   async recordFromRequest(input: AuditRequestInput): Promise<AuditLog> {
     const { request, ...logInput } = input;
+    const userAgent = readUserAgent(request);
+    const metadata = input.action === "auth.login_success"
+      ? mergeLoginDimensions(logInput.metadata, request, userAgent)
+      : logInput.metadata;
 
     return this.record({
       ...logInput,
       ip: request.ip ?? null,
-      userAgent: readUserAgent(request),
+      metadata,
+      userAgent,
       userId: input.userId === undefined ? request.auth?.userId ?? null : input.userId
     });
   }

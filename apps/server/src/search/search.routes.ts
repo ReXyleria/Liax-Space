@@ -5,10 +5,15 @@ import { authRequired } from "../common/authRequired.js";
 import { AppError } from "../common/AppError.js";
 import { errorCodes } from "../common/errorCodes.js";
 import { renderLanguageSwitchScript } from "../renderer/TemplateRenderer.js";
+import { SettingsRepository } from "../settings/SettingsRepository.js";
+import type { SiteSettings } from "../settings/settings.types.js";
+import { UserRepository } from "../users/UserRepository.js";
 import { SearchService } from "./SearchService.js";
 import type { SearchResult } from "./SearchService.js";
 
 const searchService = new SearchService();
+const settingsRepository = new SettingsRepository();
+const userRepository = new UserRepository();
 
 export const searchRoutes = Router();
 
@@ -25,6 +30,91 @@ function requireAuth(request: { auth?: { role: string } }) {
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function readStringSetting(settings: SiteSettings, key: string, fallback: string): string {
+  const value = settings[key];
+
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function isPublicAssetUrl(value: string): boolean {
+  if (value.startsWith("/") && !value.startsWith("//") && !/[\u0000-\u001f]/u.test(value)) {
+    return true;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function readLogoUrl(settings: SiteSettings): string | null {
+  const value = settings["site.logoUrl"];
+
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return isPublicAssetUrl(normalized) ? normalized : null;
+}
+
+function renderFaviconLink(settings: SiteSettings): string {
+  const logoUrl = readLogoUrl(settings);
+  return `<link rel="icon" href="${escapeHtml(logoUrl ?? "/favicon.svg")}">`;
+}
+
+function renderPublicLogo(settings: SiteSettings): string {
+  const logoUrl = readLogoUrl(settings);
+  const logoAlt = readStringSetting(settings, "site.logoAlt", "Liax Space");
+
+  if (!logoUrl) {
+    return `<span class="liax-public-logo" aria-hidden="true">LS</span>`;
+  }
+
+  return `<span class="liax-public-logo"><img alt="${escapeHtml(logoAlt)}" src="${escapeHtml(logoUrl)}"></span>`;
+}
+
+function renderPublicAvatar(avatarUrl: string | null): string {
+  if (!avatarUrl || !isPublicAssetUrl(avatarUrl)) {
+    return `<a class="liax-public-avatar" href="/console" aria-label="Console">A</a>`;
+  }
+
+  return `<a class="liax-public-avatar" href="/console" aria-label="Console"><img alt="" src="${escapeHtml(avatarUrl)}"></a>`;
+}
+
+function readCodeInjection(settings: SiteSettings, key: "codeInjection.footer" | "codeInjection.globalHead"): string {
+  const value = settings[key];
+
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function renderGlobalHeadInjection(settings: SiteSettings): string {
+  const injection = readCodeInjection(settings, "codeInjection.globalHead");
+
+  return injection ? `${injection}\n` : "";
+}
+
+function renderFooterInjection(settings: SiteSettings): string {
+  const injection = readCodeInjection(settings, "codeInjection.footer");
+
+  return injection ? `\n${injection}` : "";
+}
+
+async function readPublicAvatarUrl(): Promise<string | null> {
+  const adminUser = await userRepository.findAdminUser();
+
+  if (!adminUser) {
+    return null;
+  }
+
+  const preferences = await settingsRepository.getUserPreferences(adminUser.id);
+  const avatarUrl = preferences?.avatarPublicUrl ?? null;
+
+  return avatarUrl && isPublicAssetUrl(avatarUrl) ? avatarUrl : null;
 }
 
 function formatVisitCount(localePrefix: "zh" | "en", count: number): string {
@@ -118,10 +208,18 @@ function renderPublicSidebar(localePrefix: "zh" | "en", isZh: boolean, query: st
     </div>`;
 }
 
-export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string, results: SearchResult[]): string {
+export function renderPublicSearchPage(
+  localePrefix: "zh" | "en",
+  query: string,
+  results: SearchResult[],
+  settings: SiteSettings = {},
+  avatarUrl: string | null = null
+): string {
   const isZh = localePrefix === "zh";
   const title = isZh ? "搜索" : "Search";
-  const empty = isZh ? "没有找到匹配结果。" : "No matching results found.";
+  const empty = isZh
+    ? "没有找到匹配结果。搜索范围包含已发布文章的标题、摘要、正文、标签和分类；可以换一个关键词，或返回文章列表继续浏览。"
+    : "No matching results found. Search covers published article titles, summaries, body text, tags, and categories. Try another keyword or return to the article list.";
   const resultLabel = isZh ? "搜索结果" : "Search results";
   const alternatePrefix = localePrefix === "zh" ? "en" : "zh";
   const alternateLocale = alternatePrefix === "zh" ? "zh-CN" : "en-US";
@@ -134,6 +232,8 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="canonical" href="/${localePrefix}/search${querySuffix}">
   <link rel="alternate" hreflang="${alternateLocale}" href="/${alternatePrefix}/search${querySuffix}">
+  ${renderFaviconLink(settings)}
+  ${renderGlobalHeadInjection(settings)}
   <title>${title} · Liax Space</title>
   <style>
     :root {
@@ -153,11 +253,21 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
     body {
       min-height: 100%;
       margin: 0;
+      scrollbar-width: none;
       background: var(--color-page);
       color: var(--color-text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       text-rendering: geometricPrecision;
       -webkit-font-smoothing: antialiased;
+    }
+
+    html {
+      scrollbar-width: none;
+    }
+
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      display: none;
     }
 
     .liax-public-shell {
@@ -231,6 +341,14 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
       color: var(--color-primary-text);
       font-size: 12px;
       font-weight: 800;
+      overflow: hidden;
+    }
+
+    .liax-public-logo img,
+    .liax-public-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
 
     .liax-public-header__center {
@@ -545,6 +663,17 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
       padding: 16px;
     }
 
+    .liax-search-empty p {
+      margin: 0 0 10px;
+    }
+
+    .liax-search-empty a {
+      color: var(--color-accent);
+      font-weight: 760;
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+
     @keyframes liax-page-enter {
       from {
         opacity: 0;
@@ -617,7 +746,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
   <div class="liax-public-shell">
     <header class="liax-public-header">
       <a class="liax-public-brand" href="/${localePrefix}">
-        <span class="liax-public-logo" aria-hidden="true">LS</span>
+        ${renderPublicLogo(settings)}
         <span>Liax Space</span>
       </a>
       <div class="liax-public-header__center">
@@ -629,7 +758,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
       <div class="liax-public-header__tools">
         ${renderPublicSearchForm(localePrefix, isZh, "inline", query)}
         ${renderPublicMenuToggle(isZh)}
-        <a class="liax-public-avatar" href="/console" aria-label="Console">A</a>
+        ${renderPublicAvatar(avatarUrl)}
       </div>
     </header>
     ${renderPublicSidebar(localePrefix, isZh, query)}
@@ -641,7 +770,7 @@ export function renderPublicSearchPage(localePrefix: "zh" | "en", query: string,
           <input aria-label="${title}" data-public-search-overlay-trigger name="q" type="search" value="${escapeHtml(query)}">
         </form>
         <h2>${resultLabel}</h2>
-        ${results.length === 0 ? `<p class="liax-search-empty">${empty}</p>` : `<div class="liax-search-results">
+        ${results.length === 0 ? `<div class="liax-search-empty"><p>${empty}</p><a href="/${localePrefix}/posts">${isZh ? "返回文章列表" : "Back to articles"}</a></div>` : `<div class="liax-search-results">
 ${results.map((result) => `        <article class="liax-search-result">
           <a href="${escapeHtml(result.url ?? `/${localePrefix}`)}">${escapeHtml(result.title)}</a>
           <small>${escapeHtml(formatVisitCount(localePrefix, result.visitCount))}</small>
@@ -651,6 +780,7 @@ ${results.map((result) => `        <article class="liax-search-result">
       </section>
     </main>
   </div>
+${renderFooterInjection(settings)}
 ${renderLanguageSwitchScript()}
 </body>
 </html>`;
@@ -670,10 +800,16 @@ searchRoutes.get(
 
     if ((request.params.localePrefix === "zh" || request.params.localePrefix === "en") && shouldRenderPublicSearchHtml(request.headers.accept)) {
       const queryValue = Array.isArray(request.query.q) ? request.query.q[0] : request.query.q;
+      const [settings, avatarUrl] = await Promise.all([
+        settingsRepository.getSiteSettings(),
+        readPublicAvatarUrl()
+      ]);
       response.status(200).type("html").send(renderPublicSearchPage(
         request.params.localePrefix,
         typeof queryValue === "string" ? queryValue : "",
-        results
+        results,
+        settings,
+        avatarUrl
       ));
       return;
     }

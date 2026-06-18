@@ -1,6 +1,5 @@
-import { normalizeDeviceType } from "../analytics/deviceType.js";
 import { VisitRepository, type PopularPage, type VisitDimensionCount } from "../analytics/VisitRepository.js";
-import { DashboardRepository, type RecentPublishedArticle } from "./DashboardRepository.js";
+import { DashboardRepository, type LoginAuditEvent, type RecentPublishedArticle } from "./DashboardRepository.js";
 
 export type DashboardRange = 7 | 14 | 30;
 
@@ -12,8 +11,11 @@ export type DashboardSummary = {
     comments: number;
     guestbook: number;
     moments: number;
+    loginEvents: number;
+    loginUsers: number;
   };
-  visitDevices: VisitDimensionCount[];
+  loginCountries: VisitDimensionCount[];
+  loginDevices: VisitDimensionCount[];
   recentPublished: RecentPublishedArticle[];
   popularPages: PopularPage[];
 };
@@ -31,12 +33,15 @@ function startOfRange(range: DashboardRange): Date {
   return start;
 }
 
-function normalizeVisitDevices(rows: VisitDimensionCount[]): VisitDimensionCount[] {
+function aggregateLoginDimension(
+  events: LoginAuditEvent[],
+  selector: (event: LoginAuditEvent) => string
+): VisitDimensionCount[] {
   const totals = new Map<string, number>();
 
-  for (const row of rows) {
-    const deviceType = normalizeDeviceType(row.label);
-    totals.set(deviceType, (totals.get(deviceType) ?? 0) + row.visits);
+  for (const event of events) {
+    const label = selector(event).trim() || "Unknown";
+    totals.set(label, (totals.get(label) ?? 0) + 1);
   }
 
   return [...totals.entries()]
@@ -54,22 +59,29 @@ export class DashboardService {
     const startDate = startOfRange(range);
     const [
       totals,
-      visitDevices,
+      loginTotals,
+      loginEvents,
       recentPublished,
       popularPages
     ] = await Promise.all([
       this.dashboardRepository.getTotals(),
-      this.visitRepository.listDeviceCounts(startDate),
+      this.dashboardRepository.getLoginTotals(startDate),
+      this.dashboardRepository.listLoginAuditEvents(startDate),
       this.dashboardRepository.listRecentPublishedArticles(),
       this.visitRepository.listPopularPages(startDate)
     ]);
 
     return {
+      loginCountries: aggregateLoginDimension(loginEvents, (event) => event.country),
+      loginDevices: aggregateLoginDimension(loginEvents, (event) => event.operatingSystem),
       popularPages,
       range,
       recentPublished,
-      totals,
-      visitDevices: normalizeVisitDevices(visitDevices)
+      totals: {
+        ...totals,
+        loginEvents: loginTotals.loginEvents,
+        loginUsers: loginTotals.loginUsers
+      }
     };
   }
 }

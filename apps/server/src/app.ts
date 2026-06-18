@@ -18,6 +18,7 @@ import { storagePaths } from "./config/paths.js";
 import { dashboardRoutes } from "./dashboard/dashboard.routes.js";
 import { checkDatabaseHealth } from "./database/health.js";
 import { guestbookRoutes } from "./guestbook/guestbook.routes.js";
+import { mailRoutes } from "./mail/mail.routes.js";
 import { momentRoutes } from "./moments/moments.routes.js";
 import { permissionsRoutes } from "./permissions/permissions.routes.js";
 import { publisherRoutes } from "./publisher/publisher.routes.js";
@@ -26,6 +27,7 @@ import { renderRoutes } from "./renderer/render.routes.js";
 import { searchRoutes } from "./search/search.routes.js";
 import { seoRoutes } from "./seo/seo.routes.js";
 import { settingsRoutes } from "./settings/settings.routes.js";
+import { SettingsRepository } from "./settings/SettingsRepository.js";
 import { setupRoutes } from "./setup/setup.routes.js";
 import { tagRoutes } from "./tags/tags.routes.js";
 import { translationRoutes } from "./translation/translation.routes.js";
@@ -38,6 +40,45 @@ const adminIndexHtml = resolve(adminDistDir, "index.html");
 const adminAssetsDir = resolve(adminDistDir, "assets");
 const defaultJsonBodyLimit = "64kb";
 const articleVersionJsonBodyLimit = "24mb";
+const settingsRepository = new SettingsRepository();
+
+function isPublicAssetUrl(value: string): boolean {
+  if (value.startsWith("/") && !value.startsWith("//") && !/[\u0000-\u001f]/u.test(value)) {
+    return true;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+async function readConfiguredFaviconUrl(): Promise<string | null> {
+  let logoUrl: unknown;
+
+  try {
+    const settings = await settingsRepository.getSiteSettings();
+    logoUrl = settings["site.logoUrl"];
+  } catch {
+    return null;
+  }
+
+  if (typeof logoUrl !== "string" || !logoUrl.trim()) {
+    return null;
+  }
+
+  const normalizedLogoUrl = logoUrl.trim();
+  return isPublicAssetUrl(normalizedLogoUrl) ? normalizedLogoUrl : null;
+}
+
+function sendFallbackFavicon(response: express.Response): void {
+  response
+    .type("image/svg+xml")
+    .setHeader("Cache-Control", "public, max-age=604800");
+  response.send(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#141413"/><text x="32" y="39" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#faf9f5">LS</text></svg>`);
+}
 
 function mountAdminStatic(app: express.Express): void {
   if (!existsSync(adminIndexHtml)) {
@@ -76,15 +117,16 @@ export function createApp() {
   app.get("/", (_request, response) => {
     response.redirect(302, "/zh");
   });
-  app.get("/favicon.ico", (_request, response) => {
-    response.status(204).end();
-  });
-  app.get("/favicon.svg", (_request, response) => {
-    response
-      .type("image/svg+xml")
-      .setHeader("Cache-Control", "public, max-age=604800");
-    response.send(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#141413"/><text x="32" y="39" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#faf9f5">LS</text></svg>`);
-  });
+  app.get(["/favicon.ico", "/favicon.svg"], asyncHandler(async (_request, response) => {
+    const faviconUrl = await readConfiguredFaviconUrl();
+
+    if (faviconUrl) {
+      response.redirect(302, faviconUrl);
+      return;
+    }
+
+    sendFallbackFavicon(response);
+  }));
   app.use((request, response, next) => {
     const origin = request.headers.origin;
 
@@ -119,6 +161,7 @@ export function createApp() {
   app.use("/admin", articleRoutes);
   app.use("/admin", auditRoutes);
   app.use("/admin", guestbookRoutes);
+  app.use("/admin", mailRoutes);
   app.use("/admin", tagRoutes);
   app.use("/admin", categoryRoutes);
   app.use("/admin", momentRoutes);

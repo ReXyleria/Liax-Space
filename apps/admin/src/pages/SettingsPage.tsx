@@ -1,7 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type ReactElement } from "react";
 
 import { attachmentApi } from "../api/attachmentApi";
-import { settingsApi } from "../api/settingsApi";
+import { settingsApi, type MailLog, type MailTemplate, type SeoPushProvider, type SeoPushSubmission } from "../api/settingsApi";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
 import { notifySiteAppearanceUpdated } from "../theme/siteTheme";
@@ -13,6 +13,9 @@ type HomeSettingsForm = {
   contactItemsZh: string;
   icpNumber: string;
   icpUrl: string;
+  injectionContentHead: string;
+  injectionFooter: string;
+  injectionGlobalHead: string;
   logoAlt: string;
   logoUrl: string;
 };
@@ -40,12 +43,24 @@ type SmtpSettingsForm = {
   user: string;
 };
 
+type SeoPushProviderSettings = {
+  enabled: boolean;
+  key: string;
+  site: string;
+  url: string;
+};
+
+type SeoPushSettingsForm = Record<SeoPushProvider, SeoPushProviderSettings>;
+
 const defaultHomeSettings: HomeSettingsForm = {
   brandInfo: "Liax Space · 温暖极简内容空间",
-  contactItemsEn: "Email:hello@example.com\nQQ:123456",
-  contactItemsZh: "邮箱:hello@example.com\nQQ:123456",
-  icpNumber: "备案号待配置",
+  contactItemsEn: "",
+  contactItemsZh: "",
+  icpNumber: "",
   icpUrl: "https://beian.miit.gov.cn",
+  injectionContentHead: "",
+  injectionFooter: "",
+  injectionGlobalHead: "",
   logoAlt: "Liax Space",
   logoUrl: "",
   signature: "Timeless Silent Vigil"
@@ -85,6 +100,27 @@ const defaultSmtpSettings: SmtpSettingsForm = {
   passConfigured: false,
   port: "587",
   user: ""
+};
+
+const defaultSeoPushSettings: SeoPushSettingsForm = {
+  baidu: {
+    enabled: false,
+    key: "",
+    site: "",
+    url: ""
+  },
+  google: {
+    enabled: false,
+    key: "",
+    site: "",
+    url: "https://indexing.googleapis.com/v3/urlNotifications:publish"
+  },
+  indexnow: {
+    enabled: false,
+    key: "",
+    site: "",
+    url: "https://api.indexnow.org/indexnow"
+  }
 };
 
 const allowedLogoTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
@@ -149,18 +185,63 @@ function readSmtpEncryption(settings: Record<string, unknown>): SmtpEncryption {
   return value === "none" || value === "ssl_tls" || value === "starttls" ? value : "starttls";
 }
 
+function readSeoPushSettings(settings: Record<string, unknown>): SeoPushSettingsForm {
+  return {
+    baidu: {
+      enabled: readSiteBooleanWithDefault(settings, "seoPush.baidu.enabled", defaultSeoPushSettings.baidu.enabled),
+      key: readSiteString(settings, "seoPush.baidu.key", defaultSeoPushSettings.baidu.key),
+      site: readSiteString(settings, "seoPush.baidu.site", defaultSeoPushSettings.baidu.site),
+      url: readSiteString(settings, "seoPush.baidu.url", defaultSeoPushSettings.baidu.url)
+    },
+    google: {
+      enabled: readSiteBooleanWithDefault(settings, "seoPush.google.enabled", defaultSeoPushSettings.google.enabled),
+      key: readSiteString(settings, "seoPush.google.key", defaultSeoPushSettings.google.key),
+      site: readSiteString(settings, "seoPush.google.site", defaultSeoPushSettings.google.site),
+      url: readSiteString(settings, "seoPush.google.url", defaultSeoPushSettings.google.url)
+    },
+    indexnow: {
+      enabled: readSiteBooleanWithDefault(settings, "seoPush.indexnow.enabled", defaultSeoPushSettings.indexnow.enabled),
+      key: readSiteString(settings, "seoPush.indexnow.key", defaultSeoPushSettings.indexnow.key),
+      site: readSiteString(settings, "seoPush.indexnow.site", defaultSeoPushSettings.indexnow.site),
+      url: readSiteString(settings, "seoPush.indexnow.url", defaultSeoPushSettings.indexnow.url)
+    }
+  };
+}
+
+function formatSeoPushProvider(provider: SeoPushProvider): string {
+  if (provider === "baidu") {
+    return "Baidu";
+  }
+
+  if (provider === "indexnow") {
+    return "Bing/IndexNow";
+  }
+
+  return "Google";
+}
+
+type SettingsPanel = "ai" | "mail" | "seo" | "site";
+
 export function SettingsPage(): ReactElement {
   const t = useT();
   const [homeSettings, setHomeSettings] = useState<HomeSettingsForm>(defaultHomeSettings);
   const [aiSettings, setAiSettings] = useState<AiSettingsForm>(defaultAiSettings);
   const [smtpSettings, setSmtpSettings] = useState<SmtpSettingsForm>(defaultSmtpSettings);
+  const [seoPushSettings, setSeoPushSettings] = useState<SeoPushSettingsForm>(defaultSeoPushSettings);
+  const [seoPushSubmissions, setSeoPushSubmissions] = useState<SeoPushSubmission[]>([]);
+  const [mailTemplates, setMailTemplates] = useState<MailTemplate[]>([]);
+  const [mailLogs, setMailLogs] = useState<MailLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSite, setIsSavingSite] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isSavingAi, setIsSavingAi] = useState(false);
   const [isSavingSmtp, setIsSavingSmtp] = useState(false);
+  const [isSavingSeoPush, setIsSavingSeoPush] = useState(false);
+  const [isSubmittingSeoPush, setIsSubmittingSeoPush] = useState(false);
+  const [savingMailTemplateId, setSavingMailTemplateId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activePanel, setActivePanel] = useState<SettingsPanel>("site");
 
   useEffect(() => {
     let isMounted = true;
@@ -170,7 +251,12 @@ export function SettingsPage(): ReactElement {
       setErrorMessage(null);
 
       try {
-        const siteSettingsResponse = await settingsApi.getSiteSettings();
+        const [siteSettingsResponse, seoPushResponse, mailTemplatesResponse, mailLogsResponse] = await Promise.all([
+          settingsApi.getSiteSettings(),
+          settingsApi.listSeoPushSubmissions(),
+          settingsApi.listMailTemplates(),
+          settingsApi.listMailLogs()
+        ]);
 
         if (isMounted) {
           const provider = readAiProvider(siteSettingsResponse.settings);
@@ -189,6 +275,9 @@ export function SettingsPage(): ReactElement {
             ),
             icpNumber: readSiteString(siteSettingsResponse.settings, "home.icpNumber", defaultHomeSettings.icpNumber),
             icpUrl: readSiteString(siteSettingsResponse.settings, "home.icpUrl", defaultHomeSettings.icpUrl),
+            injectionContentHead: readSiteString(siteSettingsResponse.settings, "codeInjection.contentHead", defaultHomeSettings.injectionContentHead),
+            injectionFooter: readSiteString(siteSettingsResponse.settings, "codeInjection.footer", defaultHomeSettings.injectionFooter),
+            injectionGlobalHead: readSiteString(siteSettingsResponse.settings, "codeInjection.globalHead", defaultHomeSettings.injectionGlobalHead),
             logoAlt: readSiteString(siteSettingsResponse.settings, "site.logoAlt", defaultHomeSettings.logoAlt),
             logoUrl: readSiteString(siteSettingsResponse.settings, "site.logoUrl", defaultHomeSettings.logoUrl),
             signature: readSiteString(siteSettingsResponse.settings, "home.signature", defaultHomeSettings.signature)
@@ -224,6 +313,10 @@ export function SettingsPage(): ReactElement {
             port: readSiteNumberString(siteSettingsResponse.settings, "smtp.port", defaultSmtpSettings.port),
             user: readSiteString(siteSettingsResponse.settings, "smtp.user", defaultSmtpSettings.user)
           });
+          setSeoPushSettings(readSeoPushSettings(siteSettingsResponse.settings));
+          setSeoPushSubmissions(seoPushResponse.submissions);
+          setMailTemplates(mailTemplatesResponse.templates);
+          setMailLogs(mailLogsResponse.logs);
         }
       } catch (error) {
         if (isMounted) {
@@ -256,6 +349,9 @@ export function SettingsPage(): ReactElement {
         "home.icpNumber": homeSettings.icpNumber.trim(),
         "home.icpUrl": homeSettings.icpUrl.trim(),
         "home.signature": homeSettings.signature.trim(),
+        "codeInjection.contentHead": homeSettings.injectionContentHead.trim(),
+        "codeInjection.footer": homeSettings.injectionFooter.trim(),
+        "codeInjection.globalHead": homeSettings.injectionGlobalHead.trim(),
         "site.logoAlt": homeSettings.logoAlt.trim(),
         "site.logoUrl": homeSettings.logoUrl.trim()
       });
@@ -267,6 +363,9 @@ export function SettingsPage(): ReactElement {
         contactItemsZh: readSiteString(response.settings, "home.contactItems.zh-CN", defaultHomeSettings.contactItemsZh),
         icpNumber: readSiteString(response.settings, "home.icpNumber", defaultHomeSettings.icpNumber),
         icpUrl: readSiteString(response.settings, "home.icpUrl", defaultHomeSettings.icpUrl),
+        injectionContentHead: readSiteString(response.settings, "codeInjection.contentHead", defaultHomeSettings.injectionContentHead),
+        injectionFooter: readSiteString(response.settings, "codeInjection.footer", defaultHomeSettings.injectionFooter),
+        injectionGlobalHead: readSiteString(response.settings, "codeInjection.globalHead", defaultHomeSettings.injectionGlobalHead),
         logoAlt: readSiteString(response.settings, "site.logoAlt", defaultHomeSettings.logoAlt),
         logoUrl: readSiteString(response.settings, "site.logoUrl", defaultHomeSettings.logoUrl),
         signature: readSiteString(response.settings, "home.signature", defaultHomeSettings.signature)
@@ -408,6 +507,95 @@ export function SettingsPage(): ReactElement {
     }
   }
 
+  async function handleSaveSeoPushSettings(): Promise<void> {
+    setIsSavingSeoPush(true);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const patch: Record<string, boolean | string> = {};
+
+      (Object.keys(seoPushSettings) as SeoPushProvider[]).forEach((provider) => {
+        const config = seoPushSettings[provider];
+        patch[`seoPush.${provider}.enabled`] = config.enabled;
+        patch[`seoPush.${provider}.key`] = config.key.trim();
+        patch[`seoPush.${provider}.site`] = config.site.trim();
+        patch[`seoPush.${provider}.url`] = config.url.trim();
+      });
+
+      const response = await settingsApi.updateSiteSettings(patch);
+      setSeoPushSettings(readSeoPushSettings(response.settings));
+      setMessage(t("settings.seoPushSaved"));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("settings.seoPushSaveFailed"));
+    } finally {
+      setIsSavingSeoPush(false);
+    }
+  }
+
+  async function handleSubmitSeoPush(): Promise<void> {
+    setIsSubmittingSeoPush(true);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await settingsApi.submitSeoPush();
+      const logs = await settingsApi.listSeoPushSubmissions();
+      setSeoPushSubmissions(logs.submissions);
+      setMessage(response.submissions.length > 0 ? t("settings.seoPushSubmitted") : t("settings.seoPushSubmittedEmpty"));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("settings.seoPushSubmitFailed"));
+    } finally {
+      setIsSubmittingSeoPush(false);
+    }
+  }
+
+  function updateMailTemplate(templateId: number, patch: Partial<Pick<MailTemplate, "bodyText" | "enabled" | "subject">>): void {
+    setMailTemplates((current) => current.map((template) => (
+      template.id === templateId
+        ? {
+          ...template,
+          ...patch
+        }
+        : template
+    )));
+  }
+
+  async function handleSaveMailTemplate(template: MailTemplate): Promise<void> {
+    const templateId = `${template.key}:${template.locale}`;
+    setSavingMailTemplateId(templateId);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await settingsApi.updateMailTemplate({
+        bodyText: template.bodyText.trim(),
+        enabled: template.enabled,
+        key: template.key,
+        locale: template.locale,
+        subject: template.subject.trim()
+      });
+      const logs = await settingsApi.listMailLogs();
+      setMailTemplates((current) => current.map((item) => (item.id === response.template.id ? response.template : item)));
+      setMailLogs(logs.logs);
+      setMessage(t("settings.mailTemplateSaved"));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("settings.mailTemplateSaveFailed"));
+    } finally {
+      setSavingMailTemplateId(null);
+    }
+  }
+
+  function updateSeoPushProvider(provider: SeoPushProvider, patch: Partial<SeoPushProviderSettings>): void {
+    setSeoPushSettings((current) => ({
+      ...current,
+      [provider]: {
+        ...current[provider],
+        ...patch
+      }
+    }));
+  }
+
   function handleProviderChange(provider: AiSettingsForm["provider"]): void {
     const providerDefaults = aiProviderDefaults[provider];
     setAiSettings((current) => ({
@@ -433,8 +621,28 @@ export function SettingsPage(): ReactElement {
         <h3>{t("settings.system")}</h3>
       </section>
 
+      <nav className="admin-settings-tabs" aria-label={t("settings.tabs")}>
+        {([
+          ["site", "settings.tab.public"],
+          ["ai", "settings.tab.ai"],
+          ["mail", "settings.tab.mail"],
+          ["seo", "settings.tab.seo"]
+        ] as Array<[SettingsPanel, string]>).map(([panel, labelKey]) => (
+          <button
+            aria-current={activePanel === panel ? "page" : undefined}
+            className="liax-button"
+            data-active={activePanel === panel}
+            key={panel}
+            onClick={() => setActivePanel(panel)}
+            type="button"
+          >
+            {t(labelKey)}
+          </button>
+        ))}
+      </nav>
+
       <section className="admin-settings-grid admin-single-column">
-        <article className="liax-card">
+        <article className="liax-card admin-settings-panel" data-active={activePanel === "site"}>
           <div className="liax-card__header">
             <h3>{t("settings.home")}</h3>
           </div>
@@ -526,6 +734,36 @@ export function SettingsPage(): ReactElement {
                 />
                 <small>{t("settings.homeContactItemsEnHelp")}</small>
               </label>
+              <label className="admin-form-field admin-home-settings-grid__wide">
+                <span>{t("settings.codeInjectionGlobalHead")}</span>
+                <textarea
+                  rows={5}
+                  spellCheck={false}
+                  value={homeSettings.injectionGlobalHead}
+                  onChange={(event) => setHomeSettings((current) => ({ ...current, injectionGlobalHead: event.target.value }))}
+                />
+                <small>{t("settings.codeInjectionGlobalHeadHelp")}</small>
+              </label>
+              <label className="admin-form-field admin-home-settings-grid__wide">
+                <span>{t("settings.codeInjectionContentHead")}</span>
+                <textarea
+                  rows={5}
+                  spellCheck={false}
+                  value={homeSettings.injectionContentHead}
+                  onChange={(event) => setHomeSettings((current) => ({ ...current, injectionContentHead: event.target.value }))}
+                />
+                <small>{t("settings.codeInjectionContentHeadHelp")}</small>
+              </label>
+              <label className="admin-form-field admin-home-settings-grid__wide">
+                <span>{t("settings.codeInjectionFooter")}</span>
+                <textarea
+                  rows={5}
+                  spellCheck={false}
+                  value={homeSettings.injectionFooter}
+                  onChange={(event) => setHomeSettings((current) => ({ ...current, injectionFooter: event.target.value }))}
+                />
+                <small>{t("settings.codeInjectionFooterHelp")}</small>
+              </label>
             </div>
             <div className="admin-form-actions">
               <button className="liax-button liax-button--primary" disabled={isSavingSite || isUploadingLogo} onClick={() => void handleSaveHomeSettings()} type="button">
@@ -535,7 +773,7 @@ export function SettingsPage(): ReactElement {
           </div>
         </article>
 
-        <article className="liax-card">
+        <article className="liax-card admin-settings-panel" data-active={activePanel === "ai"}>
           <div className="liax-card__header">
             <h3>{t("settings.ai")}</h3>
           </div>
@@ -604,7 +842,7 @@ export function SettingsPage(): ReactElement {
           </div>
         </article>
 
-        <article className="liax-card">
+        <article className="liax-card admin-settings-panel" data-active={activePanel === "mail"}>
           <div className="liax-card__header">
             <h3>{t("settings.smtp")}</h3>
           </div>
@@ -685,6 +923,135 @@ export function SettingsPage(): ReactElement {
               <button className="liax-button liax-button--primary" disabled={isSavingSmtp} onClick={() => void handleSaveSmtpSettings()} type="button">
                 {isSavingSmtp ? t("settings.saving") : t("settings.smtpSave")}
               </button>
+            </div>
+            <div className="admin-mail-settings">
+              <section className="admin-mail-templates">
+                <h4>{t("settings.mailTemplates")}</h4>
+                {mailTemplates.length === 0 ? (
+                  <p className="admin-muted-text">{t("settings.mailTemplatesEmpty")}</p>
+                ) : mailTemplates.map((template) => {
+                  const templateId = `${template.key}:${template.locale}`;
+
+                  return (
+                    <article className="admin-mail-template" key={templateId}>
+                      <label className="admin-toggle-row">
+                        <input
+                          checked={template.enabled}
+                          onChange={(event) => updateMailTemplate(template.id, { enabled: event.target.checked })}
+                          type="checkbox"
+                        />
+                        <span>{t("settings.mailTemplateEnabled")} · {template.locale}</span>
+                      </label>
+                      <label className="admin-form-field">
+                        <span>{t("settings.mailTemplateSubject")}</span>
+                        <input
+                          value={template.subject}
+                          onChange={(event) => updateMailTemplate(template.id, { subject: event.target.value })}
+                        />
+                      </label>
+                      <label className="admin-form-field">
+                        <span>{t("settings.mailTemplateBody")}</span>
+                        <textarea
+                          rows={7}
+                          value={template.bodyText}
+                          onChange={(event) => updateMailTemplate(template.id, { bodyText: event.target.value })}
+                        />
+                      </label>
+                      <div className="admin-form-actions">
+                        <button
+                          className="liax-button"
+                          disabled={savingMailTemplateId === templateId}
+                          onClick={() => void handleSaveMailTemplate(template)}
+                          type="button"
+                        >
+                          {savingMailTemplateId === templateId ? t("settings.saving") : t("settings.mailTemplateSave")}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+              <section className="admin-mail-log">
+                <h4>{t("settings.mailLogs")}</h4>
+                {mailLogs.length === 0 ? (
+                  <p className="admin-muted-text">{t("settings.mailLogsEmpty")}</p>
+                ) : mailLogs.map((log) => (
+                  <article className="admin-mail-log__item" data-status={log.status} key={log.id}>
+                    <div>
+                      <strong>{t(`settings.mailStatus.${log.status}`)} · {log.subject}</strong>
+                      <small>{new Date(log.createdAt).toLocaleString()} · {log.recipient || t("settings.mailNoRecipient")}</small>
+                    </div>
+                    <p>{log.message || log.providerResponse || "-"}</p>
+                  </article>
+                ))}
+              </section>
+            </div>
+          </div>
+        </article>
+
+        <article className="liax-card admin-settings-panel" data-active={activePanel === "seo"}>
+          <div className="liax-card__header">
+            <h3>{t("settings.seoPush")}</h3>
+          </div>
+          <div className="liax-card__body">
+            <div className="admin-seo-push-grid">
+              {(Object.keys(seoPushSettings) as SeoPushProvider[]).map((provider) => (
+                <section className="admin-seo-push-provider" key={provider}>
+                  <label className="admin-toggle-row">
+                    <input
+                      checked={seoPushSettings[provider].enabled}
+                      onChange={(event) => updateSeoPushProvider(provider, { enabled: event.target.checked })}
+                      type="checkbox"
+                    />
+                    <span>{formatSeoPushProvider(provider)}</span>
+                  </label>
+                  <label className="admin-form-field">
+                    <span>{t("settings.seoPushSite")}</span>
+                    <input
+                      value={seoPushSettings[provider].site}
+                      onChange={(event) => updateSeoPushProvider(provider, { site: event.target.value })}
+                    />
+                  </label>
+                  <label className="admin-form-field">
+                    <span>{t(provider === "google" ? "settings.seoPushAccessToken" : "settings.seoPushKey")}</span>
+                    <input
+                      autoComplete="off"
+                      type="password"
+                      value={seoPushSettings[provider].key}
+                      onChange={(event) => updateSeoPushProvider(provider, { key: event.target.value })}
+                    />
+                  </label>
+                  <label className="admin-form-field">
+                    <span>{t("settings.seoPushEndpoint")}</span>
+                    <input
+                      value={seoPushSettings[provider].url}
+                      onChange={(event) => updateSeoPushProvider(provider, { url: event.target.value })}
+                    />
+                  </label>
+                </section>
+              ))}
+            </div>
+            <div className="admin-form-actions">
+              <button className="liax-button liax-button--primary" disabled={isSavingSeoPush} onClick={() => void handleSaveSeoPushSettings()} type="button">
+                {isSavingSeoPush ? t("settings.saving") : t("settings.seoPushSave")}
+              </button>
+              <button className="liax-button" disabled={isSubmittingSeoPush || isSavingSeoPush} onClick={() => void handleSubmitSeoPush()} type="button">
+                {isSubmittingSeoPush ? t("settings.seoPushSubmitting") : t("settings.seoPushSubmit")}
+              </button>
+            </div>
+            <div className="admin-seo-push-log">
+              <h4>{t("settings.seoPushLogs")}</h4>
+              {seoPushSubmissions.length === 0 ? (
+                <p className="admin-muted-text">{t("settings.seoPushLogsEmpty")}</p>
+              ) : seoPushSubmissions.map((submission) => (
+                <article className="admin-seo-push-log__item" data-status={submission.status} key={submission.id}>
+                  <div>
+                    <strong>{formatSeoPushProvider(submission.provider)} · {t(`settings.seoPushStatus.${submission.status}`)}</strong>
+                    <small>{new Date(submission.createdAt).toLocaleString()} · {submission.submittedCount} URL</small>
+                  </div>
+                  <p>{submission.message || submission.requestUrl || "-"}</p>
+                </article>
+              ))}
             </div>
           </div>
         </article>

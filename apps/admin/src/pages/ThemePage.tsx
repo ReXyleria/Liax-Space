@@ -215,10 +215,19 @@ export function ThemePage(): ReactElement {
         <div className="liax-card__body">
           <p className="admin-muted-text admin-page-intro">{t("theme.summary")}</p>
 
-          {isLoading ? <p className="admin-muted-text">{t("settings.loading")}</p> : null}
-
-          <div className="admin-theme-preset-grid" aria-label={t("theme.presets")}>
-            {visiblePresets.map((preset) => (
+          {isLoading ? (
+            <div className="admin-theme-skeleton-grid" aria-label={t("settings.loading")}>
+              {[0, 1, 2].map((item) => (
+                <div className="admin-theme-skeleton-card" key={item}>
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="admin-theme-preset-grid" aria-label={t("theme.presets")}>
+              {visiblePresets.map((preset) => (
               <article
                 className="admin-theme-preset-card"
                 data-active={preset.id === selectedPresetId}
@@ -255,8 +264,9 @@ export function ThemePage(): ReactElement {
                   </button>
                 </div>
               </article>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
