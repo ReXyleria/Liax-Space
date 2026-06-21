@@ -1448,20 +1448,76 @@ function liaxSetupMobileArticleToc(toc) {
   if (!toc) {
     return;
   }
+  if (!toc.id) {
+    toc.id = "liax-article-toc";
+  }
+  const mobileQuery = window.matchMedia("(max-width: 720px)");
   let toggle = document.querySelector(".liax-article-toc-toggle");
   if (!toggle) {
     toggle = document.createElement("button");
     toggle.className = "liax-article-toc-toggle";
     toggle.type = "button";
     toggle.textContent = document.documentElement.lang.toLowerCase().startsWith("zh") ? "目录" : "Contents";
+    toggle.setAttribute("aria-controls", toc.id);
     document.body.append(toggle);
   }
+
+  const applyState = () => {
+    const isMobile = mobileQuery.matches;
+    const isOpen = document.body.classList.contains("liax-toc-open");
+    toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+
+    if (isMobile) {
+      toc.style.position = "fixed";
+      toc.style.insetBlockStart = "82px";
+      toc.style.insetInlineEnd = "0";
+      toc.style.width = "min(300px, calc(100vw - 52px))";
+      toc.style.maxHeight = "calc(100vh - 112px)";
+      toc.style.borderRadius = "8px 0 0 8px";
+      toc.style.transform = isOpen ? "translateX(0)" : "translateX(calc(100% + 14px))";
+      toc.style.transition = "transform 180ms ease";
+
+      toggle.style.position = "fixed";
+      toggle.style.insetBlockStart = "132px";
+      toggle.style.insetInlineEnd = "0";
+      toggle.style.zIndex = "2147483001";
+      toggle.style.display = "flex";
+      toggle.style.width = "34px";
+      toggle.style.height = "72px";
+      toggle.style.alignItems = "center";
+      toggle.style.justifyContent = "center";
+      toggle.style.border = "1px solid #c7c2b9";
+      toggle.style.borderRight = "0";
+      toggle.style.borderRadius = "8px 0 0 8px";
+      toggle.style.background = "#faf9f5";
+      toggle.style.color = "#3f3a33";
+      toggle.style.boxShadow = "0 10px 24px rgb(20 20 19 / 10%)";
+      toggle.style.font = "inherit";
+      toggle.style.fontSize = "13px";
+      toggle.style.fontWeight = "800";
+      toggle.style.letterSpacing = "0";
+      toggle.style.writingMode = "vertical-rl";
+      return;
+    }
+
+    document.body.classList.remove("liax-toc-open");
+    toggle.style.display = "none";
+    toc.style.position = "";
+    toc.style.insetBlockStart = "";
+    toc.style.insetInlineEnd = "";
+    toc.style.width = "";
+    toc.style.maxHeight = "";
+    toc.style.borderRadius = "";
+    toc.style.transform = "";
+    toc.style.transition = "";
+  };
 
   if (toggle.dataset.liaxReady !== "true") {
     toggle.dataset.liaxReady = "true";
     toggle.addEventListener("click", (event) => {
       event.stopPropagation();
       document.body.classList.toggle("liax-toc-open");
+      applyState();
     });
   }
 
@@ -1470,6 +1526,7 @@ function liaxSetupMobileArticleToc(toc) {
     toc.querySelectorAll("a").forEach((link) => {
       link.addEventListener("click", () => {
         document.body.classList.remove("liax-toc-open");
+        applyState();
       });
     });
   }
@@ -1482,13 +1539,16 @@ function liaxSetupMobileArticleToc(toc) {
         return;
       }
       document.body.classList.remove("liax-toc-open");
+      applyState();
     });
     window.addEventListener("resize", () => {
       if (!window.matchMedia("(max-width: 720px)").matches) {
         document.body.classList.remove("liax-toc-open");
       }
+      applyState();
     });
   }
+  applyState();
 }
 function liaxEnhanceArticlePage() {
   const body = document.querySelector(".liax-article-body");
