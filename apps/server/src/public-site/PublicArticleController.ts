@@ -555,12 +555,12 @@ function renderPublicPolishCss(): string {
         width: min(300px, calc(100vw - 52px)) !important;
         max-height: calc(100vh - 112px) !important;
         border-radius: 8px 0 0 8px !important;
-        transform: translateX(calc(100% + 14px));
-        transition: transform 180ms ease;
+        transform: translateX(calc(100% + 14px)) !important;
+        transition: none !important;
       }
 
       body.liax-toc-open .liax-article-toc {
-        transform: translateX(0);
+        transform: translateX(0) !important;
       }
 
       .liax-article-toc-toggle {
@@ -1474,8 +1474,8 @@ function liaxSetupMobileArticleToc(toc) {
       toc.style.width = "min(300px, calc(100vw - 52px))";
       toc.style.maxHeight = "calc(100vh - 112px)";
       toc.style.borderRadius = "8px 0 0 8px";
-      toc.style.transform = isOpen ? "translateX(0)" : "translateX(calc(100% + 14px))";
-      toc.style.transition = "transform 180ms ease";
+      toc.style.setProperty("transform", isOpen ? "translateX(0)" : "translateX(calc(100% + 14px))", "important");
+      toc.style.setProperty("transition", "none", "important");
 
       toggle.style.position = "fixed";
       toggle.style.top = "132px";
@@ -1512,8 +1512,8 @@ function liaxSetupMobileArticleToc(toc) {
     toc.style.width = "";
     toc.style.maxHeight = "";
     toc.style.borderRadius = "";
-    toc.style.transform = "";
-    toc.style.transition = "";
+    toc.style.removeProperty("transform");
+    toc.style.removeProperty("transition");
   };
 
   if (toggle.dataset.liaxReady !== "true") {
