@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ClipboardEvent, type FormEvent, type ReactElement, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ClipboardEvent, type FormEvent, type ReactElement } from "react";
 
-import { attachmentApi } from "../api/attachmentApi";
+import { attachmentApi, type Attachment } from "../api/attachmentApi";
 import type { ArticleLocale } from "../api/articleApi";
 import { momentApi, type Moment, type MomentStatus } from "../api/momentApi";
+import { AdminLoadingSkeleton } from "../components/AdminLoadingSkeleton";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
 
@@ -19,6 +20,15 @@ type MomentForm = {
 type MomentDraft = {
   content: string;
   imagesText: string;
+};
+
+type MomentImagePreviewProps = {
+  checkingLabel: string;
+  failedLabel: string;
+  image: string;
+  imageKey: string;
+  onImageFailed: (imageKey: string) => void;
+  previewUrl: string;
 };
 
 const initialForm: MomentForm = {
@@ -49,8 +59,98 @@ function replaceMoment(moments: Moment[], moment: Moment): Moment[] {
   return sortMoments(nextMoments);
 }
 
-function parseImageUrls(value: string): string[] {
+function parseImageReferences(value: string): string[] {
   return value.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean);
+}
+
+function buildAttachmentPreviewUrls(attachments: Attachment[]): Record<string, string> {
+  const previewUrls: Record<string, string> = {};
+
+  for (const attachment of attachments) {
+    if (!attachment.publicUrl || !attachment.mimeType.startsWith("image/")) {
+      continue;
+    }
+
+    previewUrls[String(attachment.id)] = attachment.publicUrl;
+    previewUrls[`attachment://${attachment.id}`] = attachment.publicUrl;
+  }
+
+  return previewUrls;
+}
+
+function resolveMomentImagePreview(image: string, attachmentPreviewUrls: Record<string, string>): string | null {
+  if (!image.startsWith("attachment://")) {
+    return image;
+  }
+
+  const attachmentId = image.slice("attachment://".length);
+  return attachmentPreviewUrls[image] ?? attachmentPreviewUrls[attachmentId] ?? null;
+}
+
+function normalizeImageReferences(value: string, attachmentPreviewUrls: Record<string, string>): string[] {
+  return parseImageReferences(value).map((image) => resolveMomentImagePreview(image, attachmentPreviewUrls) ?? image);
+}
+
+function momentImageKey(momentId: number, image: string, index: number): string {
+  return `${momentId}:${index}:${image}`;
+}
+
+function MomentImagePreview({
+  checkingLabel,
+  failedLabel,
+  image,
+  imageKey,
+  onImageFailed,
+  previewUrl
+}: MomentImagePreviewProps): ReactElement {
+  const [status, setStatus] = useState<"checking" | "available" | "failed">("checking");
+
+  useEffect(() => {
+    let isCurrent = true;
+    const probe = new Image();
+
+    setStatus("checking");
+    probe.onload = () => {
+      if (isCurrent) {
+        setStatus("available");
+      }
+    };
+    probe.onerror = () => {
+      if (isCurrent) {
+        setStatus("failed");
+        onImageFailed(imageKey);
+      }
+    };
+    probe.src = previewUrl;
+
+    return () => {
+      isCurrent = false;
+      probe.onload = null;
+      probe.onerror = null;
+    };
+  }, [imageKey, onImageFailed, previewUrl]);
+
+  if (status !== "available") {
+    const label = status === "checking" ? checkingLabel : failedLabel;
+
+    return (
+      <span className="admin-attachment-chip admin-moment-image-fallback" data-state={status}>
+        {`${label}: ${image}`}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      alt=""
+      loading="lazy"
+      onError={() => {
+        setStatus("failed");
+        onImageFailed(imageKey);
+      }}
+      src={previewUrl}
+    />
+  );
 }
 
 export function MomentsPage(): ReactElement {
@@ -63,6 +163,8 @@ export function MomentsPage(): ReactElement {
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [momentDrafts, setMomentDrafts] = useState<Record<number, MomentDraft>>({});
+  const [attachmentPreviewUrls, setAttachmentPreviewUrls] = useState<Record<string, string>>({});
+  const [brokenMomentImages, setBrokenMomentImages] = useState<Record<string, boolean>>({});
   const remainingCharacters = useMemo(() => maxMomentLength - form.content.length, [form.content]);
 
   async function loadMoments(): Promise<void> {
@@ -70,7 +172,13 @@ export function MomentsPage(): ReactElement {
     setErrorMessage(null);
 
     try {
+      const attachmentPreviewPromise = attachmentApi
+        .listAttachments({ limit: 100 })
+        .catch(() => ({ attachments: [] }));
       const response = await momentApi.listMoments();
+      const attachmentPreviewResponse = await attachmentPreviewPromise;
+
+      setAttachmentPreviewUrls(buildAttachmentPreviewUrls(attachmentPreviewResponse.attachments));
       setMoments(sortMoments(response.moments));
       setMomentDrafts(Object.fromEntries(response.moments.map((moment) => [
         moment.id,
@@ -90,6 +198,24 @@ export function MomentsPage(): ReactElement {
     void loadMoments();
   }, []);
 
+  function validateImageReferencesForSave(value: string, momentId?: number): string | null {
+    const images = parseImageReferences(value);
+
+    for (const [index, image] of images.entries()) {
+      const previewUrl = resolveMomentImagePreview(image, attachmentPreviewUrls);
+
+      if (!previewUrl) {
+        return `${t("attachment.statusMissingUrl")}: ${image}`;
+      }
+
+      if (momentId !== undefined && brokenMomentImages[momentImageKey(momentId, image, index)] === true) {
+        return `${t("attachment.previewFailed")}: ${image}`;
+      }
+    }
+
+    return null;
+  }
+
   async function createMoment(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
 
@@ -103,6 +229,13 @@ export function MomentsPage(): ReactElement {
       return;
     }
 
+    const imageError = validateImageReferencesForSave(form.imagesText);
+
+    if (imageError) {
+      setErrorMessage(imageError);
+      return;
+    }
+
     setIsWorking(true);
     setMessage(null);
     setErrorMessage(null);
@@ -110,7 +243,7 @@ export function MomentsPage(): ReactElement {
     try {
       const response = await momentApi.createMoment({
         content: form.content,
-        images: parseImageUrls(form.imagesText),
+        images: normalizeImageReferences(form.imagesText, attachmentPreviewUrls),
         locale: form.locale,
         status: form.status
       });
@@ -210,6 +343,14 @@ export function MomentsPage(): ReactElement {
       return;
     }
 
+    const imageError = validateImageReferencesForSave(draft.imagesText, moment.id);
+
+    if (imageError) {
+      setErrorMessage(imageError);
+      setMessage(null);
+      return;
+    }
+
     setIsWorking(true);
     setMessage(null);
     setErrorMessage(null);
@@ -217,7 +358,7 @@ export function MomentsPage(): ReactElement {
     try {
       const response = await momentApi.updateMoment(moment.id, {
         content: draft.content,
-        images: parseImageUrls(draft.imagesText)
+        images: normalizeImageReferences(draft.imagesText, attachmentPreviewUrls)
       });
       setMoments((currentMoments) => replaceMoment(currentMoments, response.moment));
       setMomentDrafts((currentDrafts) => ({
@@ -256,8 +397,15 @@ export function MomentsPage(): ReactElement {
       for (const file of imageFiles) {
         const result = await attachmentApi.uploadAttachment(file);
 
-        if (result.attachment.publicUrl) {
-          urls.push(result.attachment.publicUrl);
+        const publicUrl = result.attachment.publicUrl;
+
+        if (publicUrl) {
+          urls.push(publicUrl);
+          setAttachmentPreviewUrls((currentPreviewUrls) => ({
+            ...currentPreviewUrls,
+            [String(result.attachment.id)]: publicUrl,
+            [`attachment://${result.attachment.id}`]: publicUrl
+          }));
         }
       }
 
@@ -295,9 +443,12 @@ export function MomentsPage(): ReactElement {
     }
   }
 
-  function handleImageError(event: SyntheticEvent<HTMLImageElement>): void {
-    event.currentTarget.remove();
-  }
+  const handleImageError = useCallback((imageKey: string): void => {
+    setBrokenMomentImages((currentImages) => ({
+      ...currentImages,
+      [imageKey]: true
+    }));
+  }, []);
 
   function momentCharactersLeft(moment: Moment): number {
     return maxMomentLength - draftFor(moment).content.length;
@@ -381,7 +532,7 @@ export function MomentsPage(): ReactElement {
 
       <section className="admin-moment-list">
         {isLoading ? (
-          <p className="admin-muted-text">{t("moment.loading")}</p>
+          <AdminLoadingSkeleton label={t("moment.loading")} rows={3} variant="list" />
         ) : moments.length === 0 ? (
           <p className="liax-card admin-empty-card">{t("moment.empty")}</p>
         ) : (
@@ -417,11 +568,33 @@ export function MomentsPage(): ReactElement {
               <span className={momentCharactersLeft(moment) < 0 ? "admin-error-text" : "admin-muted-text"}>
                 {t("moment.charactersLeft")}: {momentCharactersLeft(moment)}
               </span>
-              {parseImageUrls(draftFor(moment).imagesText).length > 0 ? (
+              {parseImageReferences(draftFor(moment).imagesText).length > 0 ? (
                 <div className="admin-moment-images">
-                  {parseImageUrls(draftFor(moment).imagesText).map((image) => (
-                    <img alt="" key={image} loading="lazy" onError={handleImageError} src={image} />
-                  ))}
+                  {parseImageReferences(draftFor(moment).imagesText).map((image, index) => {
+                    const imageKey = momentImageKey(moment.id, image, index);
+                    const previewUrl = resolveMomentImagePreview(image, attachmentPreviewUrls);
+                    const isBrokenPreview = brokenMomentImages[imageKey] === true;
+
+                    if (!previewUrl || isBrokenPreview) {
+                      return (
+                        <span className="admin-attachment-chip admin-moment-image-fallback" data-state={!previewUrl ? "missing" : "failed"} key={imageKey}>
+                          {`${t(!previewUrl ? "attachment.statusMissingUrl" : "attachment.previewFailed")}: ${image}`}
+                        </span>
+                      );
+                    }
+
+                    return (
+                      <MomentImagePreview
+                        checkingLabel={t("attachment.previewChecking")}
+                        failedLabel={t("attachment.previewFailed")}
+                        image={image}
+                        imageKey={imageKey}
+                        key={imageKey}
+                        onImageFailed={handleImageError}
+                        previewUrl={previewUrl}
+                      />
+                    );
+                  })}
                 </div>
               ) : null}
               <div className="admin-form-actions">

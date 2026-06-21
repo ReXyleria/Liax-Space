@@ -19,7 +19,8 @@ const searchInputSelector = "[data-public-search-overlay-trigger]";
 const adminLocaleStorageKey = "liax.admin.locale";
 const localeCookieKey = "liax.locale";
 const publicLocaleStorageKey = "liax.public.locale";
-const overlayDurationMs = 900;
+const languageRefreshOutMs = 80;
+const languageRefreshInMs = 120;
 
 let isSwitchingLanguage = false;
 let activeSearchOverlay: HTMLElement | null = null;
@@ -48,6 +49,32 @@ function setSidebarOpen(layer: HTMLElement, isOpen: boolean): void {
 function closeSidebars(): void {
   document.querySelectorAll<HTMLElement>(sidebarLayerSelector).forEach((layer) => {
     setSidebarOpen(layer, false);
+  });
+}
+
+function currentPublicSection(): string {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  const section = parts[1] || "home";
+
+  if (parts.length >= 3 && parts[1] === "posts") {
+    return "posts";
+  }
+
+  return ["home", "posts", "tags", "moments", "guestbook", "archives", "search"].includes(section) ? section : "";
+}
+
+function updatePublicNavigationState(): void {
+  const activeSection = currentPublicSection();
+
+  document.querySelectorAll<HTMLAnchorElement>(".liax-public-menu a, .liax-public-sidebar-menu a").forEach((link) => {
+    const targetParts = (link.getAttribute("href") ?? "").split("?")[0].split("/").filter(Boolean);
+    const targetSection = targetParts[1] || "home";
+
+    if (activeSection && targetSection === activeSection) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
   });
 }
 
@@ -115,31 +142,6 @@ function findSwitchTarget(event: MouseEvent): SwitchTarget | null {
 
 function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-function originFromClick(event: MouseEvent, element: HTMLElement): { x: number; y: number } {
-  if (event.clientX !== 0 || event.clientY !== 0) {
-    return {
-      x: event.clientX,
-      y: event.clientY
-    };
-  }
-
-  const rect = element.getBoundingClientRect();
-
-  return {
-    x: rect.left + rect.width / 2,
-    y: rect.top + rect.height / 2
-  };
-}
-
-function radiusForViewport(origin: { x: number; y: number }): number {
-  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
-  const farthestX = Math.max(origin.x, viewportWidth - origin.x);
-  const farthestY = Math.max(origin.y, viewportHeight - origin.y);
-
-  return Math.ceil(Math.hypot(farthestX, farthestY));
 }
 
 function showUnavailableMessage(): void {
@@ -212,9 +214,9 @@ function cloneOverlayContent(targetDocument: Document): HTMLElement {
     node.style.transform = "none";
   });
   Object.assign(shell.style, {
-    opacity: "0",
-    transform: "translateY(10px)",
-    transition: "opacity 360ms ease 120ms, transform 520ms cubic-bezier(0.22, 1, 0.36, 1) 120ms"
+    opacity: "1",
+    transform: "none",
+    transition: "none"
   });
   return shell;
 }
@@ -268,87 +270,58 @@ function replacePageFromTarget(targetDocument: Document): void {
 
   updateHeadFromTarget(targetDocument);
   removeDuplicateLanguageSwitches();
+  updatePublicNavigationState();
   window.scrollTo({ left: scrollX, top: scrollY });
 }
 
-function createOverlay(targetDocument: Document, origin: { x: number; y: number }): HTMLElement {
-  const overlay = document.createElement("div");
-  const rippleOne = document.createElement("span");
-  const rippleTwo = document.createElement("span");
-  const radius = radiusForViewport(origin);
-  const overlayWidth = document.documentElement.clientWidth;
-  const overlayHeight = window.innerHeight;
-
-  overlay.dataset.languageWipeOverlay = "true";
-  Object.assign(overlay.style, {
-    background: "rgba(250, 249, 245, 0.98)",
-    backdropFilter: "blur(2px)",
-    clipPath: `circle(0px at ${origin.x}px ${origin.y}px)`,
-    color: "#141413",
-    height: `${overlayHeight}px`,
-    insetBlockStart: "0",
-    insetInlineStart: "0",
-    overflow: "auto",
-    position: "fixed",
-    transition: `clip-path ${overlayDurationMs}ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 240ms ease`,
-    width: `${overlayWidth}px`,
-    zIndex: "2147483646"
-  });
-  [rippleOne, rippleTwo].forEach((ripple, index) => {
-    Object.assign(ripple.style, {
-      animation: `${index === 0 ? "liax-language-wipe-ripple" : "liax-language-wipe-ripple-soft"} ${overlayDurationMs}ms cubic-bezier(0.22, 1, 0.36, 1) ${index * 90}ms forwards`,
-      border: "2px solid rgba(217, 119, 87, 0.34)",
-      borderRadius: "999px",
-      boxShadow: "0 0 0 1px rgba(250, 249, 245, 0.72), 0 0 40px rgba(217, 119, 87, 0.16), 0 0 80px rgba(20, 20, 19, 0.05)",
-      height: `${radius * 2}px`,
-      left: `${origin.x}px`,
-      opacity: "0",
-      pointerEvents: "none",
-      position: "fixed",
-      top: `${origin.y}px`,
-      transform: "translate(-50%, -50%) scale(0)",
-      width: `${radius * 2}px`,
-      zIndex: "2"
-    });
-    overlay.append(ripple);
-  });
-  overlay.append(cloneOverlayContent(targetDocument));
-
-  return overlay;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function runOverlayAnimation(overlay: HTMLElement, origin: { x: number; y: number }): Promise<void> {
-  const radius = radiusForViewport(origin);
+async function refreshPageFromTarget(targetDocument: Document): Promise<void> {
+  const currentMain = document.querySelector<HTMLElement>("main");
+  const currentFooter = document.querySelector<HTMLElement>(".liax-public-footer, .liax-home-footer");
+  const animatedNodes = [currentMain, currentFooter].filter((node): node is HTMLElement => node !== null);
 
-  return new Promise((resolve) => {
-    let isDone = false;
+  if (prefersReducedMotion() || animatedNodes.length === 0) {
+    replacePageFromTarget(targetDocument);
+    return;
+  }
 
-    function finish(): void {
-      if (isDone) {
+  animatedNodes.forEach((node) => {
+    node.style.transition = `opacity ${languageRefreshOutMs}ms ease`;
+    node.style.opacity = "0";
+  });
+  await sleep(languageRefreshOutMs);
+
+  replacePageFromTarget(targetDocument);
+
+  const nextMain = document.querySelector<HTMLElement>("main");
+  const nextFooter = document.querySelector<HTMLElement>(".liax-public-footer, .liax-home-footer");
+  [nextMain, nextFooter].forEach((node) => {
+    if (!node) {
+      return;
+    }
+    node.style.transition = "none";
+    node.style.opacity = "0";
+  });
+
+  requestAnimationFrame(() => {
+    [nextMain, nextFooter].forEach((node) => {
+      if (!node) {
         return;
       }
-
-      isDone = true;
-      resolve();
-    }
-
-    overlay.addEventListener("transitionend", finish, { once: true });
-    window.setTimeout(finish, overlayDurationMs + 80);
-
-    overlay.getBoundingClientRect();
-    window.setTimeout(() => {
-      overlay.style.clipPath = `circle(${radius}px at ${origin.x}px ${origin.y}px)`;
-      const shell = overlay.querySelector<HTMLElement>(".liax-public-shell");
-
-      if (shell) {
-        shell.style.opacity = "1";
-        shell.style.transform = "translateY(0)";
-      }
-    }, 24);
+      node.style.transition = `opacity ${languageRefreshInMs}ms ease`;
+      node.style.opacity = "1";
+      window.setTimeout(() => {
+        node.style.transition = "";
+        node.style.opacity = "";
+      }, languageRefreshInMs + 20);
+    });
   });
 }
 
-async function switchLanguage(target: SwitchTarget, event: MouseEvent): Promise<void> {
+async function switchLanguage(target: SwitchTarget): Promise<void> {
   if (!target.url) {
     showUnavailableMessage();
     return;
@@ -377,22 +350,9 @@ async function switchLanguage(target: SwitchTarget, event: MouseEvent): Promise<
   isSwitchingLanguage = true;
 
   try {
-    if (prefersReducedMotion()) {
-      replacePageFromTarget(targetDocument);
-      history.pushState({}, "", targetUrl.href);
-      writeLocalePreference(target.locale);
-      return;
-    }
-
-    const origin = originFromClick(event, target.element);
-    const overlay = createOverlay(targetDocument, origin);
-
-    document.body.append(overlay);
-    await runOverlayAnimation(overlay, origin);
-    replacePageFromTarget(targetDocument);
+    await refreshPageFromTarget(targetDocument);
     history.pushState({}, "", targetUrl.href);
     writeLocalePreference(target.locale);
-    overlay.remove();
   } catch {
     window.location.href = targetUrl.href;
   } finally {
@@ -411,8 +371,16 @@ function closeSearchOverlay(): void {
 
   const overlay = activeSearchOverlay;
   activeSearchOverlay = null;
-  document.querySelectorAll(searchInputSelector).forEach((input) => {
+  document.querySelectorAll<HTMLElement>(searchInputSelector).forEach((input) => {
     input.removeAttribute("aria-hidden");
+    input.removeAttribute("inert");
+    const originalTabIndex = input.dataset.publicSearchOriginalTabindex;
+    if (originalTabIndex) {
+      input.setAttribute("tabindex", originalTabIndex);
+    } else {
+      input.removeAttribute("tabindex");
+    }
+    delete input.dataset.publicSearchOriginalTabindex;
   });
 
   if (prefersReducedMotion()) {
@@ -438,8 +406,11 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
   const hint = document.createElement("p");
   const label = searchPlaceholder();
 
-  document.querySelectorAll(searchInputSelector).forEach((input) => {
+  document.querySelectorAll<HTMLElement>(searchInputSelector).forEach((input) => {
     input.setAttribute("aria-hidden", "true");
+    input.dataset.publicSearchOriginalTabindex = input.getAttribute("tabindex") ?? "";
+    input.setAttribute("tabindex", "-1");
+    input.setAttribute("inert", "");
   });
 
   overlay.dataset.publicSearchOverlay = "true";
@@ -460,8 +431,8 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
   backdrop.type = "button";
   backdrop.setAttribute("aria-label", label);
   Object.assign(backdrop.style, {
-    backdropFilter: "blur(18px)",
-    background: "rgba(250, 249, 245, 0.66)",
+    backdropFilter: "blur(2px)",
+    background: "rgba(250, 249, 245, 0.56)",
     border: "0",
     cursor: "default",
     inset: "0",
@@ -473,9 +444,9 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
   panel.setAttribute("role", "search");
   Object.assign(panel.style, {
     background: "#ffffff",
-    border: "1px solid #d1cfc5",
+    border: "1px solid rgba(199, 194, 185, 0.78)",
     borderRadius: "8px",
-    boxShadow: "0 24px 70px rgba(20, 20, 19, 0.18)",
+    boxShadow: "0 20px 60px rgba(20, 20, 19, 0.13)",
     boxSizing: "border-box",
     display: "grid",
     gap: "8px",
@@ -483,8 +454,8 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
     opacity: prefersReducedMotion() ? "1" : "0",
     padding: "14px",
     position: "relative",
-    transform: prefersReducedMotion() ? "none" : "translateY(-16px) scale(0.98)",
-    transition: "opacity 240ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
+    transform: "none",
+    transition: "opacity 140ms ease",
     width: "min(840px, calc(100vw - 40px))"
   });
 
@@ -495,15 +466,27 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
   input.placeholder = label;
   input.setAttribute("aria-label", label);
   Object.assign(input.style, {
-    background: "#f5f4ed",
-    border: "1px solid #d1cfc5",
+    background: "#fffdfa",
+    border: "1px solid #c6d0bf",
     borderRadius: "999px",
     boxSizing: "border-box",
     color: "#141413",
     font: "inherit",
     fontSize: "20px",
+    outline: "0",
     padding: "15px 18px",
+    transition: "border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease",
     width: "100%"
+  });
+  input.addEventListener("focus", () => {
+    input.style.background = "#ffffff";
+    input.style.borderColor = "#5f7a50";
+    input.style.boxShadow = "0 0 0 4px rgba(95, 122, 80, 0.14)";
+  });
+  input.addEventListener("blur", () => {
+    input.style.background = "#fffdfa";
+    input.style.borderColor = "#c6d0bf";
+    input.style.boxShadow = "none";
   });
 
   hint.textContent = document.documentElement.lang.toLowerCase().startsWith("zh")
@@ -536,11 +519,11 @@ function openSearchOverlay(sourceInput: HTMLInputElement): void {
   document.body.append(overlay);
   activeSearchOverlay = overlay;
   sourceInput.blur();
-  requestAnimationFrame(() => {
-    overlay.style.opacity = "1";
-    panel.style.opacity = "1";
-    panel.style.transform = "translateY(0) scale(1)";
-  });
+    requestAnimationFrame(() => {
+      overlay.style.opacity = "1";
+      panel.style.opacity = "1";
+      panel.style.transform = "none";
+    });
   window.setTimeout(() => input.focus(), prefersReducedMotion() ? 0 : 180);
 }
 
@@ -609,7 +592,8 @@ document.addEventListener("click", (event) => {
   }
 
   event.preventDefault();
-  void switchLanguage(target, event);
+  void switchLanguage(target);
 });
 
 removeDuplicateLanguageSwitches();
+updatePublicNavigationState();

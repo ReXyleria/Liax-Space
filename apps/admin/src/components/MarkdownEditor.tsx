@@ -12,6 +12,7 @@ import {
 import { useT } from "../i18n/useT";
 
 export type MarkdownEditorProps = {
+  attachmentPreviewUrls?: Record<string, string>;
   disabled?: boolean;
   forcePlainTextMode?: boolean;
   onDraftChange?: (value: string) => void;
@@ -53,9 +54,52 @@ export type SlashMenuOption = {
 };
 
 export const largeMarkdownDocumentThreshold = 512 * 1024;
+export const incrementalVisualPreviewInitialLength = 256 * 1024;
+export const incrementalVisualPreviewChunkLength = 256 * 1024;
 
 export function shouldUsePlainMarkdownEditor(markdown: string): boolean {
   return markdown.length >= largeMarkdownDocumentThreshold;
+}
+
+export type IncrementalMarkdownPreview = {
+  hasMore: boolean;
+  markdown: string;
+  renderedLength: number;
+  totalLength: number;
+};
+
+export function findIncrementalMarkdownPreviewEnd(markdown: string, requestedLength: number): number {
+  const normalizedLength = Math.max(0, Math.min(markdown.length, Math.floor(requestedLength)));
+
+  if (normalizedLength >= markdown.length) {
+    return markdown.length;
+  }
+
+  const minimumBoundary = Math.max(0, normalizedLength - Math.floor(incrementalVisualPreviewChunkLength / 2));
+  const blankLineBoundary = markdown.lastIndexOf("\n\n", normalizedLength);
+
+  if (blankLineBoundary >= minimumBoundary) {
+    return blankLineBoundary + 2;
+  }
+
+  const lineBoundary = markdown.lastIndexOf("\n", normalizedLength);
+
+  if (lineBoundary >= minimumBoundary) {
+    return lineBoundary + 1;
+  }
+
+  return normalizedLength;
+}
+
+export function createIncrementalMarkdownPreview(markdown: string, requestedLength: number): IncrementalMarkdownPreview {
+  const renderedLength = findIncrementalMarkdownPreviewEnd(markdown, requestedLength);
+
+  return {
+    hasMore: renderedLength < markdown.length,
+    markdown: markdown.slice(0, renderedLength),
+    renderedLength,
+    totalLength: markdown.length
+  };
 }
 
 export function filterSlashMenuOptions<T extends SlashMenuOption>(options: T[], query: string): T[] {
@@ -70,19 +114,116 @@ export function filterSlashMenuOptions<T extends SlashMenuOption>(options: T[], 
   );
 }
 
+export function buildSlashMenuOptions(t: ReturnType<typeof useT>, hasImageUpload: boolean): SlashMenuOption[] {
+  const options = [
+    {
+      description: t("article.slashImageDescription"),
+      id: "image",
+      keywords: ["image", "photo", "picture", "图片", "附件"],
+      label: t("article.slashImage")
+    },
+    {
+      description: t("article.slashHeading1Description"),
+      id: "heading1",
+      keywords: ["heading", "title", "h1", "一级标题", "标题"],
+      label: t("article.slashHeading1")
+    },
+    {
+      description: t("article.slashHeading2Description"),
+      id: "heading2",
+      keywords: ["heading", "title", "h2", "二级标题", "小标题"],
+      label: t("article.slashHeading2")
+    },
+    {
+      description: t("article.slashHeading3Description"),
+      id: "heading3",
+      keywords: ["heading", "title", "h3", "三级标题", "小标题"],
+      label: t("article.slashHeading3")
+    },
+    {
+      description: t("article.slashHeading4Description"),
+      id: "heading4",
+      keywords: ["heading", "title", "h4", "四级标题", "小标题"],
+      label: t("article.slashHeading4")
+    },
+    {
+      description: t("article.slashTableDescription"),
+      id: "table",
+      keywords: ["table", "表格"],
+      label: t("article.slashTable")
+    },
+    {
+      description: t("article.slashCodeDescription"),
+      id: "code",
+      keywords: ["code", "pre", "代码"],
+      label: t("article.slashCode")
+    },
+    {
+      description: t("article.slashQuoteDescription"),
+      id: "quote",
+      keywords: ["quote", "引用"],
+      label: t("article.slashQuote")
+    },
+    {
+      description: t("article.slashMathDescription"),
+      id: "math",
+      keywords: ["math", "formula", "公式"],
+      label: t("article.slashMath")
+    }
+  ] satisfies SlashMenuOption[];
+
+  return options.filter((option) => option.id !== "image" || hasImageUpload);
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-const codeKeywordPattern = /\b(abstract|async|await|boolean|break|case|catch|class|const|continue|default|else|enum|export|extends|false|finally|for|from|function|if|import|interface|let|new|null|number|private|protected|public|return|string|switch|throw|true|try|type|undefined|while)\b/g;
+const codeTokenPattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:0x[\da-fA-F]+|\d+(?:\.\d+)?)\b|\b(?:abstract|async|await|boolean|break|case|catch|class|const|continue|default|else|enum|export|extends|false|finally|for|from|function|if|import|interface|let|new|null|number|private|protected|public|return|string|switch|throw|true|try|type|undefined|while)\b/g;
+
+function classForCodeToken(token: string): string {
+  if (token.startsWith("//") || token.startsWith("/*")) {
+    return "admin-code-comment";
+  }
+
+  if (/^["'`]/u.test(token)) {
+    return "admin-code-string";
+  }
+
+  if (/^(?:0x[\da-f]+|\d)/iu.test(token)) {
+    return "admin-code-number";
+  }
+
+  return "admin-code-keyword";
+}
 
 function renderHighlightedCode(value: string): string {
-  return escapeHtml(value).replace(codeKeywordPattern, '<span class="admin-code-keyword">$1</span>');
+  let highlighted = "";
+  let lastIndex = 0;
+
+  for (const match of value.matchAll(codeTokenPattern)) {
+    const token = match[0];
+    const tokenIndex = match.index ?? 0;
+    highlighted += escapeHtml(value.slice(lastIndex, tokenIndex));
+    highlighted += `<span class="${classForCodeToken(token)}">${escapeHtml(token)}</span>`;
+    lastIndex = tokenIndex + token.length;
+  }
+
+  return highlighted + escapeHtml(value.slice(lastIndex));
 }
 
 export function extractImageSourceFromMarkdown(value: string): string | null {
   const match = /^!\[[^\]]*\]\(([^)]+)\)$/u.exec(value.trim());
   return match?.[1] ?? null;
+}
+
+export type MarkdownRenderOptions = {
+  attachmentPreviewUrls?: Record<string, string>;
+};
+
+function resolveMarkdownImagePreview(sourceUrl: string, options: MarkdownRenderOptions): string | null {
+  const attachmentId = sourceUrl.slice("attachment://".length);
+  return options.attachmentPreviewUrls?.[sourceUrl] ?? options.attachmentPreviewUrls?.[attachmentId] ?? null;
 }
 
 function plainHeadingText(value: string): string {
@@ -130,23 +271,29 @@ export function extractHeadingsFromMarkdown(markdown: string): EditorHeading[] {
   return headings;
 }
 
-function inlineMarkdownToHtml(value: string): string {
+function inlineMarkdownToHtml(value: string, options: MarkdownRenderOptions = {}): string {
   return escapeHtml(value)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
     .replace(/\$([^$\n]+)\$/g, '<span class="admin-editor-math" data-md-math="$1">$1</span>')
     .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, altText: string, sourceUrl: string) => {
-      if (sourceUrl.startsWith("attachment://")) {
-        return `<span class="admin-attachment-chip" data-md-image-alt="${altText}" data-md-image-source="${sourceUrl}">Image: ${altText || sourceUrl}</span>`;
+      if (!sourceUrl.startsWith("attachment://")) {
+        return `<img alt="${altText}" data-md-source="${sourceUrl}" src="${sourceUrl}">`;
       }
 
-      return `<img alt="${altText}" data-md-source="${sourceUrl}" src="${sourceUrl}">`;
+      const previewSource = resolveMarkdownImagePreview(sourceUrl, options);
+
+      if (previewSource) {
+        return `<img alt="${altText}" data-md-source="${sourceUrl}" src="${escapeHtml(previewSource)}">`;
+      }
+
+      return `<span class="admin-attachment-chip" data-md-image-alt="${altText}" data-md-image-source="${sourceUrl}">Image unavailable: ${altText || sourceUrl}</span>`;
     })
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
 }
 
-export function markdownToHtml(markdown: string): string {
+export function markdownToHtml(markdown: string, options: MarkdownRenderOptions = {}): string {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const blocks: string[] = [];
   let index = 0;
@@ -218,7 +365,7 @@ export function markdownToHtml(markdown: string): string {
 
         const colSpanAttribute = colSpan > 1 ? ` colspan="${colSpan}"` : "";
         const rowSpanAttribute = rowSpan > 1 ? ` rowspan="${rowSpan}"` : "";
-        renderedCells.push(`<${tagName}${colSpanAttribute}${rowSpanAttribute}>${inlineMarkdownToHtml(value)}</${tagName}>`);
+        renderedCells.push(`<${tagName}${colSpanAttribute}${rowSpanAttribute}>${inlineMarkdownToHtml(value, options)}</${tagName}>`);
       }
 
       renderedRows.push(`<tr>${renderedCells.join("")}</tr>`);
@@ -297,7 +444,7 @@ export function markdownToHtml(markdown: string): string {
         }
       }
 
-      blocks.push(`<aside class="admin-editor-warning" data-md-block="warning">${inlineMarkdownToHtml(warningLines.join(" "))}</aside>`);
+      blocks.push(`<aside class="admin-editor-warning" data-md-block="warning">${inlineMarkdownToHtml(warningLines.join(" "), options)}</aside>`);
       continue;
     }
 
@@ -308,7 +455,7 @@ export function markdownToHtml(markdown: string): string {
       const headingId = createEditorHeadingId(headingText, headingIndex);
       headingIndex += 1;
       blocks.push(
-        `<h${heading[1].length} data-editor-heading-id="${escapeHtml(headingId)}">${inlineMarkdownToHtml(heading[2])}</h${heading[1].length}>`
+        `<h${heading[1].length} data-editor-heading-id="${escapeHtml(headingId)}">${inlineMarkdownToHtml(heading[2], options)}</h${heading[1].length}>`
       );
       index += 1;
       continue;
@@ -318,7 +465,7 @@ export function markdownToHtml(markdown: string): string {
       const items: string[] = [];
 
       while (index < lines.length && /^[-*]\s+/.test(lines[index] ?? "")) {
-        items.push(`<li>${inlineMarkdownToHtml((lines[index] ?? "").replace(/^[-*]\s+/, ""))}</li>`);
+        items.push(`<li>${inlineMarkdownToHtml((lines[index] ?? "").replace(/^[-*]\s+/, ""), options)}</li>`);
         index += 1;
       }
 
@@ -334,7 +481,7 @@ export function markdownToHtml(markdown: string): string {
         index += 1;
       }
 
-      blocks.push(`<blockquote>${inlineMarkdownToHtml(quoteLines.join(" "))}</blockquote>`);
+      blocks.push(`<blockquote>${inlineMarkdownToHtml(quoteLines.join(" "), options)}</blockquote>`);
       continue;
     }
 
@@ -353,7 +500,7 @@ export function markdownToHtml(markdown: string): string {
       index += 1;
     }
 
-    blocks.push(`<p>${inlineMarkdownToHtml(paragraphLines.join(" "))}</p>`);
+    blocks.push(`<p>${inlineMarkdownToHtml(paragraphLines.join(" "), options)}</p>`);
   }
 
   if (blocks.length === 0) {
@@ -547,6 +694,7 @@ function htmlToMarkdown(root: HTMLElement): string {
 }
 
 export function MarkdownEditor({
+  attachmentPreviewUrls = {},
   disabled = false,
   forcePlainTextMode = false,
   onChange,
@@ -561,6 +709,9 @@ export function MarkdownEditor({
   const slashImageInputRef = useRef<HTMLInputElement | null>(null);
   const slashInsertRangeRef = useRef<Range | null>(null);
   const lastMarkdownRef = useRef<string | null>(null);
+  const lastPreviewKeyRef = useRef<string | null>(null);
+  const lastVisualRenderLengthRef = useRef<number | null>(null);
+  const visualPreviewDocumentKeyRef = useRef<string | null>(null);
   const selectedMathRef = useRef<HTMLElement | null>(null);
   const selectedTableCellRef = useRef<HTMLTableCellElement | null>(null);
   const syncFrameRef = useRef<number | null>(null);
@@ -570,8 +721,18 @@ export function MarkdownEditor({
   const [selectedMathExpression, setSelectedMathExpression] = useState<string | null>(null);
   const [selectedTableContext, setSelectedTableContext] = useState<SelectedTableContext | null>(null);
   const [slashMenu, setSlashMenu] = useState<SlashMenuState | null>(null);
+  const [visualPreviewLength, setVisualPreviewLength] = useState(incrementalVisualPreviewInitialLength);
   const isLargeDocument = forcePlainTextMode || shouldUsePlainMarkdownEditor(value);
-  const isSourceMode = editorMode === "source" || isLargeDocument;
+  const isSourceMode = editorMode === "source";
+  const isLargeVisualPreview = isLargeDocument && !isSourceMode;
+  const editorControlsDisabled = disabled || isLargeVisualPreview;
+  const visualPreview = isLargeDocument
+    ? createIncrementalMarkdownPreview(value, visualPreviewLength)
+    : createIncrementalMarkdownPreview(value, value.length);
+  const visualMarkdown = visualPreview.markdown;
+  const visualPreviewPercent = visualPreview.totalLength > 0
+    ? Math.min(100, Math.round((visualPreview.renderedLength / visualPreview.totalLength) * 100))
+    : 100;
   const selectedTableToolbarStyle: CSSProperties | undefined = selectedTableContext
     ? {
         left: selectedTableContext.toolbarLeft,
@@ -585,69 +746,23 @@ export function MarkdownEditor({
         top: slashMenu.top
       }
     : undefined;
-  const slashMenuOptions = ([
-    {
-      description: t("article.slashImageDescription"),
-      id: "image",
-      keywords: ["image", "photo", "picture", "图片", "附件"],
-      label: t("article.slashImage")
-    },
-    {
-      description: t("article.slashHeading1Description"),
-      id: "heading1",
-      keywords: ["heading", "title", "h1", "一级标题", "标题"],
-      label: t("article.slashHeading1")
-    },
-    {
-      description: t("article.slashHeading2Description"),
-      id: "heading2",
-      keywords: ["heading", "title", "h2", "二级标题", "小标题"],
-      label: t("article.slashHeading2")
-    },
-    {
-      description: t("article.slashHeading3Description"),
-      id: "heading3",
-      keywords: ["heading", "title", "h3", "三级标题", "小标题"],
-      label: t("article.slashHeading3")
-    },
-    {
-      description: t("article.slashHeading4Description"),
-      id: "heading4",
-      keywords: ["heading", "title", "h4", "四级标题", "小标题"],
-      label: t("article.slashHeading4")
-    },
-    {
-      description: t("article.slashTableDescription"),
-      id: "table",
-      keywords: ["table", "表格"],
-      label: t("article.slashTable")
-    },
-    {
-      description: t("article.slashCodeDescription"),
-      id: "code",
-      keywords: ["code", "pre", "代码"],
-      label: t("article.slashCode")
-    },
-    {
-      description: t("article.slashQuoteDescription"),
-      id: "quote",
-      keywords: ["quote", "引用"],
-      label: t("article.slashQuote")
-    },
-    {
-      description: t("article.slashMathDescription"),
-      id: "math",
-      keywords: ["math", "formula", "公式"],
-      label: t("article.slashMath")
-    }
-  ] satisfies SlashMenuOption[]).filter((option) => option.id !== "image" || Boolean(onUploadImage));
+  const slashMenuOptions = buildSlashMenuOptions(t, Boolean(onUploadImage));
   const visibleSlashMenuOptions = slashMenu ? filterSlashMenuOptions(slashMenuOptions, slashMenu.query) : [];
+  const attachmentPreviewKey = Object.entries(attachmentPreviewUrls)
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, previewUrl]) => `${key}\u0000${previewUrl}`)
+    .join("\u0001");
 
   useEffect(() => {
-    if (isLargeDocument) {
-      setEditorMode("source");
+    const nextDocumentKey = value.slice(0, 512);
+
+    if (visualPreviewDocumentKeyRef.current === nextDocumentKey) {
+      return;
     }
-  }, [isLargeDocument]);
+
+    visualPreviewDocumentKeyRef.current = nextDocumentKey;
+    setVisualPreviewLength(incrementalVisualPreviewInitialLength);
+  }, [value]);
 
   useEffect(() => {
     if (!isSourceMode) {
@@ -673,16 +788,24 @@ export function MarkdownEditor({
     if (isSourceMode) {
       editor.innerHTML = "";
       lastMarkdownRef.current = value;
+      lastPreviewKeyRef.current = attachmentPreviewKey;
+      lastVisualRenderLengthRef.current = null;
       return;
     }
 
-    if (value === lastMarkdownRef.current) {
+    if (
+      value === lastMarkdownRef.current &&
+      attachmentPreviewKey === lastPreviewKeyRef.current &&
+      visualPreview.renderedLength === lastVisualRenderLengthRef.current
+    ) {
       return;
     }
 
-    editor.innerHTML = markdownToHtml(value);
+    editor.innerHTML = markdownToHtml(visualMarkdown, { attachmentPreviewUrls });
     lastMarkdownRef.current = value;
-  }, [isSourceMode, value]);
+    lastPreviewKeyRef.current = attachmentPreviewKey;
+    lastVisualRenderLengthRef.current = visualPreview.renderedLength;
+  }, [attachmentPreviewKey, attachmentPreviewUrls, isSourceMode, value, visualMarkdown, visualPreview.renderedLength]);
 
   useEffect(() => {
     const textarea = sourceTextareaRef.current;
@@ -751,6 +874,10 @@ export function MarkdownEditor({
       sourceSyncTimerRef.current = null;
     }
 
+    if (isLargeVisualPreview) {
+      return;
+    }
+
     if (isSourceMode) {
       const nextMarkdown = sourceTextareaRef.current?.value ?? value;
       lastMarkdownRef.current = nextMarkdown;
@@ -795,6 +922,26 @@ export function MarkdownEditor({
 
   function focusSourceEditor(): void {
     sourceTextareaRef.current?.focus();
+  }
+
+  function showVisualMode(): void {
+    if (isSourceMode) {
+      syncMarkdownFromEditor();
+    }
+
+    setEditorMode("visual");
+  }
+
+  function showSourceMode(): void {
+    if (!isSourceMode && !isLargeVisualPreview) {
+      syncMarkdownFromEditor();
+    }
+
+    setEditorMode("source");
+  }
+
+  function loadMoreVisualPreview(): void {
+    setVisualPreviewLength((currentLength) => currentLength + incrementalVisualPreviewChunkLength);
   }
 
   function updateSourceSelection(selectionStart: number, selectionEnd = selectionStart): void {
@@ -875,6 +1022,10 @@ export function MarkdownEditor({
   }
 
   function scheduleMarkdownSync(): void {
+    if (isLargeVisualPreview) {
+      return;
+    }
+
     if (syncFrameRef.current !== null) {
       return;
     }
@@ -886,7 +1037,7 @@ export function MarkdownEditor({
   }
 
   function runCommand(command: string, valueForCommand?: string): void {
-    if (disabled) {
+    if (editorControlsDisabled) {
       return;
     }
 
@@ -896,6 +1047,10 @@ export function MarkdownEditor({
   }
 
   function insertHtml(html: string): void {
+    if (editorControlsDisabled) {
+      return;
+    }
+
     editorRef.current?.focus();
     document.execCommand("insertHTML", false, html);
     syncMarkdownFromEditor();
@@ -971,7 +1126,7 @@ export function MarkdownEditor({
   }
 
   function updateSlashMenuFromSelection(): void {
-    if (disabled) {
+    if (editorControlsDisabled) {
       setSlashMenu(null);
       return;
     }
@@ -1107,6 +1262,10 @@ export function MarkdownEditor({
   }
 
   function handleEditorClick(target: EventTarget | null): void {
+    if (isLargeVisualPreview) {
+      return;
+    }
+
     updateContextFromTarget(target);
     updateSlashMenuFromSelection();
   }
@@ -1309,7 +1468,7 @@ export function MarkdownEditor({
   }
 
   function applySlashMenuOption(option: SlashMenuOption): void {
-    if (disabled) {
+    if (editorControlsDisabled) {
       return;
     }
 
@@ -1342,7 +1501,7 @@ export function MarkdownEditor({
   }
 
   function chooseImageFile(): void {
-    if (disabled || !onUploadImage) {
+    if (editorControlsDisabled || !onUploadImage) {
       return;
     }
 
@@ -1354,11 +1513,19 @@ export function MarkdownEditor({
   }
 
   function handleEditorInput(): void {
+    if (isLargeVisualPreview) {
+      return;
+    }
+
     scheduleMarkdownSync();
     updateSlashMenuFromSelection();
   }
 
   function handleEditorKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (isLargeVisualPreview) {
+      return;
+    }
+
     if (!slashMenu || visibleSlashMenuOptions.length === 0) {
       if (event.key === "Escape") {
         setSlashMenu(null);
@@ -1429,6 +1596,10 @@ export function MarkdownEditor({
   }
 
   async function handlePaste(event: ClipboardEvent<HTMLDivElement>): Promise<void> {
+    if (isLargeVisualPreview) {
+      return;
+    }
+
     const imageFiles = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
 
     if (imageFiles.length > 0 && onUploadImage) {
@@ -1464,8 +1635,8 @@ export function MarkdownEditor({
           <button
             aria-pressed={!isSourceMode}
             className={!isSourceMode ? "admin-visual-editor__mode-button admin-visual-editor__mode-button--active" : "admin-visual-editor__mode-button"}
-            disabled={disabled || isLargeDocument}
-            onClick={() => setEditorMode("visual")}
+            disabled={disabled}
+            onClick={showVisualMode}
             type="button"
           >
             {t("article.editorVisual")}
@@ -1474,49 +1645,59 @@ export function MarkdownEditor({
             aria-pressed={isSourceMode}
             className={isSourceMode ? "admin-visual-editor__mode-button admin-visual-editor__mode-button--active" : "admin-visual-editor__mode-button"}
             disabled={disabled}
-            onClick={() => setEditorMode("source")}
+            onClick={showSourceMode}
             type="button"
           >
             {t("article.editorSource")}
           </button>
         </div>
         {isLargeDocument ? <span className="admin-visual-editor__status">{t("article.editorLargeDocumentMode")}</span> : null}
-        <button disabled={disabled} onClick={() => isSourceMode ? focusSourceEditor() : runCommand("formatBlock", "p")} type="button">
+        <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? focusSourceEditor() : runCommand("formatBlock", "p")} type="button">
           {t("article.editorParagraph")}
         </button>
-        <button disabled={disabled} onClick={() => isSourceMode ? insertSourceHeading(2) : runCommand("formatBlock", "h2")} type="button">
+        <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? insertSourceHeading(2) : runCommand("formatBlock", "h2")} type="button">
           H2
         </button>
-        <button disabled={disabled} onClick={() => isSourceMode ? insertSourceHeading(3) : runCommand("formatBlock", "h3")} type="button">
+        <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? insertSourceHeading(3) : runCommand("formatBlock", "h3")} type="button">
           H3
         </button>
-        <button disabled={disabled} onClick={() => isSourceMode ? wrapSourceSelection("**", "**", "bold text") : runCommand("bold")} type="button">
+        <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? wrapSourceSelection("**", "**", "bold text") : runCommand("bold")} type="button">
           B
         </button>
-        <button disabled={disabled} onClick={() => isSourceMode ? wrapSourceSelection("*", "*", "emphasis") : runCommand("italic")} type="button">
+        <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? wrapSourceSelection("*", "*", "emphasis") : runCommand("italic")} type="button">
           I
         </button>
-        <button disabled={disabled} onClick={() => isSourceMode ? prefixSourceLines("- ", "List item") : runCommand("insertUnorderedList")} type="button">
+        <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? prefixSourceLines("- ", "List item") : runCommand("insertUnorderedList")} type="button">
           {t("article.editorList")}
         </button>
-        <button disabled={disabled} onClick={() => isSourceMode ? insertQuoteBlock() : runCommand("formatBlock", "blockquote")} type="button">
+        <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? insertQuoteBlock() : runCommand("formatBlock", "blockquote")} type="button">
           {t("article.editorQuote")}
         </button>
-        <button disabled={disabled} onClick={insertCodeBlock} type="button">
+        <button disabled={editorControlsDisabled} onClick={insertCodeBlock} type="button">
           {t("article.editorCode")}
         </button>
-        <button disabled={disabled} onClick={insertTable} type="button">
+        <button disabled={editorControlsDisabled} onClick={insertTable} type="button">
           {t("article.editorTable")}
         </button>
-        <button disabled={disabled} onClick={insertMath} type="button">
+        <button disabled={editorControlsDisabled} onClick={insertMath} type="button">
           {t("article.editorMath")}
         </button>
-        <button disabled={disabled || !onUploadImage} onClick={chooseImageFile} type="button">
+        <button disabled={editorControlsDisabled || !onUploadImage} onClick={chooseImageFile} type="button">
           {t("article.slashImage")}
         </button>
         {isPastingImage ? <span className="admin-visual-editor__status">{t("attachment.uploading")}</span> : null}
       </div>
-      {!isSourceMode && selectedTableContext ? (
+      {isLargeVisualPreview ? (
+        <div className="admin-visual-editor__incremental-bar">
+          <span>{t("article.editorVisualPreviewReadonly")} {visualPreviewPercent}%</span>
+          {visualPreview.hasMore ? (
+            <button className="liax-button" disabled={disabled} onClick={loadMoreVisualPreview} type="button">
+              {t("article.editorLoadMoreVisual")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {!isSourceMode && !isLargeVisualPreview && selectedTableContext ? (
         <div
           className="admin-visual-editor__context-toolbar admin-visual-editor__context-toolbar--table"
           aria-label={t("article.editorTableTools")}
@@ -1537,7 +1718,7 @@ export function MarkdownEditor({
           </button>
         </div>
       ) : null}
-      {!isSourceMode && selectedMathExpression !== null ? (
+      {!isSourceMode && !isLargeVisualPreview && selectedMathExpression !== null ? (
         <div className="admin-visual-editor__context-toolbar" aria-label={t("article.editorFormulaTools")}>
           <label className="admin-visual-editor__formula-field">
             <span>{t("article.editorFormulaTools")}</span>
@@ -1603,15 +1784,16 @@ export function MarkdownEditor({
       ) : (
         <div
           className="admin-visual-editor__surface"
-          contentEditable={!disabled}
-          onBlur={syncMarkdownFromEditor}
+          aria-readonly={isLargeVisualPreview ? true : undefined}
+          contentEditable={!editorControlsDisabled}
+          onBlur={isLargeVisualPreview ? undefined : syncMarkdownFromEditor}
           onClick={(event) => handleEditorClick(event.target)}
           onInput={handleEditorInput}
           onKeyDown={handleEditorKeyDown}
           onKeyUp={updateContextFromSelection}
           onPaste={handlePaste}
           ref={editorRef}
-          role="textbox"
+          role={isLargeVisualPreview ? "document" : "textbox"}
           spellCheck
           suppressContentEditableWarning
           tabIndex={disabled ? -1 : 0}

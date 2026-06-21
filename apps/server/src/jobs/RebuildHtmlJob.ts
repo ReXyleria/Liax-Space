@@ -157,6 +157,7 @@ export class RebuildHtmlJob {
 
     const seoMeta = await this.seoService.buildArticleMetaFromTranslation(translation);
     const rendered = await this.markdownRenderer.render({
+      allowedRoles: translation.allowedRoles,
       alternates: seoMeta.alternates,
       canonicalUrl: seoMeta.canonicalUrl,
       contentHash: version.contentHash,

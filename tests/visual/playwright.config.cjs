@@ -12,6 +12,7 @@ module.exports = defineConfig({
   outputDir: path.join(projectRoot, "test-results", "visual"),
   testDir: __dirname,
   testMatch: /.*\.spec\.ts/,
+  workers: process.env.CI ? 2 : 4,
   use: {
     baseURL: "http://127.0.0.1:5173",
     viewport: {

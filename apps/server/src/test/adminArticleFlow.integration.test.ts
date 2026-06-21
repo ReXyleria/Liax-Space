@@ -264,7 +264,7 @@ class MemoryAttachmentRepository {
   private nextId = 1;
   readonly attachments = new Map<number, Attachment & { used: boolean }>();
 
-  async createAttachment(input: CreateAttachmentInput & { used?: boolean }): Promise<Attachment> {
+  async createAttachment(input: CreateAttachmentInput & { references?: Attachment["references"]; used?: boolean }): Promise<Attachment> {
     const attachment: Attachment & { used: boolean } = {
       createdAt: new Date(),
       deletedAt: null,
@@ -272,7 +272,9 @@ class MemoryAttachmentRepository {
       mimeType: input.mimeType,
       originalFilename: input.originalFilename,
       ownerId: input.ownerId,
+      isUsed: input.used ?? false,
       publicUrl: input.publicUrl ?? null,
+      references: input.references ?? [],
       sha256: input.sha256,
       sizeBytes: input.sizeBytes,
       storageKey: input.storageKey,
@@ -1209,7 +1211,7 @@ describe("admin article integration flow", () => {
         }
 
         return {
-          allowedRoles: ["admin"],
+          allowedRoles: ["svip"],
           articleId: 9,
           createdAt: new Date(),
           currentHtmlPath: "en-US/articles/9/99/index.html",
@@ -1236,7 +1238,7 @@ describe("admin article integration flow", () => {
           exp: 9999999999,
           iat: 1,
           purpose: "session",
-          role: "admin",
+          role: "ssvip",
           userId: 1
         };
       }
@@ -1452,11 +1454,14 @@ describe("admin attachment management integration flow", () => {
       originalFilename: "used.png",
       ownerId: 1,
       publicUrl: "/uploads/used.png",
+      references: [{ href: "#articles/1/zh-CN/content", label: "Used article - zh-CN v1", type: "article" }],
       sha256: "used",
       sizeBytes: 9,
       storageKey: "uploads/used.png",
       used: true
     });
+    const allAttachments = await attachmentService.listAttachments();
+    const listedUsedAttachment = allAttachments.find((attachment) => attachment.id === usedAttachment.id);
     const unusedBeforeDelete = await attachmentService.listAttachments({ unusedOnly: true });
     const deleteResult = await attachmentService.softDeleteUnusedAttachments([unusedAttachment.id, usedAttachment.id]);
     const unusedAfterDelete = await attachmentRepository.attachments.get(unusedAttachment.id);
@@ -1464,6 +1469,8 @@ describe("admin attachment management integration flow", () => {
     const unusedAfterList = await attachmentService.listAttachments({ unusedOnly: true });
 
     assert.deepEqual(unusedBeforeDelete.map((attachment) => attachment.id), [unusedAttachment.id]);
+    assert.equal(listedUsedAttachment?.isUsed, true);
+    assert.deepEqual(listedUsedAttachment?.references, [{ href: "#articles/1/zh-CN/content", label: "Used article - zh-CN v1", type: "article" }]);
     assert.equal(deleteResult.deleted, 1);
     assert.ok(unusedAfterDelete?.deletedAt instanceof Date);
     assert.equal(usedAfterDelete?.deletedAt, null);

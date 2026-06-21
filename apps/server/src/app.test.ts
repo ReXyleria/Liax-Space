@@ -41,6 +41,30 @@ describe("app routing", () => {
     }
   });
 
+  it("redirects legacy public article routes instead of returning JSON 404s", async () => {
+    const server = await listen();
+
+    try {
+      const cases = [
+        ["/zh/articles", "/zh/posts"],
+        ["/zh/articles?source=legacy", "/zh/posts?source=legacy"],
+        ["/en/articles/hello-world?source=legacy", "/en/posts/hello-world?source=legacy"],
+        ["/zh-CN/articles", "/zh/posts"],
+        ["/en-US/articles/hello-world", "/en/posts/hello-world"]
+      ] as const;
+
+      for (const [source, target] of cases) {
+        const response = await fetch(`${server.origin}${source}`, { redirect: "manual" });
+
+        assert.equal(response.status, 302, source);
+        assert.equal(response.headers.get("location"), target, source);
+        assert.doesNotMatch(response.headers.get("content-type") ?? "", /application\/json/, source);
+      }
+    } finally {
+      await server.close();
+    }
+  });
+
   it("returns JSON 404s for unmatched reserved API prefixes", async () => {
     const server = await listen();
 

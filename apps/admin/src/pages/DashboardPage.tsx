@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { dashboardApi, type DashboardMetric, type DashboardRange, type DashboardSummary } from "../api/dashboardApi";
 import { AdminLayout } from "../layout/AdminLayout";
 import { useT } from "../i18n/useT";
 
 const ranges: DashboardRange[] = [7, 14, 30];
+const dashboardCache = new Map<DashboardRange, DashboardSummary>();
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat().format(value);
@@ -26,7 +27,8 @@ function maxVisits(items: DashboardMetric[]): number {
   return Math.max(1, ...items.map((item) => item.visits));
 }
 
-function MetricBars({ items, labelFor, showShare = false }: {
+function MetricBars({ emptyLabel, items, labelFor, showShare = false }: {
+  emptyLabel: string;
   items: DashboardMetric[];
   labelFor: (item: DashboardMetric) => string;
   showShare?: boolean;
@@ -35,7 +37,14 @@ function MetricBars({ items, labelFor, showShare = false }: {
   const total = items.reduce((sum, item) => sum + item.visits, 0);
 
   if (items.length === 0) {
-    return <p className="admin-muted-text">-</p>;
+    return (
+      <div className="admin-dashboard-empty-chart" aria-label={emptyLabel}>
+        <span />
+        <span />
+        <span />
+        <strong>{emptyLabel}</strong>
+      </div>
+    );
   }
 
   return (
@@ -58,10 +67,15 @@ function MetricBars({ items, labelFor, showShare = false }: {
 export function DashboardPage(): ReactElement {
   const t = useT();
   const [range, setRange] = useState<DashboardRange>(7);
-  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardSummary | null>(() => dashboardCache.get(7) ?? null);
   const [animationVersion, setAnimationVersion] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !dashboardCache.has(7));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const loadFailedTextRef = useRef(t("dashboard.loadFailed"));
+  useEffect(() => {
+    loadFailedTextRef.current = t("dashboard.loadFailed");
+  }, [t]);
+
   const statCards = useMemo(() => {
     if (!dashboard) {
       return [];
@@ -78,20 +92,27 @@ export function DashboardPage(): ReactElement {
 
   useEffect(() => {
     let isMounted = true;
+    const cachedDashboard = dashboardCache.get(range);
 
-    setIsLoading(true);
+    if (cachedDashboard) {
+      setDashboard(cachedDashboard);
+      setAnimationVersion((current) => current + 1);
+    }
+
+    setIsLoading(!cachedDashboard);
     setErrorMessage(null);
 
     dashboardApi.getDashboard(range)
       .then((response) => {
         if (isMounted) {
+          dashboardCache.set(range, response.dashboard);
           setDashboard(response.dashboard);
           setAnimationVersion((current) => current + 1);
         }
       })
       .catch((error) => {
         if (isMounted) {
-          setErrorMessage(error instanceof Error ? error.message : t("dashboard.loadFailed"));
+          setErrorMessage(error instanceof Error ? error.message : loadFailedTextRef.current);
         }
       })
       .finally(() => {
@@ -103,7 +124,7 @@ export function DashboardPage(): ReactElement {
     return () => {
       isMounted = false;
     };
-  }, [range, t]);
+  }, [range]);
 
   return (
     <AdminLayout>
@@ -146,7 +167,7 @@ export function DashboardPage(): ReactElement {
                 <h3>{t("dashboard.loginCountries")}</h3>
               </div>
               <div className="liax-card__body">
-                <MetricBars items={dashboard.loginCountries} labelFor={(item) => item.label ?? t("dashboard.unknown")} showShare />
+                <MetricBars emptyLabel={t("dashboard.recentEmpty")} items={dashboard.loginCountries} labelFor={(item) => item.label ?? t("dashboard.unknown")} showShare />
               </div>
             </article>
 
@@ -155,7 +176,7 @@ export function DashboardPage(): ReactElement {
                 <h3>{t("dashboard.loginDevices")}</h3>
               </div>
               <div className="liax-card__body">
-                <MetricBars items={dashboard.loginDevices} labelFor={(item) => item.label ?? t("dashboard.unknown")} showShare />
+                <MetricBars emptyLabel={t("dashboard.popularEmpty")} items={dashboard.loginDevices} labelFor={(item) => item.label ?? t("dashboard.unknown")} showShare />
               </div>
             </article>
           </section>

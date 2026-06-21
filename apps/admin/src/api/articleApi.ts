@@ -57,6 +57,10 @@ export type UpdateArticleResponse = {
   article: Article;
 };
 
+export type DeleteArticleResponse = {
+  article: Article;
+};
+
 export type GetArticleResponse = ArticleDetail;
 
 export type TranslationMetadataInput = {
@@ -70,7 +74,7 @@ export type TranslationMetadataInput = {
   publishedAt?: string | null;
 };
 
-export type UpdateTranslationMetadataInput = Omit<TranslationMetadataInput, "locale">;
+export type UpdateTranslationMetadataInput = Partial<Omit<TranslationMetadataInput, "locale">>;
 
 export type TranslationResponse = {
   translation: ArticleTranslation;
@@ -116,6 +120,9 @@ export const articleApi = {
   },
   updateArticle(articleId: number, input: UpdateArticleConfigRequest): Promise<UpdateArticleResponse> {
     return httpClient.patch<UpdateArticleResponse>(`/admin/articles/${articleId}`, input);
+  },
+  deleteArticle(articleId: number): Promise<DeleteArticleResponse> {
+    return httpClient.delete<DeleteArticleResponse>(`/admin/articles/${articleId}`);
   },
   updateTranslation(
     articleId: number,

@@ -52,8 +52,14 @@ type ArticleVersion = {
   versionNo: number;
 };
 
+type ArticleVersionSummary = Omit<ArticleVersion, "mdContent"> & {
+  contentSizeBytes: number;
+  mdContent?: undefined;
+};
+
 type WorkflowState = {
   articleCreated: boolean;
+  importRequests: string[];
   metadataRequests: unknown[];
   publishRequests: unknown[];
   saveRequests: unknown[];
@@ -68,6 +74,27 @@ async function fulfillJson(route: Route, body: unknown, status = 200): Promise<v
     contentType: "application/json",
     status
   });
+}
+
+function dashboardResponse() {
+  return {
+    dashboard: {
+      loginCountries: [{ label: "China", visits: 8 }],
+      loginDevices: [{ label: "Windows 11", visits: 7 }],
+      popularPages: [],
+      range: 7,
+      recentPublished: [],
+      totals: {
+        articles: 3,
+        comments: 0,
+        guestbook: 1,
+        loginEvents: 10,
+        loginUsers: 2,
+        moments: 2,
+        users: 2
+      }
+    }
+  };
 }
 
 function articleDetail(state: WorkflowState): unknown {
@@ -126,6 +153,15 @@ function createVersion(input: Record<string, unknown>, state: WorkflowState): Ar
   };
 }
 
+function versionSummary(version: ArticleVersion): ArticleVersionSummary {
+  const { mdContent: _mdContent, ...summary } = version;
+
+  return {
+    ...summary,
+    contentSizeBytes: Buffer.byteLength(version.mdContent, "utf8")
+  };
+}
+
 async function installArticleWorkflowMocks(page: Page, state: WorkflowState): Promise<void> {
   await page.route("http://127.0.0.1:3000/**", async (route) => {
     const url = new URL(route.request().url());
@@ -161,6 +197,28 @@ async function installArticleWorkflowMocks(page: Page, state: WorkflowState): Pr
           userId: 1
         }
       });
+      return;
+    }
+
+    if (path === "/admin/settings/appearance") {
+      await fulfillJson(route, {
+        settings: {
+          "site.logoAlt": null,
+          "site.logoUrl": null,
+          "theme.customColors": {},
+          "theme.preset": "warm-minimal"
+        }
+      });
+      return;
+    }
+
+    if (path === "/admin/dashboard") {
+      await fulfillJson(route, dashboardResponse());
+      return;
+    }
+
+    if (path === "/admin/attachments" && method === "GET") {
+      await fulfillJson(route, { attachments: [] });
       return;
     }
 
@@ -202,7 +260,7 @@ async function installArticleWorkflowMocks(page: Page, state: WorkflowState): Pr
     }
 
     if (path === "/admin/articles/42/zh-CN/versions" && method === "GET") {
-      await fulfillJson(route, { versions: [...state.versions].reverse() });
+      await fulfillJson(route, { versions: state.versions.map(versionSummary) });
       return;
     }
 
@@ -223,12 +281,40 @@ async function installArticleWorkflowMocks(page: Page, state: WorkflowState): Pr
           : translation
       ));
 
-      await fulfillJson(route, { unchanged, version });
+      await fulfillJson(route, { unchanged, version: versionSummary(version) });
       return;
     }
 
-    if (path === "/admin/articles/42/zh-CN/versions/9001" && method === "GET") {
-      await fulfillJson(route, { version: state.versions.find((version) => version.id === 9001) });
+    if (path === "/admin/articles/42/zh-CN/versions/import" && method === "POST") {
+      const mdContent = "# Imported heading\n\nBody from imported Markdown.";
+      const version = createVersion({ mdContent }, state);
+
+      state.importRequests.push(route.request().headers()["content-type"] ?? "");
+      state.versions.unshift(version);
+      state.translations = state.translations.map((translation) => (
+        translation.locale === "zh-CN"
+          ? { ...translation, currentVersionId: version.id, updatedAt: now }
+          : translation
+      ));
+
+      await fulfillJson(route, { unchanged: false, version: versionSummary(version) });
+      return;
+    }
+
+    const markdownMatch = path.match(/^\/admin\/articles\/42\/zh-CN\/versions\/(\d+)\/markdown$/);
+
+    if (markdownMatch && method === "GET") {
+      const versionId = Number(markdownMatch[1]);
+      const markdown = state.versions.find((version) => version.id === versionId)?.mdContent ?? "";
+      await route.fulfill({
+        body: markdown,
+        contentType: "text/plain; charset=utf-8",
+        headers: {
+          "x-markdown-next-offset": String(markdown.length),
+          "x-markdown-total-length": String(markdown.length)
+        },
+        status: 200
+      });
       return;
     }
 
@@ -313,6 +399,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
 function createWorkflowState(): WorkflowState {
   return {
     articleCreated: false,
+    importRequests: [],
     metadataRequests: [],
     publishRequests: [],
     saveRequests: [],
@@ -338,7 +425,7 @@ test("admin article workflow keeps body, metadata, saving, and publishing as sep
   await page.getByLabel("Slug", { exact: true }).fill("visual-flow");
   await page.getByLabel("SEO title").fill("Visual flow SEO");
   await page.getByLabel("SEO description").fill("A concise visual editing flow.");
-  await page.getByLabel("Summary").fill("A clean article workflow.");
+  await expect(page.getByText("SEO description is present, so summary will be left empty when saved.")).toBeVisible();
   await page.getByRole("button", { name: "Save metadata" }).click();
   await expect(page.getByText("Article metadata saved.")).toBeVisible();
   expect(state.metadataRequests).toHaveLength(1);
@@ -362,20 +449,74 @@ test("admin article workflow keeps body, metadata, saving, and publishing as sep
   ]);
   expect(state.translations.find((translation) => translation.locale === "zh-CN")?.publishedVersionId).toBeNull();
 
+  await expect(page.locator(".admin-markdown-import--editor")).toBeVisible();
+  await expect(page.locator(".admin-markdown-import--editor").getByRole("button", { name: "Upload as new version" })).toHaveCount(1);
+  await expect(page.locator(".admin-markdown-import--editor").getByText("Markdown file", { exact: true })).toHaveCount(0);
+  await page.locator(".admin-markdown-import--editor input[type='file']").setInputFiles({
+    buffer: Buffer.from("# Imported heading\n\nBody from imported Markdown."),
+    mimeType: "text/markdown",
+    name: "imported.md"
+  });
+  await expect(page.getByText("Markdown file saved as a new version.")).toBeVisible();
+  await expect(page.locator(".admin-visual-editor__surface h1")).toHaveText("Imported heading");
+  await expect(page.locator(".admin-visual-editor__surface")).toContainText("Body from imported Markdown.");
+  expect(state.importRequests).toHaveLength(1);
+  expect(state.translations.find((translation) => translation.locale === "zh-CN")?.currentVersionId).toBe(9002);
+
   await page.getByRole("link", { name: "Versions" }).click();
   await expect(page.locator("main").getByRole("heading", { name: "Version management #42 - zh-CN" })).toBeVisible();
   await expect(page.locator(".admin-version-summary")).toContainText("Current version ID");
-  await expect(page.locator(".admin-version-summary")).toContainText("9001");
+  await expect(page.locator(".admin-version-summary")).toContainText("9002");
   await expect(page.locator(".admin-version-summary")).toContainText("Published version ID");
   await expect(page.locator(".admin-version-summary")).toContainText("No version");
 
   await page.getByRole("button", { name: "Publish current version" }).click();
   await expect(page.getByText("Published the current language version.")).toBeVisible();
-  expect(state.publishRequests).toEqual([{ allowedRoles: [], versionId: 9001 }]);
-  expect(state.translations.find((translation) => translation.locale === "zh-CN")?.publishedVersionId).toBe(9001);
+  expect(state.publishRequests).toEqual([{ versionId: 9002 }]);
+  expect(state.translations.find((translation) => translation.locale === "zh-CN")?.publishedVersionId).toBe(9002);
 
   await page.getByRole("link", { name: "Back to content editor" }).click();
-  await expect(page.locator(".admin-visual-editor__surface h1")).toHaveText("Visual heading");
-  await expect(page.locator(".admin-visual-editor__surface")).toContainText("Body from the visual editor.");
+  await expect(page.locator(".admin-visual-editor__surface h1")).toHaveText("Imported heading");
+  await expect(page.locator(".admin-visual-editor__surface")).toContainText("Body from imported Markdown.");
+  expect(state.unknownRequests).toEqual([]);
+});
+
+test("large Markdown content uses incremental visual preview instead of source-only mode", async ({ page }) => {
+  const state = createWorkflowState();
+  const largeMarkdown = [
+    "# Large visual manual",
+    "",
+    ...Array.from({ length: 9000 }, (_item, index) => {
+      const section = index + 1;
+
+      return `## Section ${section}\n\nParagraph ${section} with enough body text to make this document large while keeping the preview readable.`;
+    })
+  ].join("\n\n");
+  const version = createVersion({ mdContent: largeMarkdown }, state);
+  const translation = createTranslation({
+    locale: "zh-CN",
+    seoDescription: "Large visual preview",
+    seoTitle: "Large visual manual",
+    slug: "large-visual-manual",
+    title: "Large visual manual"
+  });
+
+  state.versions.unshift(version);
+  state.translations = [{ ...translation, currentVersionId: version.id }];
+
+  await loginAsAdmin(page);
+  await installArticleWorkflowMocks(page, state);
+
+  await page.goto("/#articles/42/zh-CN/content");
+  await expect(page.locator("main").getByRole("heading", { name: "Content editor #42 - zh-CN" })).toBeVisible();
+  await expect(page.getByText("Large document incremental preview")).toBeVisible();
+  await expect(page.getByText(/Read-only incremental preview/)).toBeVisible();
+  await expect(page.locator(".admin-markdown-panel textarea")).toHaveCount(0);
+  await expect(page.locator(".admin-visual-editor__surface")).toHaveAttribute("contenteditable", "false");
+  await expect(page.locator(".admin-visual-editor__surface h1")).toHaveText("Large visual manual");
+  await expect(page.locator(".admin-visual-editor__surface")).toContainText("Section 1");
+
+  await page.getByRole("button", { name: "Load more visual content" }).click();
+  await expect(page.getByText(/Read-only incremental preview/)).toBeVisible();
   expect(state.unknownRequests).toEqual([]);
 });

@@ -92,21 +92,28 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
       return;
     }
 
-    if ((version.contentSizeBytes ?? 0) >= largeMarkdownDocumentThreshold) {
-      setSelectedVersion(version);
-      setMessage(t("article.largeVersionPreviewSkipped"));
-      setErrorMessage(null);
-      return;
-    }
-
+    setSelectedVersion(version);
     setIsBusy(true);
     setMessage(null);
     setErrorMessage(null);
 
     try {
-      const response = await versionApi.getVersion(articleId, locale, version.id);
-      setSelectedVersion(response.version);
-      setVersions((currentVersions) => replaceVersion(currentVersions, response.version));
+      if ((version.contentSizeBytes ?? 0) >= largeMarkdownDocumentThreshold) {
+        setMessage(t("article.largeVersionPreviewSkipped"));
+        const markdown = await versionApi.getVersionMarkdown(articleId, locale, version.id, {
+          onProgress: ({ content }) => {
+            setSelectedVersion({ ...version, mdContent: content });
+          }
+        });
+        const loadedVersion = { ...version, mdContent: markdown };
+
+        setSelectedVersion(loadedVersion);
+        setVersions((currentVersions) => replaceVersion(currentVersions, loadedVersion));
+      } else {
+        const response = await versionApi.getVersion(articleId, locale, version.id);
+        setSelectedVersion(response.version);
+        setVersions((currentVersions) => replaceVersion(currentVersions, response.version));
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("article.versionLoadFailed"));
     } finally {
@@ -240,11 +247,9 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
                       {t("article.versionSize")}: {formatBytes(selectedVersion.contentSizeBytes)}
                     </p>
                   ) : null}
-                  {(selectedVersion.contentSizeBytes ?? 0) < largeMarkdownDocumentThreshold ? (
-                    <button className="liax-button" disabled={isBusy} onClick={() => void handleSelectVersion(selectedVersion)} type="button">
-                      {t("article.loadVersionPreview")}
-                    </button>
-                  ) : null}
+                  <button className="liax-button" disabled={isBusy} onClick={() => void handleSelectVersion(selectedVersion)} type="button">
+                    {t("article.loadVersionPreview")}
+                  </button>
                 </div>
               ) : (
                 <p className="admin-muted-text">{t("article.noVersions")}</p>

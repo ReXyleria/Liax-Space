@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { LegacyPublicDataSyncJob, mapLegacyMomentStatus, normalizeLegacyImages } from "./LegacyPublicDataSyncJob.js";
+import { LegacyPublicDataSyncJob, mapLegacyArticleAllowedRoles, mapLegacyMomentStatus, normalizeLegacyImages } from "./LegacyPublicDataSyncJob.js";
 
 type LegacySyncConstructorArgs = ConstructorParameters<typeof LegacyPublicDataSyncJob>;
 
@@ -17,6 +17,16 @@ function createLegacyDatabase(): LegacySyncConstructorArgs[0] {
 
       if (sql.includes("FROM ArticleTag")) {
         return [[{ articleSlug: "first-post", tagSlug: "ai" }] as T, []];
+      }
+
+      if (sql.includes("FROM Article") && sql.includes("visibility")) {
+        return [
+          [
+            { articleSlug: "first-post", visibility: "LOGIN_REQUIRED" },
+            { articleSlug: "public-post", visibility: "PUBLIC" }
+          ] as T,
+          []
+        ];
       }
 
       if (sql.includes("FROM Moment")) {
@@ -82,6 +92,14 @@ describe("LegacyPublicDataSyncJob", () => {
     assert.equal(mapLegacyMomentStatus("PUBLIC", new Date("2026-06-14T00:00:00.000Z")), "draft");
   });
 
+  it("maps legacy article visibility to target visible roles", () => {
+    assert.deepEqual(mapLegacyArticleAllowedRoles("PUBLIC"), []);
+    assert.deepEqual(mapLegacyArticleAllowedRoles("LOGIN_REQUIRED"), ["svip", "ssvip"]);
+    assert.deepEqual(mapLegacyArticleAllowedRoles("SVIP"), ["svip"]);
+    assert.deepEqual(mapLegacyArticleAllowedRoles("SSVIP"), ["ssvip"]);
+    assert.deepEqual(mapLegacyArticleAllowedRoles("PRIVATE"), ["ssvip"]);
+  });
+
   it("dry-runs without opening a target transaction", async () => {
     const targetDatabase = createTargetDatabase({ moments: 0, tags: 0 });
     const result = await new LegacyPublicDataSyncJob(createLegacyDatabase(), targetDatabase).run({ apply: false });
@@ -94,13 +112,119 @@ describe("LegacyPublicDataSyncJob", () => {
     assert.equal(targetDatabase.transactionStarts, 0);
   });
 
-  it("refuses apply when the target public data tables are not empty", async () => {
-    const targetDatabase = createTargetDatabase({ moments: 1, tags: 0 });
+  it("applies legacy article visibility to matching target translations", async () => {
+    const writes: Array<{ params: unknown; sql: string }> = [];
+    const targetDatabase: LegacySyncConstructorArgs[1] & { commits: number; transactionStarts: number } = {
+      commits: 0,
+      transactionStarts: 0,
+      beginTransaction: async function beginTransaction(): Promise<void> {
+        this.transactionStarts += 1;
+      },
+      commit: async function commit(): Promise<void> {
+        this.commits += 1;
+      },
+      execute: async <T>(sql: string, params?: unknown): Promise<[T, unknown]> => {
+        writes.push({ params, sql });
 
-    await assert.rejects(
-      () => new LegacyPublicDataSyncJob(createLegacyDatabase(), targetDatabase).run({ apply: true }),
-      /Target database is not empty: tags=0, moments=1/u
-    );
-    assert.equal(targetDatabase.transactionStarts, 0);
+        if (sql.startsWith("INSERT INTO tags")) {
+          return [{ affectedRows: 1, insertId: 10 } as T, []];
+        }
+
+        if (sql.includes("UPDATE article_translations SET allowed_roles_json")) {
+          return [{ affectedRows: 2, insertId: 0 } as T, []];
+        }
+
+        return [{ affectedRows: 1, insertId: 0 } as T, []];
+      },
+      query: async <T>(sql: string): Promise<[T, unknown]> => {
+        if (sql.includes("SELECT (SELECT COUNT(*) FROM tags)")) {
+          return [[{ moments: 0, tags: 0 }] as T, []];
+        }
+
+        if (sql.includes("SELECT article_id, slug FROM article_translations")) {
+          return [
+            [
+              { article_id: 21, slug: "first-post" },
+              { article_id: 22, slug: "public-post" }
+            ] as T,
+            []
+          ];
+        }
+
+        throw new Error(`Unexpected target query: ${sql}`);
+      },
+      rollback: async (): Promise<void> => {}
+    };
+
+    const result = await new LegacyPublicDataSyncJob(createLegacyDatabase(), targetDatabase).run({ apply: true });
+    const visibilityWrites = writes.filter((write) => write.sql.includes("UPDATE article_translations SET allowed_roles_json"));
+
+    assert.equal(targetDatabase.transactionStarts, 1);
+    assert.equal(targetDatabase.commits, 1);
+    assert.equal(result.applied, true);
+    assert.equal(result.legacyArticleVisibilities, 2);
+    assert.equal(result.articleVisibilitiesUpdated, 4);
+    assert.equal(result.skippedArticleVisibilities, 0);
+    assert.deepEqual(visibilityWrites.map((write) => write.params), [
+      [JSON.stringify(["svip", "ssvip"]), 21],
+      [JSON.stringify([]), 22]
+    ]);
+  });
+
+  it("updates article visibility while skipping duplicate public data when the target is not empty", async () => {
+    const writes: Array<{ params: unknown; sql: string }> = [];
+    const targetDatabase: LegacySyncConstructorArgs[1] & { commits: number; transactionStarts: number } = {
+      commits: 0,
+      transactionStarts: 0,
+      beginTransaction: async function beginTransaction(): Promise<void> {
+        this.transactionStarts += 1;
+      },
+      commit: async function commit(): Promise<void> {
+        this.commits += 1;
+      },
+      execute: async <T>(sql: string, params?: unknown): Promise<[T, unknown]> => {
+        writes.push({ params, sql });
+
+        if (sql.includes("UPDATE article_translations SET allowed_roles_json")) {
+          return [{ affectedRows: 2, insertId: 0 } as T, []];
+        }
+
+        throw new Error(`Unexpected target write for non-empty repair: ${sql}`);
+      },
+      query: async <T>(sql: string): Promise<[T, unknown]> => {
+        if (sql.includes("SELECT (SELECT COUNT(*) FROM tags)")) {
+          return [[{ moments: 1, tags: 1 }] as T, []];
+        }
+
+        if (sql.includes("SELECT article_id, slug FROM article_translations")) {
+          return [
+            [
+              { article_id: 21, slug: "first-post" },
+              { article_id: 22, slug: "public-post" }
+            ] as T,
+            []
+          ];
+        }
+
+        throw new Error(`Unexpected target query: ${sql}`);
+      },
+      rollback: async (): Promise<void> => {}
+    };
+
+    const result = await new LegacyPublicDataSyncJob(createLegacyDatabase(), targetDatabase).run({ apply: true });
+
+    assert.equal(targetDatabase.transactionStarts, 1);
+    assert.equal(targetDatabase.commits, 1);
+    assert.equal(result.applied, true);
+    assert.equal(result.tagsInserted, 0);
+    assert.equal(result.tagTranslationsInserted, 0);
+    assert.equal(result.articleTagLinksInserted, 0);
+    assert.equal(result.skippedArticleTagLinks, 1);
+    assert.equal(result.momentsInserted, 0);
+    assert.equal(result.articleVisibilitiesUpdated, 4);
+    assert.deepEqual(writes.map((write) => write.params), [
+      [JSON.stringify(["svip", "ssvip"]), 21],
+      [JSON.stringify([]), 22]
+    ]);
   });
 });

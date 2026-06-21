@@ -8,6 +8,33 @@ function firstHeaderValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function readCountryFromAcceptLanguage(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const languageTags = value.split(",");
+
+  for (const rawTag of languageTags) {
+    const tag = rawTag.split(";")[0]?.trim();
+
+    if (!tag || tag === "*") {
+      continue;
+    }
+
+    const region = tag
+      .split("-")
+      .slice(1)
+      .find((part) => /^[a-z]{2}$/iu.test(part) || /^[0-9]{3}$/u.test(part));
+
+    if (region) {
+      return region.toUpperCase();
+    }
+  }
+
+  return null;
+}
+
 function formatVersion(value: string | undefined): string {
   return value ? value.replace(/_/g, ".") : "";
 }
@@ -30,14 +57,15 @@ function readWindowsVersion(value: string): string | null {
     "5.1": "Windows XP"
   };
 
-  return names[version] ?? `Windows NT ${version}`;
+  return names[version] ? `${names[version]} (NT ${version})` : `Windows NT ${version}`;
 }
 
 export function readLoginCountry(headers: IncomingHttpHeaders | Record<string, unknown>): string {
   const country = firstHeaderValue(headers["cf-ipcountry"])
     ?? firstHeaderValue(headers["x-vercel-ip-country"])
     ?? firstHeaderValue(headers["cloudfront-viewer-country-name"])
-    ?? firstHeaderValue(headers["x-country"]);
+    ?? firstHeaderValue(headers["x-country"])
+    ?? readCountryFromAcceptLanguage(firstHeaderValue(headers["accept-language"]));
 
   return country ? country.slice(0, 80) : "Unknown";
 }

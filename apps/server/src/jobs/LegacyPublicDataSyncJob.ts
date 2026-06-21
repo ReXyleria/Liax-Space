@@ -23,6 +23,11 @@ type LegacyArticleTagRow = RowDataPacket & {
   tagSlug: string;
 };
 
+type LegacyArticleVisibilityRow = RowDataPacket & {
+  articleSlug: string;
+  visibility: string | null;
+};
+
 type LegacyMomentRow = RowDataPacket & {
   content: string;
   images: string | null;
@@ -50,12 +55,15 @@ export type LegacyPublicDataSyncOptions = {
 export type LegacyPublicDataSyncResult = {
   applied: boolean;
   articleTagLinksInserted: number;
+  articleVisibilitiesUpdated: number;
   legacyArticleTagLinks: number;
+  legacyArticleVisibilities: number;
   legacyMoments: number;
   legacyTags: number;
   momentImages: number;
   momentsInserted: number;
   skippedArticleTagLinks: number;
+  skippedArticleVisibilities: number;
   tagTranslationsInserted: number;
   tagsInserted: number;
   targetMomentsBefore: number;
@@ -105,6 +113,36 @@ export function mapLegacyMomentStatus(visibility: string, deletedAt: Date | null
   return visibility === "PUBLIC" && !deletedAt ? "published" : "draft";
 }
 
+export function mapLegacyArticleAllowedRoles(visibility: string | null | undefined): string[] {
+  const normalized = typeof visibility === "string" ? visibility.trim().toUpperCase() : "";
+
+  if (!normalized || normalized === "PUBLIC" || normalized === "GUEST") {
+    return [];
+  }
+
+  const tokens = normalized.split(/[^A-Z0-9]+/u).filter(Boolean);
+  const roles = new Set<string>();
+
+  if (tokens.includes("SSVIP")) {
+    roles.add("ssvip");
+  }
+
+  if (tokens.includes("SVIP")) {
+    roles.add("svip");
+  }
+
+  if (normalized.includes("LOGIN") || normalized.includes("AUTH") || normalized.includes("MEMBER") || normalized === "VIP") {
+    roles.add("svip");
+    roles.add("ssvip");
+  }
+
+  if (roles.size > 0) {
+    return [...roles];
+  }
+
+  return ["ssvip"];
+}
+
 export class LegacyPublicDataSyncJob {
   constructor(
     private readonly legacyDatabase: Queryable,
@@ -121,18 +159,24 @@ export class LegacyPublicDataSyncJob {
     options.onProgress?.("reading legacy article tag links");
     const legacyArticleTags = await this.listLegacyArticleTags();
 
+    options.onProgress?.("reading legacy article visibility");
+    const legacyArticleVisibilities = await this.listLegacyArticleVisibilities();
+
     options.onProgress?.("reading legacy moments");
     const legacyMoments = await this.listLegacyMoments();
 
     const baseResult: LegacyPublicDataSyncResult = {
       applied: false,
       articleTagLinksInserted: 0,
+      articleVisibilitiesUpdated: 0,
       legacyArticleTagLinks: legacyArticleTags.length,
+      legacyArticleVisibilities: legacyArticleVisibilities.length,
       legacyMoments: legacyMoments.length,
       legacyTags: legacyTags.length,
       momentImages: legacyMoments.reduce((count, moment) => count + normalizeLegacyImages(moment.images).length, 0),
       momentsInserted: 0,
       skippedArticleTagLinks: 0,
+      skippedArticleVisibilities: 0,
       tagTranslationsInserted: 0,
       tagsInserted: 0,
       targetMomentsBefore: targetCounts.moments,
@@ -144,9 +188,7 @@ export class LegacyPublicDataSyncJob {
       return baseResult;
     }
 
-    if (targetCounts.tags > 0 || targetCounts.moments > 0) {
-      throw new Error(`Target database is not empty: tags=${targetCounts.tags}, moments=${targetCounts.moments}.`);
-    }
+    const canInsertPublicData = targetCounts.tags === 0 && targetCounts.moments === 0;
 
     await this.targetDatabase.beginTransaction();
     options.onProgress?.("target transaction started");
@@ -154,62 +196,89 @@ export class LegacyPublicDataSyncJob {
     try {
       const tagIdBySlug = new Map<string, number>();
 
-      options.onProgress?.("inserting target tags");
-      for (const tag of legacyTags) {
-        const [result] = await this.targetDatabase.execute<ResultSetHeader>(
-          "INSERT INTO tags (created_at) VALUES (?)",
-          [tag.createdAt]
-        );
-        tagIdBySlug.set(tag.slug, result.insertId);
-        baseResult.tagsInserted += 1;
+      if (canInsertPublicData) {
+        options.onProgress?.("inserting target tags");
+        for (const tag of legacyTags) {
+          const [result] = await this.targetDatabase.execute<ResultSetHeader>(
+            "INSERT INTO tags (created_at) VALUES (?)",
+            [tag.createdAt]
+          );
+          tagIdBySlug.set(tag.slug, result.insertId);
+          baseResult.tagsInserted += 1;
 
-        await this.targetDatabase.execute(
-          `INSERT INTO tag_translations (tag_id, locale, name, slug)
-           VALUES (?, 'zh-CN', ?, ?), (?, 'en-US', ?, ?)`,
-          [result.insertId, tag.name, tag.slug, result.insertId, tag.name, tag.slug]
-        );
-        baseResult.tagTranslationsInserted += 2;
+          await this.targetDatabase.execute(
+            `INSERT INTO tag_translations (tag_id, locale, name, slug)
+             VALUES (?, 'zh-CN', ?, ?), (?, 'en-US', ?, ?)`,
+            [result.insertId, tag.name, tag.slug, result.insertId, tag.name, tag.slug]
+          );
+          baseResult.tagTranslationsInserted += 2;
+        }
+      } else {
+        options.onProgress?.("target public data already exists; skipping tag and moment insertion");
       }
 
       options.onProgress?.("reading target article ids");
       const articleIdBySlug = await this.getTargetArticleIdsBySlug();
 
-      options.onProgress?.("inserting target article tag links");
-      for (const articleTag of legacyArticleTags) {
-        const articleId = articleIdBySlug.get(articleTag.articleSlug);
-        const tagId = tagIdBySlug.get(articleTag.tagSlug);
+      if (canInsertPublicData) {
+        options.onProgress?.("inserting target article tag links");
+        for (const articleTag of legacyArticleTags) {
+          const articleId = articleIdBySlug.get(articleTag.articleSlug);
+          const tagId = tagIdBySlug.get(articleTag.tagSlug);
 
-        if (!articleId || !tagId) {
-          baseResult.skippedArticleTagLinks += 1;
+          if (!articleId || !tagId) {
+            baseResult.skippedArticleTagLinks += 1;
+            continue;
+          }
+
+          await this.targetDatabase.execute(
+            "INSERT IGNORE INTO article_tags (article_id, tag_id) VALUES (?, ?)",
+            [articleId, tagId]
+          );
+          baseResult.articleTagLinksInserted += 1;
+        }
+      } else {
+        baseResult.skippedArticleTagLinks = legacyArticleTags.length;
+      }
+
+      options.onProgress?.("updating target article visibility");
+      for (const articleVisibility of legacyArticleVisibilities) {
+        const articleId = articleIdBySlug.get(articleVisibility.articleSlug);
+
+        if (!articleId) {
+          baseResult.skippedArticleVisibilities += 1;
           continue;
         }
 
-        await this.targetDatabase.execute(
-          "INSERT IGNORE INTO article_tags (article_id, tag_id) VALUES (?, ?)",
-          [articleId, tagId]
+        const allowedRoles = mapLegacyArticleAllowedRoles(articleVisibility.visibility);
+        const [result] = await this.targetDatabase.execute<ResultSetHeader>(
+          "UPDATE article_translations SET allowed_roles_json = ? WHERE article_id = ?",
+          [JSON.stringify(allowedRoles), articleId]
         );
-        baseResult.articleTagLinksInserted += 1;
+        baseResult.articleVisibilitiesUpdated += result.affectedRows;
       }
 
-      options.onProgress?.("inserting target moments");
-      for (const moment of legacyMoments) {
-        const images = normalizeLegacyImages(moment.images);
-        const status = mapLegacyMomentStatus(moment.visibility, moment.deletedAt);
+      if (canInsertPublicData) {
+        options.onProgress?.("inserting target moments");
+        for (const moment of legacyMoments) {
+          const images = normalizeLegacyImages(moment.images);
+          const status = mapLegacyMomentStatus(moment.visibility, moment.deletedAt);
 
-        await this.targetDatabase.execute(
-          `INSERT INTO moments (author_id, locale, content, images_json, status, created_at, updated_at, published_at, deleted_at)
-           VALUES (NULL, 'zh-CN', ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            moment.content,
-            JSON.stringify(images),
-            status,
-            moment.createdAt,
-            moment.updatedAt,
-            status === "published" ? moment.createdAt : null,
-            moment.deletedAt
-          ]
-        );
-        baseResult.momentsInserted += 1;
+          await this.targetDatabase.execute(
+            `INSERT INTO moments (author_id, locale, content, images_json, status, created_at, updated_at, published_at, deleted_at)
+             VALUES (NULL, 'zh-CN', ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              moment.content,
+              JSON.stringify(images),
+              status,
+              moment.createdAt,
+              moment.updatedAt,
+              status === "published" ? moment.createdAt : null,
+              moment.deletedAt
+            ]
+          );
+          baseResult.momentsInserted += 1;
+        }
       }
 
       await this.targetDatabase.commit();
@@ -266,6 +335,14 @@ export class LegacyPublicDataSyncJob {
        INNER JOIN Tag t ON t.id = article_tag.tagId
        WHERE a.deletedAt IS NULL
        ORDER BY a.slug ASC, t.slug ASC`
+    );
+
+    return rows;
+  }
+
+  private async listLegacyArticleVisibilities(): Promise<LegacyArticleVisibilityRow[]> {
+    const [rows] = await this.legacyDatabase.query<LegacyArticleVisibilityRow[]>(
+      "SELECT slug AS articleSlug, visibility FROM Article WHERE deletedAt IS NULL ORDER BY slug ASC, id ASC"
     );
 
     return rows;

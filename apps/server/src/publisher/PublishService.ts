@@ -116,7 +116,7 @@ export class PublishService {
         versionId
       });
 
-      const { htmlPath, version: publishedVersion } = await this.renderPublishedTranslation(translation, version);
+      const { htmlPath, version: publishedVersion } = await this.renderPublishedTranslation(translation, version, allowedRoles);
       const publishedTranslation = await this.translationRepository.updatePublishedVersion({
         articleId,
         currentHtmlPath: htmlPath,
@@ -192,10 +192,12 @@ export class PublishService {
 
   private async renderPublishedTranslation(
     translation: ArticleTranslation,
-    version: ArticleVersion
+    version: ArticleVersion,
+    allowedRoles = translation.allowedRoles
   ): Promise<{ htmlPath: string; version: ArticleVersion }> {
     const seoMeta = await this.seoService.buildArticleMetaFromTranslation(translation);
     const rendered = await this.markdownRenderer.render({
+      allowedRoles,
       alternates: seoMeta.alternates,
       canonicalUrl: seoMeta.canonicalUrl,
       contentHash: version.contentHash,

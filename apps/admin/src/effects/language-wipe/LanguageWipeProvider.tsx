@@ -131,11 +131,10 @@ export function LanguageWipeProvider({ children }: LanguageWipeProviderProps): R
       return;
     }
 
-    commitLocale(activeTransition.toLocale);
     transitionRef.current = null;
     setDebugProgress(0);
     setTransition(null);
-  }, [commitLocale]);
+  }, []);
 
   useEffect(() => {
     transitionRef.current = transition;
@@ -169,6 +168,7 @@ export function LanguageWipeProvider({ children }: LanguageWipeProviderProps): R
 
     transitionRef.current = nextTransition;
     setDebugProgress(0);
+    commitLocale(request.locale);
     setTransition(nextTransition);
   }, [commitLocale, currentLocale, transition]);
 
@@ -227,13 +227,7 @@ export function LanguageWipeProvider({ children }: LanguageWipeProviderProps): R
             key={transition.id}
             onComplete={finishTransition}
             transition={transition}
-          >
-            <LocaleProvider locale={transition.toLocale} onLocaleChange={(locale) => switchLocale({ locale })} persistOnChange={false}>
-              <div className="admin-language-wipe__layer admin-language-wipe__layer--overlay">
-                {children}
-              </div>
-            </LocaleProvider>
-          </LanguageWipeOverlay>
+          />
         ) : null}
       </div>
     </LanguageWipeContext.Provider>

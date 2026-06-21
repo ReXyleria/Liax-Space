@@ -4,6 +4,7 @@ import type { AdminPermission } from "../api/roleApi";
 import { hasAnyPermission } from "../auth/permissions";
 import { settingsApi } from "../api/settingsApi";
 import { LanguageSwitchButton } from "../effects/language-wipe/LanguageSwitchButton";
+import { useVerifiedImageUrl } from "../hooks/useVerifiedImageUrl";
 import { readStoredLocale } from "../i18n/localeStorage";
 import { useT } from "../i18n/useT";
 import { authStore, type AuthState } from "../stores/authStore";
@@ -50,8 +51,12 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
   const [siteLogoAlt, setSiteLogoAlt] = useState("Liax Space");
   const [siteLogoUrl, setSiteLogoUrl] = useState<string | null>(null);
   const [activeHash, setActiveHash] = useState(currentHash);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const publicHomeHref = readPublicHomeHref();
-  const visibleAvatarUrl = avatarUrl ?? loadedAvatarUrl;
+  const avatarImage = useVerifiedImageUrl(avatarUrl ?? loadedAvatarUrl);
+  const logoImage = useVerifiedImageUrl(siteLogoUrl);
+  const visibleAvatarUrl = avatarImage.url;
+  const visibleLogoUrl = logoImage.url;
   const navGroups: Array<{ key: string; items: NavItem[] }> = [
     {
       key: "nav.group.content",
@@ -174,6 +179,7 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
   useEffect(() => {
     function handleHashChange(): void {
       setActiveHash(currentHash());
+      setIsMobileNavOpen(false);
     }
 
     handleHashChange();
@@ -186,10 +192,12 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
 
   return (
     <div className="admin-layout">
-      <aside className="admin-sidebar" aria-label={t("nav.main")}>
+      <aside className="admin-sidebar" aria-label={t("nav.main")} data-open={isMobileNavOpen ? "true" : "false"} id="admin-sidebar">
         <a className="admin-sidebar__brand" href={publicHomeHref} aria-label="Liax Space">
-          <span className="admin-sidebar__logo" aria-hidden={siteLogoUrl ? undefined : "true"}>
-            {siteLogoUrl ? <img alt={siteLogoAlt} src={siteLogoUrl} /> : "LS"}
+          <span className="admin-sidebar__logo" aria-hidden={visibleLogoUrl ? undefined : "true"}>
+            {visibleLogoUrl ? <img alt={siteLogoAlt} onError={() => {
+              logoImage.markFailed();
+            }} src={visibleLogoUrl} /> : <span aria-hidden="true">LS</span>}
           </span>
           <span>Liax Space</span>
         </a>
@@ -203,6 +211,7 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
                   className={item.match(activeHash) ? "admin-nav__link admin-nav__link--active" : "admin-nav__link"}
                   href={item.href}
                   key={item.href}
+                  onClick={() => setIsMobileNavOpen(false)}
                 >
                   {t(item.key)}
                 </a>
@@ -219,12 +228,30 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
             <h1>{t(activeItem.key)}</h1>
           </div>
           <div className="admin-topbar__actions">
+            <button
+              aria-controls="admin-sidebar"
+              aria-expanded={isMobileNavOpen}
+              aria-label={isMobileNavOpen ? t("nav.closeMain") : t("nav.openMain")}
+              className="admin-mobile-nav-toggle"
+              onClick={() => setIsMobileNavOpen((isOpen) => !isOpen)}
+              type="button"
+            >
+              <span aria-hidden="true"></span>
+              <span aria-hidden="true"></span>
+              <span aria-hidden="true"></span>
+            </button>
             <LanguageSwitchButton />
             <a className="admin-topbar__avatar" href={publicHomeHref} aria-label="Liax Space">
-              {visibleAvatarUrl ? <img alt="" src={visibleAvatarUrl} /> : "A"}
+              {visibleAvatarUrl ? <img alt="" onError={() => {
+                avatarImage.markFailed();
+              }} src={visibleAvatarUrl} /> : <span aria-hidden="true">A</span>}
             </a>
           </div>
         </header>
+
+        <div className="admin-mobile-strategy" role="note">
+          {t("layout.mobileStrategy")}
+        </div>
 
         <main className="admin-content">{children}</main>
       </div>

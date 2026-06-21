@@ -7,6 +7,7 @@ import { defaultCustomRuleEngine } from "./custom-rules/rules.js";
 import {
   DEFAULT_RENDERER_VERSION,
   DEFAULT_TEMPLATE_VERSION,
+  type ArticleTocItem,
   type MarkdownRenderInput,
   type MarkdownRenderResult,
 } from "./renderer.types.js";
@@ -19,10 +20,37 @@ function escapeAttribute(value: string): string {
   return escapeHtml(value).replace(/"/g, "&quot;");
 }
 
-const codeKeywordPattern = /\b(abstract|async|await|boolean|break|case|catch|class|const|continue|default|else|enum|export|extends|false|finally|for|from|function|if|import|interface|let|new|null|number|private|protected|public|return|string|switch|throw|true|try|type|undefined|while)\b/g;
+const codeTokenPattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:0x[\da-fA-F]+|\d+(?:\.\d+)?)\b|\b(?:abstract|async|await|boolean|break|case|catch|class|const|continue|default|else|enum|export|extends|false|finally|for|from|function|if|import|interface|let|new|null|number|private|protected|public|return|string|switch|throw|true|try|type|undefined|while)\b/g;
+
+function classForCodeToken(token: string): string {
+  if (token.startsWith("//") || token.startsWith("/*")) {
+    return "liax-code-comment";
+  }
+
+  if (/^["'`]/u.test(token)) {
+    return "liax-code-string";
+  }
+
+  if (/^(?:0x[\da-f]+|\d)/iu.test(token)) {
+    return "liax-code-number";
+  }
+
+  return "liax-code-keyword";
+}
 
 function renderHighlightedCode(value: string): string {
-  return escapeHtml(value).replace(codeKeywordPattern, '<span class="liax-code-keyword">$1</span>');
+  let highlighted = "";
+  let lastIndex = 0;
+
+  for (const match of value.matchAll(codeTokenPattern)) {
+    const token = match[0];
+    const tokenIndex = match.index ?? 0;
+    highlighted += escapeHtml(value.slice(lastIndex, tokenIndex));
+    highlighted += `<span class="${classForCodeToken(token)}">${escapeHtml(token)}</span>`;
+    lastIndex = tokenIndex + token.length;
+  }
+
+  return highlighted + escapeHtml(value.slice(lastIndex));
 }
 
 function renderInlineMarkdown(value: string): string {
@@ -81,7 +109,49 @@ function isTableSeparator(line: string): boolean {
   return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
-function renderHeading(line: string): string {
+interface MarkdownRenderContext {
+  tocItems: ArticleTocItem[];
+  usedHeadingIds: Set<string>;
+}
+
+function isArticleTocHeadingLevel(level: number): level is ArticleTocItem["level"] {
+  return level >= 2 && level <= 4;
+}
+
+function plainHeadingText(value: string): string {
+  return value
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\$([^$\n]+)\$/g, "$1")
+    .replace(/[`*_~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function createHeadingSlug(text: string, index: number): string {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+
+  return normalized || `section-${index + 1}`;
+}
+
+function createUniqueHeadingId(baseId: string, usedIds: Set<string>): string {
+  let nextId = baseId;
+  let suffix = 2;
+
+  while (usedIds.has(nextId)) {
+    nextId = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  usedIds.add(nextId);
+  return nextId;
+}
+
+function renderHeading(line: string, context: MarkdownRenderContext): string {
   const match = /^(#{1,6})\s+(.+)$/.exec(line);
 
   if (match === null) {
@@ -89,7 +159,17 @@ function renderHeading(line: string): string {
   }
 
   const level = match[1].length;
-  return `<h${level}>${renderInlineMarkdown(match[2].trim())}</h${level}>`;
+  const headingSource = match[2].trim();
+
+  if (!isArticleTocHeadingLevel(level)) {
+    return `<h${level}>${renderInlineMarkdown(headingSource)}</h${level}>`;
+  }
+
+  const headingText = plainHeadingText(headingSource) || `Section ${context.tocItems.length + 1}`;
+  const headingId = createUniqueHeadingId(createHeadingSlug(headingText, context.tocItems.length), context.usedHeadingIds);
+  context.tocItems.push({ id: headingId, level, text: headingText });
+
+  return `<h${level} id="${escapeAttribute(headingId)}">${renderInlineMarkdown(headingSource)}</h${level}>`;
 }
 
 function renderCodeBlock(lines: string[], startIndex: number): { html: string; nextIndex: number } {
@@ -217,9 +297,10 @@ function renderParagraph(lines: string[], startIndex: number): { html: string; n
   };
 }
 
-function renderMarkdownBody(markdown: string): string {
+function renderMarkdownBody(markdown: string): { html: string; articleToc: ArticleTocItem[] } {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const blocks: string[] = [];
+  const context: MarkdownRenderContext = { tocItems: [], usedHeadingIds: new Set() };
   let index = 0;
 
   while (index < lines.length) {
@@ -238,7 +319,7 @@ function renderMarkdownBody(markdown: string): string {
     }
 
     if (isHeading(line)) {
-      blocks.push(renderHeading(line));
+      blocks.push(renderHeading(line, context));
       index += 1;
       continue;
     }
@@ -282,7 +363,7 @@ function renderMarkdownBody(markdown: string): string {
     index = result.nextIndex;
   }
 
-  return blocks.join("\n");
+  return { html: blocks.join("\n"), articleToc: context.tocItems };
 }
 
 export class MarkdownRenderer {
@@ -299,10 +380,12 @@ export class MarkdownRenderer {
     const customRuleVersion = input.customRuleVersion ?? this.customRuleEngine.getVersion();
     const attachmentResolution = await this.attachmentResolver.resolve(input.markdown);
     const markdownWithCustomRules = this.customRuleEngine.apply(attachmentResolution.markdown);
-    const bodyHtml = renderMarkdownBody(markdownWithCustomRules);
+    const { html: bodyHtml, articleToc } = renderMarkdownBody(markdownWithCustomRules);
     const sanitizedBodyHtml = sanitizeHtml(bodyHtml);
     const html = this.templateRenderer.render({
+      allowedRoles: input.allowedRoles,
       alternates: input.alternates,
+      articleToc,
       bodyHtml: sanitizedBodyHtml,
       canonicalUrl: input.canonicalUrl,
       description: input.description,
@@ -326,6 +409,7 @@ export class MarkdownRenderer {
       rendererVersion,
       sanitizedBodyHtml,
       templateVersion,
+      articleToc,
       usedAttachments: attachmentResolution.usedAttachments
     };
   }

@@ -40,5 +40,9 @@ describe("CleanupUnusedAttachmentsJob", () => {
 
   it("does not select a shared storage file when any matching attachment is referenced", () => {
     assert.match(unusedAttachmentCleanupQuery, /referenced_attachment\.storage_key = attachments\.storage_key/u);
+    assert.match(unusedAttachmentCleanupQuery, /user_preferences\.avatar_attachment_id = referenced_avatar\.id/u);
+    assert.ok(unusedAttachmentCleanupQuery.includes("site_settings.`key` = 'site.logoUrl'"));
+    assert.match(unusedAttachmentCleanupQuery, /JSON_CONTAINS\(moments\.images_json, JSON_QUOTE\(attachments\.public_url\)\)/u);
+    assert.match(unusedAttachmentCleanupQuery, /JSON_CONTAINS\(moments\.images_json, JSON_QUOTE\(CONCAT\('attachment:\/\/', attachments\.id\)\)\)/u);
   });
 });

@@ -1,23 +1,45 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type MouseEvent, type ReactElement } from "react";
 
 import { articleApi, type ArticleDetail, type ArticleLocale, type ArticleTranslation } from "../api/articleApi";
 import { attachmentApi, type Attachment } from "../api/attachmentApi";
 import { roleApi, type AdminRoleDefinition } from "../api/roleApi";
-import { translationApi } from "../api/translationApi";
-import { versionApi } from "../api/versionApi";
 import { LocaleTabs } from "../components/LocaleTabs";
-import { SeoFields, type TranslationMetadataFormValue } from "../components/SeoFields";
 import { AdminLayout } from "../layout/AdminLayout";
 import { hasAnyPermission } from "../auth/permissions";
+import { AdminLoadingSkeleton } from "../components/AdminLoadingSkeleton";
 import { useT } from "../i18n/useT";
 import { authStore, type AuthState } from "../stores/authStore";
-import { dateTimeLocalToIso, toDateTimeLocalValue } from "../utils/dateTime";
 
 const articleLocales: ArticleLocale[] = ["zh-CN", "en-US"];
 const articleStatusOptions = ["draft", "active", "archived"] as const;
+const fallbackRoleOptions: AdminRoleDefinition[] = [
+  {
+    builtIn: true,
+    createdAt: "",
+    displayName: "Guest",
+    permissions: [],
+    roleKey: "guest",
+    updatedAt: ""
+  },
+  {
+    builtIn: false,
+    createdAt: "",
+    displayName: "SSVIP",
+    permissions: [],
+    roleKey: "ssvip",
+    updatedAt: ""
+  },
+  {
+    builtIn: false,
+    createdAt: "",
+    displayName: "SVIP",
+    permissions: [],
+    roleKey: "svip",
+    updatedAt: ""
+  }
+];
 
 type TranslationStatus = "missing" | "metadata" | "draft" | "published";
-type TranslationFormState = Record<ArticleLocale, TranslationMetadataFormValue>;
 type ExistingTranslationState = Record<ArticleLocale, ArticleTranslation | null>;
 type VisibilityState = Record<ArticleLocale, string[]>;
 
@@ -56,34 +78,8 @@ function preferredTranslation(translations: ArticleTranslation[]): ArticleTransl
   return findTranslation(translations, "zh-CN") ?? findTranslation(translations, "en-US");
 }
 
-function createUuidSlug(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (token) => {
-    const randomValue = Math.floor(Math.random() * 16);
-    const value = token === "x" ? randomValue : (randomValue & 0x3) | 0x8;
-    return value.toString(16);
-  });
-}
-
-function createEmptyFormValue(): TranslationMetadataFormValue {
-  return {
-    publishedAt: "",
-    seoDescription: "",
-    seoTitle: "",
-    slug: createUuidSlug(),
-    summary: "",
-    title: ""
-  };
-}
-
-function emptyFormState(): TranslationFormState {
-  return {
-    "en-US": createEmptyFormValue(),
-    "zh-CN": createEmptyFormValue()
-  };
+function preferredEditLocale(translations: ArticleTranslation[]): ArticleLocale {
+  return preferredTranslation(translations)?.locale ?? "zh-CN";
 }
 
 function emptyExistingState(): ExistingTranslationState {
@@ -100,79 +96,23 @@ function emptyVisibilityState(): VisibilityState {
   };
 }
 
-function toFormValue(translation: ArticleTranslation | null): TranslationMetadataFormValue {
-  if (!translation) {
-    return createEmptyFormValue();
-  }
-
-  return {
-    seoDescription: translation.seoDescription ?? "",
-    seoTitle: translation.seoTitle ?? "",
-    publishedAt: toDateTimeLocalValue(translation.publishedAt),
-    slug: translation.slug,
-    summary: translation.summary ?? "",
-    title: translation.title
-  };
-}
-
 function buildTranslationState(detail: ArticleDetail): {
   existingTranslations: ExistingTranslationState;
-  forms: TranslationFormState;
   visibility: VisibilityState;
 } {
   const existingTranslations = emptyExistingState();
-  const forms = emptyFormState();
   const visibility = emptyVisibilityState();
 
   for (const translation of detail.translations) {
     existingTranslations[translation.locale] = translation;
-    forms[translation.locale] = toFormValue(translation);
     visibility[translation.locale] = editableVisibleRoles(translation.allowedRoles ?? []);
   }
 
-  return { existingTranslations, forms, visibility };
-}
-
-function toNullableValue(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function toPublishedAtPayload(value: string): string | undefined {
-  return dateTimeLocalToIso(value);
-}
-
-function hasMetadataInput(value: TranslationMetadataFormValue): boolean {
-  return [value.title, value.seoTitle, value.seoDescription, value.summary].some((field) => {
-    return field.trim().length > 0;
-  });
-}
-
-function hasSeoGenerationSource(value: TranslationMetadataFormValue): boolean {
-  return [value.title, value.summary].some((field) => field.trim().length > 0);
-}
-
-function mergeTranslation(translations: ArticleTranslation[], nextTranslation: ArticleTranslation | null): ArticleTranslation[] {
-  if (!nextTranslation) {
-    return translations;
-  }
-
-  const existingIndex = translations.findIndex((translation) => translation.locale === nextTranslation.locale);
-
-  if (existingIndex === -1) {
-    return [...translations, nextTranslation];
-  }
-
-  return translations.map((translation, index) => (index === existingIndex ? nextTranslation : translation));
-}
-
-function isSlugDuplicateError(error: unknown): boolean {
-  return error instanceof Error && error.message.toLowerCase().includes("slug");
+  return { existingTranslations, visibility };
 }
 
 export function ArticleListPage(): ReactElement {
   const t = useT();
-  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const [authState, setAuthState] = useState<AuthState>(() => authStore.getSnapshot());
   const [articles, setArticles] = useState<ArticleDetail[]>([]);
   const [roleOptions, setRoleOptions] = useState<AdminRoleDefinition[]>([]);
@@ -182,32 +122,25 @@ export function ArticleListPage(): ReactElement {
   const [activeLocale, setActiveLocale] = useState<ArticleLocale>("zh-CN");
   const [existingTranslations, setExistingTranslations] = useState<ExistingTranslationState>(() => emptyExistingState());
   const [allowedRoles, setAllowedRoles] = useState<VisibilityState>(() => emptyVisibilityState());
-  const [forms, setForms] = useState<TranslationFormState>(() => emptyFormState());
   const [status, setStatus] = useState("draft");
   const [coverAttachmentId, setCoverAttachmentId] = useState("");
   const [uploadedCoverAttachment, setUploadedCoverAttachment] = useState<Attachment | null>(null);
-  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
-  const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
-  const [isImportingMarkdown, setIsImportingMarkdown] = useState(false);
-  const [importProgress, setImportProgress] = useState<number | null>(null);
+  const [isDeletingArticle, setIsDeletingArticle] = useState(false);
   const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(null);
   const [modalSuccessMessage, setModalSuccessMessage] = useState<string | null>(null);
   const formatterLocale = useMemo(() => navigator.language || "zh-CN", []);
-  const activeForm = forms[activeLocale];
   const activeTranslation = existingTranslations[activeLocale];
   const editingArticleTitle = editingArticle ? preferredTranslation(editingArticle.translations)?.title : null;
   const canCreateArticle = hasAnyPermission(authState.user, ["article:create"]);
   const canEditArticle = hasAnyPermission(authState.user, ["article:update"]);
+  const canDeleteArticle = hasAnyPermission(authState.user, ["article:delete"]);
+  const isConfigBusy = isSavingConfig || isUploadingCover || isDeletingArticle;
 
   useEffect(() => authStore.subscribe(setAuthState), []);
 
   useEffect(() => {
-    if (!canEditArticle) {
-      return;
-    }
-
     let isMounted = true;
 
     async function loadRoles(): Promise<void> {
@@ -219,7 +152,7 @@ export function ArticleListPage(): ReactElement {
         }
       } catch {
         if (isMounted) {
-          setRoleOptions([]);
+          setRoleOptions(fallbackRoleOptions);
         }
       }
     }
@@ -229,7 +162,7 @@ export function ArticleListPage(): ReactElement {
     return () => {
       isMounted = false;
     };
-  }, [canEditArticle]);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -270,59 +203,75 @@ export function ArticleListPage(): ReactElement {
     const nextState = buildTranslationState(detail);
 
     setEditingArticle(detail);
-    setActiveLocale("zh-CN");
+    setActiveLocale(preferredEditLocale(detail.translations));
     setExistingTranslations(nextState.existingTranslations);
-    setForms(nextState.forms);
     setAllowedRoles(nextState.visibility);
     setStatus(detail.article.status || "draft");
     setCoverAttachmentId(detail.article.coverAttachmentId === null ? "" : String(detail.article.coverAttachmentId));
     setUploadedCoverAttachment(null);
-    setSelectedImportFile(null);
-    setImportProgress(null);
-    setIsGeneratingSeo(false);
-    setIsImportingMarkdown(false);
+    setIsDeletingArticle(false);
     setModalErrorMessage(null);
     setModalSuccessMessage(null);
-
-    if (importFileInputRef.current) {
-      importFileInputRef.current.value = "";
-    }
   }
 
   function closeConfigModal(): void {
-    if (isSavingConfig || isGeneratingSeo || isUploadingCover || isImportingMarkdown) {
+    if (isConfigBusy) {
       return;
     }
 
     setEditingArticle(null);
     setUploadedCoverAttachment(null);
-    setSelectedImportFile(null);
-    setImportProgress(null);
     setModalErrorMessage(null);
     setModalSuccessMessage(null);
   }
 
-  function updateActiveForm(value: TranslationMetadataFormValue): void {
-    setForms((currentForms) => ({
-      ...currentForms,
-      [activeLocale]: value
-    }));
-  }
+  function closeConfigModalFromBackdrop(event: MouseEvent<HTMLDivElement>): void {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
 
-  function updateActiveFormField(field: keyof TranslationMetadataFormValue, value: string): void {
-    updateActiveForm({
-      ...activeForm,
-      [field]: value
-    });
+    closeConfigModal();
   }
 
   function roleDisplayName(role: AdminRoleDefinition): string {
-    if (!role.builtIn) {
-      return role.displayName;
-    }
-
     const localizedName = t(`users.role.${role.roleKey}`);
     return localizedName.startsWith("[missing:") ? role.displayName : localizedName;
+  }
+
+  function roleLabelByKey(roleKey: string): string {
+    const option = roleOptions.find((role) => role.roleKey === roleKey) ?? fallbackRoleOptions.find((role) => role.roleKey === roleKey);
+
+    if (!option) {
+      return roleKey;
+    }
+
+    return roleDisplayName(option);
+  }
+
+  function visibilityLabel(roles: readonly string[] | null | undefined): string {
+    const normalizedRoles = [...new Set((roles ?? []).filter((role) => role !== "admin"))];
+
+    if (normalizedRoles.length === 0 || normalizedRoles.includes("guest")) {
+      return t("article.visibilityPublic");
+    }
+
+    const labels: string[] = [];
+
+    if (normalizedRoles.includes("svip")) {
+      labels.push(t("article.visibilitySvipAndAbove"));
+    } else if (normalizedRoles.includes("ssvip")) {
+      labels.push(roleLabelByKey("ssvip"));
+    }
+
+    for (const role of normalizedRoles) {
+      if (role === "svip" || role === "ssvip") {
+        continue;
+      }
+
+      labels.push(roleLabelByKey(role));
+    }
+
+    return labels.length > 0 ? labels.join(", ") : t("article.visibilitySelected");
   }
 
   function toggleActiveAllowedRole(roleKey: string): void {
@@ -395,14 +344,6 @@ export function ArticleListPage(): ReactElement {
       return;
     }
 
-    const shouldSaveMetadata = activeTranslation !== null || hasMetadataInput(activeForm);
-
-    if (shouldSaveMetadata && !activeForm.title.trim()) {
-      setModalErrorMessage(t("article.titleRequired"));
-      setModalSuccessMessage(null);
-      return;
-    }
-
     setIsSavingConfig(true);
     setModalErrorMessage(null);
     setModalSuccessMessage(null);
@@ -413,28 +354,19 @@ export function ArticleListPage(): ReactElement {
         coverAttachmentId: parsedCoverAttachmentId,
         status
       });
-      let nextTranslation: ArticleTranslation | null = null;
-
-      if (shouldSaveMetadata) {
-        const payload = {
-          publishedAt: activeTranslation?.publishedVersionId != null ? toPublishedAtPayload(activeForm.publishedAt) : undefined,
-          allowedRoles: editableVisibleRoles(allowedRoles[activeLocale] ?? []),
-          seoDescription: toNullableValue(activeForm.seoDescription),
-          seoTitle: toNullableValue(activeForm.seoTitle),
-          slug: activeForm.slug.trim(),
-          summary: toNullableValue(activeForm.seoDescription) ? null : toNullableValue(activeForm.summary),
-          title: activeForm.title.trim()
-        };
-        const translationResponse = activeTranslation
-          ? await articleApi.updateTranslation(editingArticle.article.id, activeLocale, payload)
-          : await articleApi.createTranslation(editingArticle.article.id, { ...payload, locale: activeLocale });
-
-        nextTranslation = translationResponse.translation;
-      }
+      const translationResponse = activeTranslation
+        ? await articleApi.updateTranslation(editingArticle.article.id, activeLocale, {
+            allowedRoles: editableVisibleRoles(allowedRoles[activeLocale] ?? [])
+          })
+        : null;
 
       const nextDetail = {
         article: articleResponse.article,
-        translations: mergeTranslation(editingArticle.translations, nextTranslation)
+        translations: translationResponse
+          ? editingArticle.translations.map((translation) => (
+              translation.locale === translationResponse.translation.locale ? translationResponse.translation : translation
+            ))
+          : editingArticle.translations
       };
       const nextState = buildTranslationState(nextDetail);
 
@@ -443,121 +375,42 @@ export function ArticleListPage(): ReactElement {
       )));
       setEditingArticle(nextDetail);
       setExistingTranslations(nextState.existingTranslations);
-      setForms(nextState.forms);
       setAllowedRoles(nextState.visibility);
       setCoverAttachmentId(nextDetail.article.coverAttachmentId === null ? "" : String(nextDetail.article.coverAttachmentId));
       setStatus(nextDetail.article.status);
       setModalSuccessMessage(t("article.configSaved"));
     } catch (error) {
-      setModalErrorMessage(
-        isSlugDuplicateError(error)
-          ? t("article.slugDuplicate")
-          : error instanceof Error ? error.message : t("article.configSaveFailed")
-      );
+      setModalErrorMessage(error instanceof Error ? error.message : t("article.configSaveFailed"));
     } finally {
       setIsSavingConfig(false);
     }
   }
 
-  async function handleGenerateSeo(): Promise<void> {
-    if (!hasSeoGenerationSource(activeForm)) {
-      setModalErrorMessage(t("article.seoGenerateSourceMissing"));
-      setModalSuccessMessage(null);
+  async function handleDeleteArticle(): Promise<void> {
+    if (!editingArticle || !canDeleteArticle) {
       return;
     }
 
-    setIsGeneratingSeo(true);
+    const title = editingArticleTitle ?? t("article.untitledDraft").replace("{id}", String(editingArticle.article.id));
+    const confirmMessage = t("article.deleteConfirm").replace("{title}", title);
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setIsDeletingArticle(true);
     setModalErrorMessage(null);
     setModalSuccessMessage(null);
 
     try {
-      const response = await translationApi.generateSeo({
-        locale: activeLocale,
-        summary: activeForm.summary,
-        title: activeForm.title
-      });
-      const generatedFields = response.seo.fields;
-
-      setForms((currentForms) => ({
-        ...currentForms,
-        [activeLocale]: {
-          ...currentForms[activeLocale],
-          seoDescription: generatedFields.seoDescription,
-          seoTitle: generatedFields.seoTitle
-        }
-      }));
-      setModalSuccessMessage(t("article.seoGenerateReady"));
+      await articleApi.deleteArticle(editingArticle.article.id);
+      setArticles((currentArticles) => currentArticles.filter((item) => item.article.id !== editingArticle.article.id));
+      setEditingArticle(null);
+      setUploadedCoverAttachment(null);
     } catch (error) {
-      setModalErrorMessage(error instanceof Error ? error.message : t("article.seoGenerateFailed"));
+      setModalErrorMessage(error instanceof Error ? error.message : t("article.deleteFailed"));
     } finally {
-      setIsGeneratingSeo(false);
-    }
-  }
-
-  function formatBytes(value: number): string {
-    if (value >= 1024 * 1024) {
-      return `${(value / 1024 / 1024).toFixed(1)} MB`;
-    }
-
-    if (value >= 1024) {
-      return `${Math.round(value / 1024)} KB`;
-    }
-
-    return `${value} B`;
-  }
-
-  async function handleImportMarkdownFile(): Promise<void> {
-    if (!editingArticle) {
-      return;
-    }
-
-    if (!activeTranslation) {
-      setModalErrorMessage(t("article.markdownNeedsMetadata"));
-      setModalSuccessMessage(null);
-      return;
-    }
-
-    if (!selectedImportFile) {
-      setModalErrorMessage(t("article.importFileRequired"));
-      setModalSuccessMessage(null);
-      return;
-    }
-
-    setIsImportingMarkdown(true);
-    setImportProgress(0);
-    setModalErrorMessage(null);
-    setModalSuccessMessage(null);
-
-    try {
-      const response = await versionApi.importMarkdownFile(
-        editingArticle.article.id,
-        activeLocale,
-        selectedImportFile,
-        setImportProgress
-      );
-      const nextDetail = await articleApi.getArticle(editingArticle.article.id);
-      const nextState = buildTranslationState(nextDetail);
-
-      setArticles((currentArticles) => currentArticles.map((item) => (
-        item.article.id === nextDetail.article.id ? nextDetail : item
-      )));
-      setEditingArticle(nextDetail);
-      setExistingTranslations(nextState.existingTranslations);
-      setForms(nextState.forms);
-      setAllowedRoles(nextState.visibility);
-      setSelectedImportFile(null);
-      setModalSuccessMessage(
-        `${response.unchanged ? t("article.importUnchanged") : t("article.importSaved")} ${t("article.versionNo")} ${response.version.versionNo} · ${formatBytes(response.version.contentSizeBytes)}`
-      );
-
-      if (importFileInputRef.current) {
-        importFileInputRef.current.value = "";
-      }
-    } catch (error) {
-      setModalErrorMessage(error instanceof Error ? error.message : t("article.importFailed"));
-    } finally {
-      setIsImportingMarkdown(false);
-      setImportProgress(null);
+      setIsDeletingArticle(false);
     }
   }
 
@@ -578,7 +431,7 @@ export function ArticleListPage(): ReactElement {
       <section className="liax-card admin-table-card" aria-label={t("article.listTitle")}>
         <div className="liax-card__body">
           {isLoading ? (
-            <p className="admin-muted-text">{t("article.listLoading")}</p>
+            <AdminLoadingSkeleton label={t("article.listLoading")} rows={5} variant="table" />
           ) : null}
 
           {errorMessage ? (
@@ -596,6 +449,7 @@ export function ArticleListPage(): ReactElement {
                   <th>{t("article.field.title")}</th>
                   <th>{t("article.status")}</th>
                   <th>{t("article.translationStatus")}</th>
+                  <th>{t("article.visibilityColumn")}</th>
                   <th>{t("article.updatedAt")}</th>
                   <th>{t("article.actions")}</th>
                 </tr>
@@ -617,7 +471,7 @@ export function ArticleListPage(): ReactElement {
                           : `${t("article.id")} ${item.article.id}`}
                       </small>
                     </td>
-                    <td>{t(`article.status.${item.article.status}`)}</td>
+                    <td className="admin-article-status-cell">{t(`article.status.${item.article.status}`)}</td>
                     <td>
                       <div className="admin-translation-badges">
                         {articleLocales.map((locale) => {
@@ -631,11 +485,28 @@ export function ArticleListPage(): ReactElement {
                         })}
                       </div>
                     </td>
-                    <td>{formatDate(item.article.updatedAt, formatterLocale)}</td>
+                    <td>
+                      <div className="admin-article-visibility-list">
+                        {articleLocales.map((locale) => {
+                          const translation = findTranslation(item.translations, locale);
+
+                          return (
+                            <span className="admin-article-visibility-chip" key={locale}>
+                              <span>{locale}</span>
+                              <strong>{visibilityLabel(translation?.allowedRoles ?? [])}</strong>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="admin-article-updated-cell">{formatDate(item.article.updatedAt, formatterLocale)}</td>
                     <td>
                       {canEditArticle ? (
                         <div className="admin-article-actions">
-                          <a className="liax-button liax-button--primary" href={`#articles/${item.article.id}/edit`}>
+                          <a
+                            className="liax-button liax-button--primary"
+                            href={`#articles/${item.article.id}/${preferredEditLocale(item.translations)}/content`}
+                          >
                             {t("article.editContent")}
                           </a>
                           <button
@@ -660,7 +531,7 @@ export function ArticleListPage(): ReactElement {
       </section>
 
       {editingArticle ? (
-        <div className="admin-modal-backdrop">
+        <div className="admin-modal-backdrop" onMouseDown={closeConfigModalFromBackdrop} role="presentation">
           <section
             aria-labelledby="article-config-title"
             aria-modal="true"
@@ -671,19 +542,28 @@ export function ArticleListPage(): ReactElement {
               <div>
                 <p className="admin-kicker">{t("nav.articles")}</p>
                 <h3 id="article-config-title">{editingArticleTitle ?? t("article.configTitle")}</h3>
+                <p className="admin-modal__subtitle">{t("article.configHelp")}</p>
               </div>
-              <button className="liax-button" disabled={isSavingConfig || isGeneratingSeo || isUploadingCover || isImportingMarkdown} onClick={closeConfigModal} type="button">
+              <button className="liax-button" disabled={isConfigBusy} onClick={closeConfigModal} type="button">
                 {t("article.cancel")}
               </button>
             </header>
 
             <div className="admin-modal__body">
-              <section className="admin-article-config-section">
+              <div className="admin-article-config-summary">
+                <span>{t("article.id")} {editingArticle.article.id}</span>
+                <span>{t("article.status")}: {t(`article.status.${editingArticle.article.status}`)}</span>
+                <span>{activeLocale}: {t(`article.translation.${translationStatus(activeTranslation)}`)}</span>
+                <span>{t("article.visibilityColumn")}: {visibilityLabel(allowedRoles[activeLocale] ?? [])}</span>
+              </div>
+
+              <div className="admin-article-config-layout">
+              <section className="admin-article-config-section admin-article-config-section--basic">
                 <h4>{t("article.basicConfig")}</h4>
                 <div className="admin-article-config-grid">
                   <label className="admin-form-field">
                     <span>{t("article.status")}</span>
-                    <select disabled={isSavingConfig || isGeneratingSeo} onChange={(event) => setStatus(event.target.value)} value={status}>
+                    <select disabled={isConfigBusy} onChange={(event) => setStatus(event.target.value)} value={status}>
                       {articleStatusOptions.map((option) => (
                         <option key={option} value={option}>
                           {t(`article.status.${option}`)}
@@ -698,7 +578,7 @@ export function ArticleListPage(): ReactElement {
                       <span>{t("article.coverImage")}</span>
                       <input
                         accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
-                        disabled={isSavingConfig || isGeneratingSeo || isUploadingCover}
+                        disabled={isConfigBusy}
                         onChange={(event) => void handleCoverImageSelected(event)}
                         type="file"
                       />
@@ -719,7 +599,7 @@ export function ArticleListPage(): ReactElement {
                       {coverAttachmentId ? (
                         <button
                           className="liax-link"
-                          disabled={isSavingConfig || isGeneratingSeo || isUploadingCover}
+                          disabled={isConfigBusy}
                           onClick={() => {
                             setCoverAttachmentId("");
                             setUploadedCoverAttachment(null);
@@ -734,43 +614,22 @@ export function ArticleListPage(): ReactElement {
                 </div>
               </section>
 
-              <section className="admin-article-config-section">
+              <section className="admin-article-config-section admin-article-config-section--visibility">
                 <div className="admin-article-config-section__header">
-                  <h4>{t("article.metadataTitle")}</h4>
+                  <h4>{t("article.visibilityTitle")}</h4>
                   <LocaleTabs activeLocale={activeLocale} onChange={setActiveLocale} />
                 </div>
-                <p className="admin-muted-text admin-article-config-help">{t("article.metadataOptionalHelp")}</p>
-                <SeoFields
-                  canGenerateSeo={hasSeoGenerationSource(activeForm)}
-                  disabled={isSavingConfig || isGeneratingSeo}
-                  isGeneratingSeo={isGeneratingSeo}
-                  onChange={updateActiveForm}
-                  onGenerateSeo={() => void handleGenerateSeo()}
-                  value={activeForm}
-                />
-                {activeTranslation?.publishedVersionId != null ? (
-                  <label className="admin-form-field">
-                    <span>{t("article.publishedAt")}</span>
-                    <input
-                      disabled={isSavingConfig || isGeneratingSeo}
-                      onChange={(event) => updateActiveFormField("publishedAt", event.target.value)}
-                      type="datetime-local"
-                      value={activeForm.publishedAt}
-                    />
-                    <small>{t("article.publishedAtHelp")}</small>
-                  </label>
-                ) : null}
-              </section>
-
-              <section className="admin-article-config-section">
-                <h4>{t("article.visibilityTitle")}</h4>
+                <p className="admin-article-visibility-summary">
+                  <span>{activeLocale}</span>
+                  <strong>{visibilityLabel(allowedRoles[activeLocale] ?? [])}</strong>
+                </p>
                 <p className="admin-muted-text admin-article-config-help">{t("article.visibilityHelp")}</p>
                 <div className="admin-role-checkbox-grid admin-role-checkbox-grid--compact">
                   {roleOptions.map((role) => (
                     <label className="admin-role-checkbox" key={role.roleKey}>
                       <input
                         checked={(allowedRoles[activeLocale] ?? []).includes(role.roleKey)}
-                        disabled={isSavingConfig || isGeneratingSeo || isImportingMarkdown || !activeTranslation}
+                        disabled={isConfigBusy || !activeTranslation}
                         onChange={() => toggleActiveAllowedRole(role.roleKey)}
                         type="checkbox"
                       />
@@ -783,42 +642,26 @@ export function ArticleListPage(): ReactElement {
                 </div>
               </section>
 
-              <section className="admin-article-config-section">
-                <h4>{t("article.importTitle")}</h4>
-                <div className="admin-markdown-import admin-markdown-import--modal">
-                  <label className="admin-form-field admin-markdown-import__file">
-                    <span>{t("article.importFile")}</span>
-                    <input
-                      accept=".md,.markdown,.mdown,.txt,text/markdown,text/plain"
-                      disabled={isImportingMarkdown || !activeTranslation}
-                      onChange={(event) => setSelectedImportFile(event.target.files?.[0] ?? null)}
-                      ref={importFileInputRef}
-                      type="file"
-                    />
-                  </label>
+              {canDeleteArticle ? (
+                <section className="admin-article-config-section admin-article-config-section--danger">
+                  <h4>{t("article.deleteTitle")}</h4>
+                  <p className="admin-muted-text admin-article-config-help">{t("article.deleteHelp")}</p>
                   <button
-                    className="liax-button"
-                    disabled={isImportingMarkdown || !selectedImportFile || !activeTranslation}
-                    onClick={() => void handleImportMarkdownFile()}
+                    className="liax-button liax-button--danger"
+                    disabled={isConfigBusy}
+                    onClick={() => void handleDeleteArticle()}
                     type="button"
                   >
-                    {isImportingMarkdown ? t("article.importing") : t("article.importAction")}
+                    {isDeletingArticle ? t("article.deleting") : t("article.deleteAction")}
                   </button>
-                  {selectedImportFile ? (
-                    <p className="admin-muted-text">{selectedImportFile.name} · {formatBytes(selectedImportFile.size)}</p>
-                  ) : null}
-                  {typeof importProgress === "number" ? (
-                    <div className="admin-markdown-import__progress" aria-label={t("article.importProgress")}>
-                      <span style={{ width: `${importProgress}%` }} />
-                    </div>
-                  ) : null}
-                </div>
-              </section>
+                </section>
+              ) : null}
+              </div>
 
               <div className="admin-form-actions">
                 <button
                   className="liax-button liax-button--primary"
-                  disabled={isSavingConfig || isGeneratingSeo || isUploadingCover || isImportingMarkdown}
+                  disabled={isConfigBusy}
                   onClick={() => void handleSaveConfig()}
                   type="button"
                 >

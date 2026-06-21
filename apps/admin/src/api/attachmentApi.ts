@@ -1,5 +1,13 @@
 import { httpClient } from "./httpClient";
 
+export type AttachmentReferenceType = "article" | "avatar" | "siteLogo" | "moment";
+
+export type AttachmentReference = {
+  type: AttachmentReferenceType;
+  label: string;
+  href: string | null;
+};
+
 export type Attachment = {
   id: number;
   ownerId: number;
@@ -10,6 +18,7 @@ export type Attachment = {
   sizeBytes: number;
   sha256: string;
   isUsed?: boolean;
+  references?: AttachmentReference[];
   createdAt: string;
   deletedAt: string | null;
 };
@@ -29,7 +38,7 @@ export type AvatarUploadResult = AttachmentUploadResult & {
 };
 
 export const attachmentApi = {
-  listAttachments(input: { search?: string; unusedOnly?: boolean } = {}): Promise<{ attachments: Attachment[] }> {
+  listAttachments(input: { limit?: number; offset?: number; search?: string; unusedOnly?: boolean } = {}): Promise<{ attachments: Attachment[] }> {
     const params = new URLSearchParams();
 
     if (input.search?.trim()) {
@@ -38,6 +47,14 @@ export const attachmentApi = {
 
     if (input.unusedOnly) {
       params.set("unused", "1");
+    }
+
+    if (Number.isFinite(input.limit)) {
+      params.set("limit", String(input.limit));
+    }
+
+    if (Number.isFinite(input.offset)) {
+      params.set("offset", String(input.offset));
     }
 
     const query = params.toString();

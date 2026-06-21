@@ -34,6 +34,12 @@ const guestbookEntryColumns = [
   "deleted_at"
 ].join(", ");
 
+const testGuestbookAuthorNames = ["AutoTestBot", "QA user"] as const;
+
+function testGuestbookWhereClause(): string {
+  return `deleted_at IS NULL AND author_name IN (${testGuestbookAuthorNames.map(() => "?").join(", ")})`;
+}
+
 function mapGuestbookEntryRow(row: GuestbookEntryRow): GuestbookEntry {
   return {
     authorName: row.author_name,
@@ -98,6 +104,31 @@ export class GuestbookRepository {
     );
 
     return rows[0]?.total ?? 0;
+  }
+
+  async countTestEntries(): Promise<number> {
+    const pool = getDatabasePool();
+    const [rows] = await pool.execute<Array<RowDataPacket & { total: number }>>(
+      `SELECT COUNT(*) AS total FROM guestbook_entries WHERE ${testGuestbookWhereClause()}`,
+      [...testGuestbookAuthorNames]
+    );
+
+    return rows[0]?.total ?? 0;
+  }
+
+  async listTestEntries(limit = 20): Promise<GuestbookEntry[]> {
+    const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 50);
+    const pool = getDatabasePool();
+    const [rows] = await pool.execute<GuestbookEntryRow[]>(
+      `SELECT ${guestbookEntryColumns}
+       FROM guestbook_entries
+       WHERE ${testGuestbookWhereClause()}
+       ORDER BY created_at DESC, id DESC
+       LIMIT ${safeLimit}`,
+      [...testGuestbookAuthorNames]
+    );
+
+    return rows.map(mapGuestbookEntryRow);
   }
 
   async listEntries(input: ListGuestbookEntriesInput = {}): Promise<GuestbookEntry[]> {
@@ -167,5 +198,17 @@ export class GuestbookRepository {
     );
 
     return this.findById(id);
+  }
+
+  async softDeleteTestEntries(deletedAt = new Date()): Promise<number> {
+    const pool = getDatabasePool();
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE guestbook_entries
+       SET deleted_at = ?
+       WHERE ${testGuestbookWhereClause()}`,
+      [deletedAt, ...testGuestbookAuthorNames]
+    );
+
+    return result.affectedRows;
   }
 }

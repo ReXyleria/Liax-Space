@@ -6,9 +6,14 @@ import { AppError } from "../common/AppError.js";
 import { errorCodes } from "../common/errorCodes.js";
 import { getDatabasePool } from "../database/connection.js";
 import { PermissionService } from "../permissions/PermissionService.js";
+import { SettingsRepository } from "../settings/SettingsRepository.js";
+import type { SiteSettings } from "../settings/settings.types.js";
 import { localeToPublicPrefix, publicPrefixToLocale, type PublicLocalePrefix } from "../seo/SeoService.js";
 
+export type SearchResultKind = "article" | "home" | "moment" | "tag";
+
 export type SearchResult = {
+  kind?: SearchResultKind;
   articleId: number;
   locale: ArticleLocale;
   title: string;
@@ -57,6 +62,21 @@ type SearchRow = RowDataPacket & {
   updated_at: Date;
   published_version_id: number | null;
   visit_count: number | string;
+};
+
+type TagSearchRow = RowDataPacket & {
+  article_count: number | string;
+  created_at: Date;
+  name: string;
+  slug: string;
+  tag_id: number;
+};
+
+type MomentSearchRow = RowDataPacket & {
+  content: string;
+  id: number;
+  published_at: Date | null;
+  updated_at: Date;
 };
 
 type SearchQuery = {
@@ -205,11 +225,32 @@ function numericFilter(value: string): number | null {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function readSettingsString(settings: SiteSettings, key: string): string {
+  const value = settings[key];
+
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function matchesKeyword(value: string, keyword: string): boolean {
+  return value.toLocaleLowerCase().includes(keyword.toLocaleLowerCase());
+}
+
+function truncateSummary(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1)}…`;
+}
+
 function mapRow(row: SearchRow): SearchResult {
   const publishStatus = row.published_version_id === null || row.published_at === null ? "draft" : "published";
 
   return {
     articleId: row.article_id,
+    kind: "article",
     articleStatus: row.article_status,
     locale: row.locale,
     publishedAt: row.published_at,
@@ -226,6 +267,8 @@ function mapRow(row: SearchRow): SearchResult {
 }
 
 export class SearchService {
+  constructor(private readonly settingsRepository = new SettingsRepository()) {}
+
   async searchPublic(input: PublicSearchInput): Promise<SearchResult[]> {
     const query = parseSearchQuery({
       category: parseOptionalString(input.category),
@@ -236,10 +279,154 @@ export class SearchService {
       tag: parseOptionalString(input.tag)
     });
 
-    return this.search(query, { publicOnly: true, publishedOnly: true, versionJoin: "published" });
+    const articleResults = await this.search(query, { publicOnly: true, publishedOnly: true, versionJoin: "published" });
+    const remaining = Math.max(query.limit - articleResults.length, 0);
+
+    if (!query.keyword || query.tag || query.category || query.offset > 0 || remaining === 0) {
+      return articleResults;
+    }
+
+    return [
+      ...articleResults,
+      ...(await this.searchPublicSupplemental(query, remaining))
+    ].slice(0, query.limit);
   }
 
-  async searchAdmin(input: AdminSearchInput): Promise<SearchResult[]> {
+    private async searchPublicSupplemental(query: SearchQuery, limit: number): Promise<SearchResult[]> {
+    if (!query.keyword || !query.locale || limit <= 0) {
+      return [];
+    }
+
+    const pool = getDatabasePool();
+    const keyword = normalizeLike(query.keyword);
+    const prefix = localeToPublicPrefix(query.locale);
+    const results: SearchResult[] = [];
+    const homeResult = await this.searchPublicHome(query);
+
+    if (homeResult) {
+      results.push(homeResult);
+    }
+
+    const tagLimit = Math.max(limit - results.length, 0);
+
+    if (tagLimit > 0) {
+      const [tagRows] = await pool.execute<TagSearchRow[]>(
+        `SELECT tag_translations.tag_id,
+                tag_translations.name,
+                tag_translations.slug,
+                tags.created_at,
+                COUNT(DISTINCT articles.id) AS article_count
+         FROM tag_translations
+         INNER JOIN tags
+           ON tags.id = tag_translations.tag_id
+         INNER JOIN article_tags
+           ON article_tags.tag_id = tag_translations.tag_id
+         INNER JOIN articles
+           ON articles.id = article_tags.article_id
+          AND articles.deleted_at IS NULL
+         INNER JOIN article_translations
+           ON article_translations.article_id = articles.id
+          AND article_translations.locale = tag_translations.locale
+         WHERE tag_translations.locale = ?
+           AND (tag_translations.name LIKE ? OR tag_translations.slug LIKE ?)
+           AND ${isPublishedWhere()}
+           AND ${isPubliclyVisibleWhere()}
+         GROUP BY tag_translations.tag_id, tag_translations.name, tag_translations.slug, tags.created_at
+         ORDER BY article_count DESC, tags.created_at DESC
+         LIMIT ${tagLimit}`,
+        [query.locale, keyword, keyword]
+      );
+
+      results.push(...tagRows.map((row): SearchResult => ({
+        articleId: 0,
+        articleStatus: "published",
+        kind: "tag",
+        locale: query.locale as ArticleLocale,
+        publishedAt: row.created_at,
+        publishStatus: "published",
+        seoDescription: null,
+        seoTitle: null,
+        slug: row.slug,
+        summary: `${Number(row.article_count) || 0} ${query.locale === "zh-CN" ? "篇文章" : "articles"}`,
+        title: `${query.locale === "zh-CN" ? "标签" : "Tag"}: ${row.name}`,
+        updatedAt: row.created_at,
+        url: `/${prefix}/tags/${encodeURIComponent(row.slug)}`,
+        visitCount: 0
+      })));
+    }
+
+    const momentLimit = Math.max(limit - results.length, 0);
+
+    if (momentLimit > 0) {
+      const [momentRows] = await pool.execute<MomentSearchRow[]>(
+        `SELECT id, content, published_at, updated_at
+         FROM moments
+         WHERE deleted_at IS NULL
+           AND locale = ?
+           AND status = 'published'
+           AND content LIKE ?
+         ORDER BY COALESCE(published_at, updated_at) DESC, id DESC
+         LIMIT ${momentLimit}`,
+        [query.locale, keyword]
+      );
+
+      results.push(...momentRows.map((row): SearchResult => ({
+        articleId: 0,
+        articleStatus: "published",
+        kind: "moment",
+        locale: query.locale as ArticleLocale,
+        publishedAt: row.published_at,
+        publishStatus: "published",
+        seoDescription: null,
+        seoTitle: null,
+        slug: `moment-${row.id}`,
+        summary: truncateSummary(row.content, 120),
+        title: `${query.locale === "zh-CN" ? "瞬间" : "Moment"} #${row.id}`,
+        updatedAt: row.updated_at,
+        url: `/${prefix}/moments`,
+        visitCount: 0
+      })));
+    }
+
+    return results.slice(0, limit);
+  }
+
+  private async searchPublicHome(query: SearchQuery): Promise<SearchResult | null> {
+    if (!query.keyword || !query.locale) {
+      return null;
+    }
+
+    const settings = await this.settingsRepository.getSiteSettings();
+    const isZh = query.locale === "zh-CN";
+    const prefix = localeToPublicPrefix(query.locale);
+    const title = isZh ? "首页" : "Home";
+    const signature = readSettingsString(settings, "home.signature") || "Timeless Silent Vigil";
+    const brandInfo = readSettingsString(settings, "home.brandInfo") || "Liax Space";
+    const contact = readSettingsString(settings, isZh ? "home.contactItems.zh-CN" : "home.contactItems.en-US");
+    const haystack = [title, "Liax Space", signature, brandInfo, contact, isZh ? "文章 标签 瞬间 留言 归档 搜索" : "articles tags moments guestbook archives search"].join(" ");
+
+    if (!matchesKeyword(haystack, query.keyword)) {
+      return null;
+    }
+
+    return {
+      articleId: 0,
+      articleStatus: "published",
+      kind: "home",
+      locale: query.locale,
+      publishedAt: null,
+      publishStatus: "published",
+      seoDescription: null,
+      seoTitle: null,
+      slug: "home",
+      summary: brandInfo,
+      title,
+      updatedAt: new Date(0),
+      url: `/${prefix}`,
+      visitCount: 0
+    };
+  }
+async searchAdmin(input: AdminSearchInput): Promise<SearchResult[]> {
     const canSearchDrafts = await permissionService.hasPermission(input.role, "article:update");
     const requestedStatus = parseOptionalString(input.status);
     const query = parseSearchQuery({

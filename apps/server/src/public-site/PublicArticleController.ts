@@ -1,8 +1,10 @@
+import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { Request, Response } from "express";
 
 import { ArticleTranslationRepository } from "../articles/ArticleTranslationRepository.js";
+import { canRoleViewArticleAudience, formatArticleAudienceLabel } from "../articles/articleAudience.js";
 import type { ArticleLocale, ArticleTranslation } from "../articles/articles.types.js";
 import { JwtService, type AuthTokenPayload } from "../auth/JwtService.js";
 import { AppError } from "../common/AppError.js";
@@ -22,6 +24,10 @@ import { TagRepository, type TagDetail } from "../tags/TagRepository.js";
 import { UserRepository } from "../users/UserRepository.js";
 
 type LocalePrefix = "zh" | "en";
+
+type RenderMomentsOptions = {
+  shouldRenderImage?: (image: string) => boolean;
+};
 
 const localePrefixMap: Record<LocalePrefix, ArticleLocale> = {
   en: "en-US",
@@ -82,6 +88,51 @@ function readBearerToken(authorizationHeader: unknown): string | null {
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function publicUploadUrlToPath(value: string): string | null {
+  const pathname = value.split(/[?#]/u)[0] ?? "";
+
+  if (!pathname.startsWith("/uploads/")) {
+    return null;
+  }
+
+  let decodedPath: string;
+
+  try {
+    decodedPath = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+
+  const relativePath = decodedPath.slice("/uploads/".length);
+
+  if (!relativePath || relativePath.includes("\0")) {
+    return null;
+  }
+
+  const uploadRoot = resolve(storagePaths.uploadsDir);
+  const absolutePath = resolve(uploadRoot, ...relativePath.split("/"));
+
+  return absolutePath.startsWith(`${uploadRoot}${sep}`) ? absolutePath : null;
+}
+
+function isExistingPublicUploadImage(value: string): boolean {
+  const uploadPath = publicUploadUrlToPath(value);
+
+  if (!uploadPath) {
+    return true;
+  }
+
+  try {
+    return statSync(uploadPath).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function readBodyString(body: unknown, key: string): string {
@@ -149,14 +200,22 @@ function renderPublicMenuToggle(isZh: boolean): string {
 
 function renderPublicSidebar(prefix: LocalePrefix, isZh: boolean): string {
   const closeLabel = isZh ? "关闭导航" : "Close navigation";
+  const title = isZh ? "浏览 Liax Space" : "Browse Liax Space";
+  const description = isZh ? "选择一个内容入口，或直接搜索公开内容。" : "Choose a section, or search public content directly.";
+  const footer = "Liax Space";
 
   return `<div class="liax-public-sidebar-layer" aria-hidden="true" inert data-public-sidebar-layer>
       <button class="liax-public-sidebar-backdrop" type="button" aria-label="${closeLabel}" data-public-sidebar-close></button>
       <aside class="liax-public-sidebar" aria-label="${closeLabel}">
+        <header class="liax-public-sidebar__header">
+          <strong>${escapeHtml(title)}</strong>
+          <span>${escapeHtml(description)}</span>
+        </header>
         ${renderPublicSearchForm(prefix, isZh, "sidebar")}
         <nav class="liax-public-sidebar-menu" aria-label="Primary">
           ${renderPublicMenuLinks(prefix, isZh)}
         </nav>
+        <p class="liax-public-sidebar__footer">${escapeHtml(footer)}</p>
       </aside>
     </div>`;
 }
@@ -267,23 +326,303 @@ function renderFaviconLink(settings: SiteSettings): string {
   return `<link rel="icon" href="${escapeHtml(logoUrl ?? "/favicon.svg")}">`;
 }
 
+function renderLogoPreviewTags(settings: SiteSettings): string {
+  const logoUrl = readLogoUrl(settings);
+
+  if (!logoUrl) {
+    return "";
+  }
+
+  const logoAlt = readStringSetting(settings, "site.logoAlt", "Liax Space");
+  const escapedLogoAlt = escapeHtml(logoAlt);
+  const escapedLogoUrl = escapeHtml(logoUrl);
+
+  return `<link rel="apple-touch-icon" href="${escapedLogoUrl}">
+  <meta property="og:image" content="${escapedLogoUrl}">
+  <meta property="og:image:alt" content="${escapedLogoAlt}">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:image" content="${escapedLogoUrl}">`;
+}
+
 function renderPublicLogo(settings: SiteSettings): string {
   const logoUrl = readLogoUrl(settings);
   const logoAlt = readStringSetting(settings, "site.logoAlt", "Liax Space");
 
   if (!logoUrl) {
-    return `<span class="liax-public-logo" aria-hidden="true">LS</span>`;
+    return `<span class="liax-public-logo" aria-hidden="true"><span>LS</span></span>`;
   }
 
-  return `<span class="liax-public-logo"><img alt="${escapeHtml(logoAlt)}" src="${escapeHtml(logoUrl)}"></span>`;
+  return `<span class="liax-public-logo"><img alt="${escapeHtml(logoAlt)}" onerror="this.remove()" src="${escapeHtml(logoUrl)}"></span>`;
 }
 
 function renderPublicAvatar(avatarUrl: string | null): string {
   if (!avatarUrl || !isPublicAssetUrl(avatarUrl)) {
-    return `<a class="liax-public-avatar" href="/console" aria-label="Console">A</a>`;
+    return `<a class="liax-public-avatar" href="/console" aria-label="Console"><span aria-hidden="true">A</span></a>`;
   }
 
-  return `<a class="liax-public-avatar" href="/console" aria-label="Console"><img alt="" src="${escapeHtml(avatarUrl)}"></a>`;
+  return `<a class="liax-public-avatar" href="/console" aria-label="Console"><span aria-hidden="true">A</span><img alt="" onerror="this.remove()" src="${escapeHtml(avatarUrl)}"></a>`;
+}
+
+function renderPublicPolishCss(): string {
+  return `    .liax-public-header {
+      position: relative;
+      z-index: 60;
+      background: rgb(250 249 245 / 88%);
+      backdrop-filter: blur(14px);
+    }
+
+    .liax-public-logo {
+      border: 0 !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      color: var(--color-text) !important;
+      overflow: visible !important;
+    }
+
+    .liax-public-logo img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain !important;
+      background: transparent !important;
+    }
+
+    .liax-public-avatar {
+      width: 40px;
+      height: 40px;
+      overflow: hidden;
+      border-radius: 999px;
+    }
+
+    .liax-public-avatar img {
+      border-radius: inherit;
+      object-fit: cover;
+    }
+
+    .liax-public-menu {
+      grid-template-columns: repeat(6, max-content);
+      gap: 2px;
+    }
+
+    .liax-public-menu a {
+      width: auto;
+      min-width: 0;
+      min-height: 30px;
+      align-items: center;
+      border-radius: 999px;
+      font-size: 13px;
+      padding: 4px 10px;
+      transition: background-color 180ms ease, box-shadow 180ms ease, color 180ms ease, transform 180ms ease;
+    }
+
+    .liax-public-menu a[aria-current="page"],
+    .liax-public-sidebar-menu a[aria-current="page"] {
+      background: rgb(238 245 233 / 74%);
+      color: #3f6b4a;
+      box-shadow: inset 0 0 0 1px rgb(95 122 80 / 22%);
+      text-decoration: none;
+    }
+
+    .liax-public-menu a:hover,
+    .liax-public-menu a:focus-visible {
+      background: rgb(238 245 233 / 62%);
+      box-shadow: inset 0 0 0 1px rgb(95 122 80 / 18%);
+      text-decoration: none;
+      transform: translateY(-1px);
+    }
+
+    .liax-public-search {
+      min-height: 38px;
+      transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+    }
+
+    .liax-public-search:focus {
+      border-color: #5f7a50;
+      background: #fffdfa;
+      box-shadow: 0 0 0 4px rgb(95 122 80 / 14%);
+      outline: 0;
+    }
+
+    .liax-public-avatar {
+      background: var(--color-surface);
+      box-shadow: 0 2px 10px rgb(20 20 19 / 5%);
+      transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+
+    .liax-public-avatar > span {
+      opacity: 1;
+    }
+
+    .liax-article-tags {
+      position: fixed !important;
+      inset-block-start: 96px !important;
+      inset-inline-end: clamp(18px, 3vw, 40px) !important;
+      z-index: 22 !important;
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 7px !important;
+      box-sizing: border-box !important;
+      width: clamp(220px, 20vw, 300px) !important;
+      max-height: 92px !important;
+      margin: 0 !important;
+      overflow-y: auto !important;
+      border: 1px solid rgb(199 194 185 / 76%) !important;
+      border-radius: 8px !important;
+      background: rgb(250 249 245 / 92%) !important;
+      box-shadow: 0 14px 36px rgb(20 20 19 / 9%) !important;
+      padding: 11px 12px !important;
+      backdrop-filter: blur(10px);
+    }
+
+    .liax-article-tags a {
+      background: var(--color-surface) !important;
+      font-size: 12px !important;
+      padding: 6px 9px !important;
+    }
+
+    .liax-article-toc {
+      inset-block-start: 204px !important;
+      max-height: calc(100vh - 228px) !important;
+    }
+
+    @media (max-width: 1080px) {
+      .liax-article-tags {
+        position: static !important;
+        inset: auto !important;
+        width: auto !important;
+        max-height: none !important;
+        margin-top: 14px !important;
+        overflow: visible !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+      }
+
+      .liax-article-toc {
+        inset-block-start: 84px !important;
+        max-height: 42vh !important;
+      }
+    }
+
+    .liax-public-avatar:hover,
+    .liax-public-avatar:focus-visible {
+      border-color: rgb(95 122 80 / 42%);
+      box-shadow: 0 8px 22px rgb(20 20 19 / 8%);
+      outline: 0;
+      transform: translateY(-1px);
+    }
+
+    .liax-public-sidebar-backdrop {
+      background: rgb(20 20 19 / 12%);
+      backdrop-filter: blur(3px);
+    }
+
+    .liax-public-sidebar {
+      border-radius: 8px 0 0 8px;
+      background:
+        linear-gradient(180deg, rgb(255 255 255 / 94%), rgb(250 249 245 / 94%)),
+        var(--color-page);
+    }
+
+    .liax-public-sidebar__header,
+    .liax-public-sidebar__footer {
+      display: grid;
+      gap: 6px;
+      border: 1px solid rgb(199 194 185 / 70%);
+      border-radius: 8px;
+      background: rgb(255 255 255 / 74%);
+      padding: 14px;
+    }
+
+    .liax-public-sidebar__header strong {
+      font-size: 18px;
+      line-height: 1.2;
+    }
+
+    .liax-public-sidebar__header span,
+    .liax-public-sidebar__footer {
+      margin: 0;
+      color: #6f6a5d;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .liax-public-sidebar-menu a {
+      min-height: 44px;
+      border-radius: 8px;
+      transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+
+    .liax-public-sidebar-menu a:hover,
+    .liax-public-sidebar-menu a:focus-visible {
+      background: rgb(238 245 233 / 62%);
+      box-shadow: 0 8px 20px rgb(20 20 19 / 6%);
+      text-decoration: none;
+      transform: translateX(-2px);
+    }
+
+    .liax-section-empty {
+      min-height: 92px;
+      border-style: dashed;
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / 62%);
+    }
+
+    .liax-data-quality-note {
+      display: inline-flex;
+      width: max-content;
+      max-width: 100%;
+      align-items: center;
+      border: 1px solid rgb(208 161 63 / 36%);
+      border-radius: 999px;
+      background: #fff4d8;
+      color: #704600;
+      font-size: 12px;
+      font-weight: 780;
+      line-height: 1;
+      padding: 5px 8px;
+    }
+
+    .liax-archive-group .liax-data-quality-note {
+      align-self: center;
+      justify-self: start;
+    }
+
+    .liax-guestbook-form__notify input {
+      appearance: none;
+      display: inline-grid;
+      width: 22px;
+      height: 22px;
+      place-items: center;
+      border: 1px solid rgb(95 122 80 / 50%);
+      border-radius: 6px;
+      background: #ffffff;
+      margin: 0;
+      transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .liax-guestbook-form__notify input:checked {
+      border-color: #5f7a50;
+      background: #5f7a50;
+      box-shadow: inset 0 0 0 5px #ffffff;
+    }
+
+    .liax-guestbook-form__notify input:focus-visible {
+      box-shadow: 0 0 0 4px rgb(95 122 80 / 16%);
+      outline: 0;
+    }
+
+    @media (max-width: 860px) {
+      .liax-public-header {
+        position: relative;
+      }
+
+      .liax-public-sidebar {
+        width: min(340px, calc(100vw - 56px));
+        padding: 18px;
+      }
+    }
+
+`;
 }
 
 function readCodeInjection(settings: SiteSettings, key: "codeInjection.contentHead" | "codeInjection.footer" | "codeInjection.globalHead"): string {
@@ -308,12 +647,19 @@ function renderFooterInjection(settings: SiteSettings): string {
 }
 
 type PublishedArticleChrome = {
+  allowedRoles: string[];
   locale: ArticleLocale;
   prefix: LocalePrefix;
   publishedAt: Date | null;
   visitCount: number;
+  tags: PublishedArticleTag[];
   newerArticle: SearchResult | null;
   olderArticle: SearchResult | null;
+};
+
+type PublishedArticleTag = {
+  name: string;
+  slug: string;
 };
 
 function formatArticleDate(locale: ArticleLocale, date: Date | null): string {
@@ -324,15 +670,20 @@ function formatArticleDate(locale: ArticleLocale, date: Date | null): string {
   return date.toISOString().slice(0, 10);
 }
 
-function renderPublishedArticleChrome(meta: PublishedArticleChrome | null): string {
+type PublishedArticleChromeParts = {
+  footerHtml: string;
+  headerHtml: string;
+};
+
+function renderPublishedArticleChrome(meta: PublishedArticleChrome | null): PublishedArticleChromeParts {
   if (!meta) {
-    return "";
+    return { footerHtml: "", headerHtml: "" };
   }
 
   const isZh = meta.locale === "zh-CN";
   const dateLabel = formatArticleDate(meta.locale, meta.publishedAt);
   const readLabel = meta.visitCount > 0
-    ? (isZh ? `${meta.visitCount} 阅读` : `${meta.visitCount} ${meta.visitCount === 1 ? "read" : "reads"}`)
+    ? (isZh ? `${meta.visitCount} \u9605\u8bfb` : `${meta.visitCount} ${meta.visitCount === 1 ? "read" : "reads"}`)
     : "";
   const metaItems = [
     dateLabel ? `<time datetime="${escapeHtml(dateLabel)}">${escapeHtml(dateLabel)}</time>` : "",
@@ -340,21 +691,116 @@ function renderPublishedArticleChrome(meta: PublishedArticleChrome | null): stri
   ].filter(Boolean);
   const navItems = [
     meta.olderArticle?.url
-      ? `<a href="${escapeHtml(meta.olderArticle.url)}"><span>${escapeHtml(isZh ? "上一篇" : "Previous")}</span><strong>${escapeHtml(meta.olderArticle.title)}</strong></a>`
+      ? `<a href="${escapeHtml(meta.olderArticle.url)}"><span>${escapeHtml(isZh ? "\u4e0a\u4e00\u7bc7" : "Previous")}</span><strong>${escapeHtml(meta.olderArticle.title)}</strong></a>`
       : "",
     meta.newerArticle?.url
-      ? `<a href="${escapeHtml(meta.newerArticle.url)}"><span>${escapeHtml(isZh ? "下一篇" : "Next")}</span><strong>${escapeHtml(meta.newerArticle.title)}</strong></a>`
+      ? `<a href="${escapeHtml(meta.newerArticle.url)}"><span>${escapeHtml(isZh ? "\u4e0b\u4e00\u7bc7" : "Next")}</span><strong>${escapeHtml(meta.newerArticle.title)}</strong></a>`
       : ""
   ].filter(Boolean);
-
-  return `<div class="liax-article-utility">
-          <a href="/${meta.prefix}/posts">${escapeHtml(isZh ? "返回文章列表" : "Back to articles")}</a>
+  const tagLinks = meta.tags.map((tag) => {
+    return `<a href="/${meta.prefix}/tags/${encodeURIComponent(tag.slug)}"><span aria-hidden="true">#</span>${escapeHtml(tag.name)}</a>`;
+  });
+  const audienceHtml = renderArticleAudienceHtml(meta.locale, meta.allowedRoles);
+  const headerHtml = `<div class="liax-article-utility">
+          <a href="/${meta.prefix}/posts">${escapeHtml(isZh ? "\u8fd4\u56de\u6587\u7ae0\u5217\u8868" : "Back to articles")}</a>
           ${metaItems.length > 0 ? `<p>${metaItems.join("<span aria-hidden=\"true\">/</span>")}</p>` : ""}
         </div>
-        ${navItems.length > 0 ? `<nav class="liax-article-neighbor-nav" aria-label="${escapeHtml(isZh ? "相邻文章" : "Neighbor articles")}">${navItems.join("")}</nav>` : ""}`;
+        ${audienceHtml}
+        ${tagLinks.length > 0 ? `<nav class="liax-article-tags" aria-label="${escapeHtml(isZh ? "\u6587\u7ae0\u6807\u7b7e" : "Article tags")}">${tagLinks.join("")}</nav>` : ""}`;
+  const footerHtml = navItems.length > 0
+    ? `<footer class="liax-article-footer">
+        <nav class="liax-article-neighbor-nav" aria-label="${escapeHtml(isZh ? "\u76f8\u90bb\u6587\u7ae0" : "Neighbor articles")}">${navItems.join("")}</nav>
+      </footer>`
+    : "";
+
+  return { footerHtml, headerHtml };
 }
 
-function patchPublishedArticleHtml(
+function hasRenderedArticleUtility(html: string): boolean {
+  return /<[^>]+\bclass=(["'])[^"']*\bliax-article-utility\b[^"']*\1/iu.test(html);
+}
+
+function hasRenderedArticleAudience(html: string): boolean {
+  return /<[^>]+\bclass=(["'])[^"']*\bliax-article-audience\b[^"']*\1/iu.test(html);
+}
+
+function hasRenderedArticleNeighborNav(html: string): boolean {
+  return /<[^>]+\bclass=(["'])[^"']*\bliax-article-neighbor-nav\b[^"']*\1/iu.test(html);
+}
+
+function renderArticleAudienceHtml(locale: ArticleLocale, allowedRoles: readonly string[]): string {
+  const label = locale === "zh-CN" ? "\u53ef\u89c1\u8303\u56f4" : "Audience";
+  const value = formatArticleAudienceLabel(allowedRoles, locale);
+
+  return `<p class="liax-article-audience"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></p>`;
+}
+
+function moveArticleNeighborNavAfterBody(html: string): string {
+  const navRegex = /<nav\b(?=[^>]*\bliax-article-neighbor-nav\b)[^>]*>[\s\S]*?<\/nav>/iu;
+  const navMatch = navRegex.exec(html);
+
+  if (!navMatch) {
+    return html;
+  }
+
+  const articleCloseIndex = html.indexOf("</article>");
+
+  if (articleCloseIndex < 0 || navMatch.index > articleCloseIndex) {
+    return html;
+  }
+
+  const navHtml = navMatch[0];
+  const withoutNav = `${html.slice(0, navMatch.index)}${html.slice(navMatch.index + navHtml.length)}`;
+
+  return withoutNav.replace("</article>", `</article>
+      <footer class="liax-article-footer">
+        ${navHtml}
+      </footer>`);
+}
+
+function removeDuplicateHeaderLanguageSwitches(html: string): string {
+  return html.replace(/(<header class="liax-public-header"[^>]*>)([\s\S]*?)(<\/header>)/u, (_match, openTag: string, headerBody: string, closeTag: string) => {
+    let hasLanguageSwitch = false;
+    const nextHeaderBody = headerBody.replace(
+      /<nav\b(?=[^>]*\bliax-language-switch\b)(?=[^>]*data-language-switch-placeholder="true")[^>]*>[\s\S]*?<\/nav>/gu,
+      (navHtml) => {
+        if (hasLanguageSwitch) {
+          return "";
+        }
+
+        hasLanguageSwitch = true;
+        return navHtml;
+      }
+    );
+
+    return `${openTag}${nextHeaderBody}${closeTag}`;
+  });
+}
+
+function markPublishedArticleMenuActive(html: string, prefix: LocalePrefix): string {
+  const postsHref = escapeRegExp(`/${prefix}/posts`);
+  const postsLinkRegex = new RegExp(`(<a\\b(?=[^>]*\\bhref=["']${postsHref}["'])[^>]*)>`, "u");
+
+  return html.replace(
+    /<nav\b(?=[^>]*\bclass=(["'])[^"']*\bliax-public-(?:sidebar-)?menu\b[^"']*\1)[^>]*>[\s\S]*?<\/nav>/gu,
+    (navHtml) => navHtml
+      .replace(/\saria-current=(["'])page\1/gu, "")
+      .replace(postsLinkRegex, '$1 aria-current="page">')
+  );
+}
+
+function sanitizePublishedArticleMojibake(html: string, locale: ArticleLocale | null): string {
+  const fallback = locale === "zh-CN" ? "内容数据待修复" : "Content data needs repair";
+
+  return html
+    .replace(/>(\s*)\?{3,}([\s.,，。:：;；!?！？'"“”‘’()[\]{}<>/\\|_-]*)(\s*)</gu, (_match, before: string, _punctuation: string, after: string) => {
+      return `>${before}${fallback}${after}<`;
+    })
+    .replace(/(content="[^"]*)\?{3,}([\s.,，。:：;；!?！？'"“”‘’()[\]{}<>/\\|_-]*)([^"]*")/gu, `$1${fallback}$3`)
+    .replace(/(title>[\s\S]*?)\?{3,}([\s.,，。:：;；!?！？'"“”‘’()[\]{}<>/\\|_-]*)([\s\S]*?<\/title>)/u, `$1${fallback}$3`);
+}
+
+export function patchPublishedArticleHtml(
   html: string,
   settings: SiteSettings,
   avatarUrl: string | null,
@@ -363,20 +809,32 @@ function patchPublishedArticleHtml(
   const logoHtml = renderPublicLogo(settings);
   const avatarHtml = renderPublicAvatar(avatarUrl);
   const faviconHtml = renderFaviconLink(settings);
+  const logoPreviewHtml = renderLogoPreviewTags(settings);
   const headInjection = renderHeadInjection(settings, true);
   const footerInjection = renderFooterInjection(settings);
-  const articleChromeHtml = renderPublishedArticleChrome(articleChrome);
+  const articleChromeParts = renderPublishedArticleChrome(articleChrome);
   let patched = html
     .replace(/<link rel="icon" href="[^"]*">/u, faviconHtml)
     .replace(/<span class="liax-public-logo"(?: aria-hidden="true")?>[\s\S]*?<\/span>/u, logoHtml)
     .replace(/<a class="liax-public-avatar" href="\/console" aria-label="Console">[\s\S]*?<\/a>/u, avatarHtml)
     .replace(/window\.scrollTo\(\{ top: 0 \}\);/gu, "window.scrollTo({ left: window.scrollX, top: window.scrollY });");
 
-  if (articleChromeHtml && !patched.includes("liax-article-utility")) {
+  patched = removeDuplicateHeaderLanguageSwitches(patched);
+  patched = sanitizePublishedArticleMojibake(patched, articleChrome?.locale ?? null);
+  if (articleChrome) {
+    patched = markPublishedArticleMenuActive(patched, articleChrome.prefix);
+  }
+
+  if (logoPreviewHtml && !/<meta\s+(?:property|name)=["'](?:og:image|twitter:image)["']/iu.test(patched)) {
+    patched = patched.replace(/<\/head>/iu, `${logoPreviewHtml}
+</head>`);
+  }
+
+  if (articleChromeParts.headerHtml && !hasRenderedArticleUtility(patched)) {
     const nextPatched = patched.replace(
       /(<header class="liax-article-header">[\s\S]*?<h1>[\s\S]*?<\/h1>)([\s\S]*?<\/header>)/u,
       `$1
-        ${articleChromeHtml}
+        ${articleChromeParts.headerHtml}
       </header>`
     );
 
@@ -385,11 +843,35 @@ function patchPublishedArticleHtml(
         /(<article class="liax-article-body">\s*)(<h1>[\s\S]*?<\/h1>)/u,
         `$1<header class="liax-article-header">
         $2
-        ${articleChromeHtml}
+        ${articleChromeParts.headerHtml}
       </header>`
       )
       : nextPatched;
   }
+
+  if (articleChrome && !hasRenderedArticleAudience(patched)) {
+    const audienceHtml = renderArticleAudienceHtml(articleChrome.locale, articleChrome.allowedRoles);
+    const nextPatched = patched.replace(
+      /(<div class="liax-article-utility">[\s\S]*?<\/div>)/u,
+      `$1
+        ${audienceHtml}`
+    );
+
+    patched = nextPatched === patched
+      ? patched.replace(
+        /(<header class="liax-article-header">[\s\S]*?<h1>[\s\S]*?<\/h1>)/u,
+        `$1
+        ${audienceHtml}`
+      )
+      : nextPatched;
+  }
+
+  if (articleChromeParts.footerHtml && !hasRenderedArticleNeighborNav(patched)) {
+    patched = patched.replace("</article>", `</article>
+      ${articleChromeParts.footerHtml}`);
+  }
+
+  patched = moveArticleNeighborNavAfterBody(patched);
 
   if (headInjection) {
     patched = patched.replace("</head>", `${headInjection}</head>`);
@@ -403,8 +885,15 @@ function patchPublishedArticleHtml(
     patched = patched.replace(
       "</style>",
       `    [data-liax-published-chrome-patch] { display: none; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
     html,
     body {
+      max-width: 100%;
+      overflow-x: hidden;
       scrollbar-width: none;
     }
     html::-webkit-scrollbar,
@@ -414,6 +903,51 @@ function patchPublishedArticleHtml(
     .liax-public-logo,
     .liax-public-avatar {
       overflow: hidden;
+    }
+    .liax-public-shell,
+    .liax-public-header,
+    .liax-article-card,
+    .liax-article-header,
+    .liax-article-body,
+    .liax-article-toc {
+      min-width: 0;
+      max-width: 100%;
+    }
+    .liax-public-header,
+    .liax-article-card {
+      width: 100%;
+      max-width: 100vw;
+    }
+    .liax-public-sidebar-layer,
+    .liax-public-sidebar-backdrop {
+      width: 100vw;
+      max-width: 100vw;
+    }
+    .liax-article-card {
+      overflow-x: clip;
+      padding-inline-end: clamp(280px, 22vw, 360px);
+    }
+    .liax-article-header,
+    .liax-article-body,
+    .liax-article-footer {
+      width: min(980px, 100%);
+    }
+    .liax-article-header h1,
+    .liax-article-body h1,
+    .liax-article-body h2,
+    .liax-article-body h3,
+    .liax-article-body h4,
+    .liax-article-body h5,
+    .liax-article-body h6,
+    .liax-article-body p,
+    .liax-article-body li,
+    .liax-article-toc a {
+      overflow-wrap: anywhere;
+    }
+    .liax-article-body h2,
+    .liax-article-body h3,
+    .liax-article-body h4 {
+      scroll-margin-top: 96px;
     }
     .liax-public-logo img,
     .liax-public-avatar img,
@@ -426,7 +960,34 @@ function patchPublishedArticleHtml(
     .liax-public-avatar img {
       width: 100%;
       height: 100%;
+    }
+
+    .liax-public-logo img {
+      object-fit: contain;
+    }
+
+    .liax-public-avatar img {
       object-fit: cover;
+    }
+
+    .liax-public-logo > span,
+    .liax-public-logo > img,
+    .liax-public-avatar > span,
+    .liax-public-avatar > img {
+      grid-area: 1 / 1;
+    }
+
+    .liax-public-logo > img,
+    .liax-public-avatar > img {
+      background: var(--color-surface-muted);
+    }
+    .liax-article-body code {
+      border: 1px solid rgb(80 86 124 / 54%);
+      border-radius: 6px;
+      background: #1a1b26;
+      color: #c0caf5;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      padding: 0.1em 0.35em;
     }
     .liax-article-body pre,
     .liax-article-body table {
@@ -435,9 +996,37 @@ function patchPublishedArticleHtml(
     }
     .liax-article-body pre {
       position: relative;
+      border: 1px solid #2f3549;
+      border-radius: 8px;
+      background: #1a1b26;
+      color: #c0caf5;
+      padding: 16px;
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+      scrollbar-color: #3b4261 #1a1b26;
+    }
+    .liax-article-body pre code {
+      display: block;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      padding: 0;
     }
     .liax-code-frame {
       padding-top: 44px;
+    }
+    .liax-code-keyword {
+      color: #bb9af7;
+      font-weight: 760;
+    }
+    .liax-code-string {
+      color: #9ece6a;
+    }
+    .liax-code-number {
+      color: #ff9e64;
+    }
+    .liax-code-comment {
+      color: #565f89;
+      font-style: italic;
     }
     .liax-code-copy {
       position: absolute;
@@ -456,8 +1045,8 @@ function patchPublishedArticleHtml(
     }
     .liax-code-copy:hover,
     .liax-code-copy:focus-visible {
-      border-color: #7aa2f7;
-      color: #7aa2f7;
+      border-color: #8ab895;
+      color: #8ab895;
       outline: 0;
     }
     .liax-article-utility {
@@ -480,6 +1069,56 @@ function patchPublishedArticleHtml(
       display: inline-flex;
       gap: 8px;
       margin: 0;
+    }
+    .liax-article-audience {
+      display: inline-flex;
+      width: max-content;
+      max-width: 100%;
+      align-items: center;
+      gap: 8px;
+      margin: 12px 0 0;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      font-size: 13px;
+      font-weight: 760;
+      line-height: 1.2;
+      padding: 6px 10px;
+    }
+    .liax-article-audience span {
+      color: #6f6a5d;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .liax-article-audience strong {
+      overflow-wrap: anywhere;
+    }
+    .liax-article-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .liax-article-tags a {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      font-size: 13px;
+      font-weight: 760;
+      line-height: 1;
+      padding: 7px 10px;
+      text-decoration: none;
+    }
+    .liax-article-tags a:hover,
+    .liax-article-tags a:focus-visible {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+      outline: 0;
     }
     .liax-article-neighbor-nav {
       display: grid;
@@ -506,14 +1145,23 @@ function patchPublishedArticleHtml(
       overflow-wrap: anywhere;
     }
     .liax-article-toc {
+      position: fixed;
+      inset-block-start: 96px;
+      inset-inline-end: clamp(18px, 3vw, 40px);
+      z-index: 20;
       display: grid;
       gap: 10px;
-      width: min(760px, 100%);
-      margin: 0 0 clamp(22px, 4vw, 38px);
+      min-width: 0;
+      width: clamp(220px, 20vw, 300px);
+      max-height: calc(100vh - 120px);
+      margin: 0;
+      overflow-y: auto;
       border: 1px solid var(--color-border);
       border-radius: 8px;
-      background: var(--color-surface-muted);
+      background: color-mix(in srgb, var(--color-surface-muted) 94%, transparent);
+      box-shadow: 0 18px 48px rgba(20, 20, 19, 0.12);
       padding: 14px 16px;
+      backdrop-filter: blur(10px);
     }
     .liax-article-toc strong {
       font-size: 14px;
@@ -544,6 +1192,34 @@ function patchPublishedArticleHtml(
       text-decoration: underline;
       text-underline-offset: 0.18em;
     }
+
+    @media (max-width: 1080px) {
+      .liax-article-card {
+        padding-inline-end: clamp(16px, 4vw, 40px);
+      }
+
+      .liax-article-toc {
+        position: sticky;
+        inset-block-start: 84px;
+        inset-inline-end: auto;
+        width: min(360px, 100%);
+        max-height: 42vh;
+        margin: 0 0 clamp(22px, 4vw, 38px) auto;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .liax-article-card {
+        padding: 22px 16px 36px;
+      }
+      .liax-article-neighbor-nav {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .liax-article-utility p {
+        flex-wrap: wrap;
+      }
+    }
+${renderPublicPolishCss()}
   </style>
   <meta data-liax-published-chrome-patch="true">`
     );
@@ -573,6 +1249,39 @@ function liaxArticleText(key) {
 function liaxArticleSlug(text, index) {
   const normalized = text.trim().toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, "-").replace(/^-+|-+$/gu, "");
   return normalized || "section-" + (index + 1);
+}
+function liaxEscapeCode(text) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function liaxCodeClass(token) {
+  if (/^\\/\\//.test(token) || /^\\/\\*/.test(token)) {
+    return "liax-code-comment";
+  }
+  if (/^["']/.test(token)) {
+    return "liax-code-string";
+  }
+  if (/^\\d/.test(token)) {
+    return "liax-code-number";
+  }
+  return "liax-code-keyword";
+}
+function liaxHighlightCodeElement(code) {
+  if (code.dataset.liaxHighlighted === "true" || code.querySelector(".liax-code-keyword, .liax-code-string, .liax-code-number, .liax-code-comment")) {
+    return;
+  }
+  const source = code.textContent || "";
+  const tokenPattern = /\\/\\*[\\s\\S]*?\\*\\/|\\/\\/[^\\n]*|"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|\\b(?:async|await|break|case|catch|class|const|continue|default|else|export|extends|false|finally|for|from|function|if|import|interface|let|new|null|private|protected|public|return|static|switch|throw|true|try|type|undefined|var|void|while)\\b|\\b\\d+(?:\\.\\d+)?\\b/gu;
+  let highlighted = "";
+  let cursor = 0;
+  source.replace(tokenPattern, (token, offset) => {
+    highlighted += liaxEscapeCode(source.slice(cursor, offset));
+    highlighted += '<span class="' + liaxCodeClass(token) + '">' + liaxEscapeCode(token) + "</span>";
+    cursor = offset + token.length;
+    return token;
+  });
+  highlighted += liaxEscapeCode(source.slice(cursor));
+  code.innerHTML = highlighted;
+  code.dataset.liaxHighlighted = "true";
 }
 function liaxEnhanceArticlePage() {
   const body = document.querySelector(".liax-article-body");
@@ -615,6 +1324,10 @@ function liaxEnhanceArticlePage() {
     }
   }
   body.querySelectorAll("pre").forEach((pre) => {
+    const code = pre.querySelector("code");
+    if (code) {
+      liaxHighlightCodeElement(code);
+    }
     if (pre.querySelector(".liax-code-copy")) {
       return;
     }
@@ -649,6 +1362,38 @@ function includesCjk(value: string): boolean {
   return /[\u3400-\u9fff]/u.test(value);
 }
 
+function hasQuestionMarkMojibake(value: string): boolean {
+  const trimmed = value.trim();
+
+  if (!/\?{3,}/u.test(trimmed)) {
+    return false;
+  }
+
+  const questionCount = [...trimmed].filter((character) => character === "?").length;
+  const strongCharacters = trimmed.replace(/\?{3,}/gu, "").replace(/[\s.,，。:：;；!?！？'"“”‘’()[\]{}<>/\\|_-]/gu, "");
+
+  return strongCharacters.length === 0 || questionCount / Math.max(trimmed.length, 1) >= 0.45;
+}
+
+function publicDataRepairLabel(locale: ArticleLocale): string {
+  return locale === "zh-CN" ? "内容数据待修复" : "Content data needs repair";
+}
+
+function safePublicTitle(locale: ArticleLocale, title: string): { label: string; repaired: boolean } {
+  if (!hasQuestionMarkMojibake(title)) {
+    return { label: title, repaired: false };
+  }
+
+  return {
+    label: locale === "zh-CN" ? "这篇内容的标题待修复" : "This title needs repair",
+    repaired: true
+  };
+}
+
+function safePublicSummary(summary: string): string {
+  return hasQuestionMarkMojibake(summary) ? "" : summary;
+}
+
 type HomeContactItem = {
   href: string | null;
   label: string;
@@ -673,6 +1418,17 @@ function contactHref(label: string, value: string): string | null {
   return null;
 }
 
+function isPlaceholderContactItem(label: string, value: string): boolean {
+  const normalizedLabel = label.trim().toLowerCase();
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (normalizedValue === "hello@example.com") {
+    return true;
+  }
+
+  return normalizedLabel === "qq" && normalizedValue === "123456";
+}
+
 function parseHomeContactItems(settings: SiteSettings, isZh: boolean): HomeContactItem[] {
   const localeKey = isZh ? "home.contactItems.zh-CN" : "home.contactItems.en-US";
   const legacyItems = readStringSetting(settings, "home.contactItems", "");
@@ -694,7 +1450,7 @@ function parseHomeContactItems(settings: SiteSettings, isZh: boolean): HomeConta
         value
       };
     })
-    .filter((item) => item.value.length > 0);
+    .filter((item) => item.value.length > 0 && !isPlaceholderContactItem(item.label, item.value));
 }
 
 function renderHomeContactItem(item: HomeContactItem): string {
@@ -708,37 +1464,37 @@ function renderHomeContactItem(item: HomeContactItem): string {
         </span>`;
 }
 
-function renderHomeEntryLinks(prefix: LocalePrefix, isZh: boolean): string {
-  const links = [
-    { href: `/${prefix}/posts`, title: isZh ? "文章" : "Articles", meta: isZh ? "阅读长文与笔记" : "Long-form notes" },
-    { href: `/${prefix}/moments`, title: isZh ? "瞬间" : "Moments", meta: isZh ? "浏览短内容" : "Short updates" },
-    { href: `/${prefix}/tags`, title: isZh ? "标签" : "Tags", meta: isZh ? "按主题进入" : "Browse by topic" },
-    { href: `/${prefix}/search`, title: isZh ? "搜索" : "Search", meta: isZh ? "查找公开内容" : "Find public content" }
-  ];
+function renderHomeContactPanel(settings: SiteSettings, isZh: boolean): string {
+  const items = parseHomeContactItems(settings, isZh);
 
-  return `<nav class="liax-home-entry-grid" aria-label="${escapeHtml(isZh ? "内容入口" : "Content entry")}">
-${links.map((link) => `        <a href="${escapeHtml(link.href)}">
-          <span>${escapeHtml(link.title)}</span>
-          <small>${escapeHtml(link.meta)}</small>
-        </a>`).join("\n")}
-      </nav>`;
+  if (items.length === 0) {
+    return `<aside class="liax-home-contact" aria-label="${escapeHtml(isZh ? "联系方式" : "Contact")}">
+        <p class="liax-home-contact__empty">${escapeHtml(isZh ? "暂未配置公开联系方式。" : "No public contact methods are configured yet.")}</p>
+      </aside>`;
+  }
+
+  return `<aside class="liax-home-contact" aria-label="${escapeHtml(isZh ? "联系方式" : "Contact")}">
+${items.map((item) => `        ${renderHomeContactItem(item)}`).join("\n")}
+      </aside>`;
 }
 
 export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, settings: SiteSettings, avatarUrl: string | null = null): string {
   const isZh = locale === "zh-CN";
   const title = "Liax Space";
-  const description = isZh ? "一个中英文双语言的温暖极简内容空间。" : "A warm minimal bilingual content space.";
+  const description = "Liax Space";
   const switchHtml = renderHomeLanguageSwitch(prefix);
   const alternatePrefix = prefix === "zh" ? "en" : "zh";
   const alternateLocale = alternatePrefix === "zh" ? "zh-CN" : "en-US";
   const signature = readStringSetting(settings, "home.signature", "Timeless Silent Vigil");
-  const brandInfo = readStringSetting(
+  const rawBrandInfo = readStringSetting(
     settings,
     "home.brandInfo",
-    isZh ? "Liax Space · 温暖极简内容空间" : "Liax Space · Warm minimal content space"
+    "Liax Space"
   );
+  const hasLegacyBrandInfo = (rawBrandInfo.includes("温暖") && rawBrandInfo.includes("极简")) || /warm minimal content space/iu.test(rawBrandInfo);
+  const brandInfo = hasLegacyBrandInfo ? "Liax Space" : rawBrandInfo;
   const rawIcpNumber = readStringSetting(settings, "home.icpNumber", "");
-  const icpNumber = rawIcpNumber === "备案号待配置" || rawIcpNumber === "ICP pending" ? "" : rawIcpNumber;
+  const icpNumber = ["备案号待配置", "ICP pending", "ICP备案号"].includes(rawIcpNumber) ? "" : rawIcpNumber;
   const icpUrl = readUrlSetting(settings, "home.icpUrl", "https://beian.miit.gov.cn");
   const icpHtml = icpNumber
     ? `<a href="${escapeHtml(icpUrl)}" rel="noopener noreferrer" target="_blank">${escapeHtml(icpNumber)}</a>`
@@ -752,6 +1508,7 @@ export function renderHomePage(locale: ArticleLocale, prefix: LocalePrefix, sett
   <link rel="canonical" href="/${prefix}">
   <link rel="alternate" hreflang="${alternateLocale}" href="/${alternatePrefix}">
   ${renderFaviconLink(settings)}
+  ${renderLogoPreviewTags(settings)}
   ${renderHeadInjection(settings, false)}
   <title>${escapeHtml(title)}</title>
   <style>
@@ -794,22 +1551,6 @@ ${renderThemeCssVariables(settings)}
       width: 100%;
       margin: 0;
       padding: 0;
-    }
-
-    .liax-public-header,
-    main,
-    .liax-home-entry-grid,
-    .liax-home-footer {
-      animation: liax-page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    }
-
-    main,
-    .liax-home-entry-grid {
-      animation-delay: 70ms;
-    }
-
-    .liax-home-footer {
-      animation-delay: 120ms;
     }
 
     .liax-public-header {
@@ -865,6 +1606,18 @@ ${renderThemeCssVariables(settings)}
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+
+    .liax-public-logo > span,
+    .liax-public-logo > img,
+    .liax-public-avatar > span,
+    .liax-public-avatar > img {
+      grid-area: 1 / 1;
+    }
+
+    .liax-public-logo > img,
+    .liax-public-avatar > img {
+      background: var(--color-surface-muted);
     }
 
     .liax-public-header__center {
@@ -983,8 +1736,9 @@ ${renderThemeCssVariables(settings)}
       width: 38px;
       height: 38px;
       align-items: center;
+      flex-direction: column;
       justify-content: center;
-      gap: 3px;
+      gap: 4px;
       border: 1px solid var(--color-border);
       border-radius: 999px;
       background: var(--color-surface-muted);
@@ -995,8 +1749,8 @@ ${renderThemeCssVariables(settings)}
 
     .liax-public-menu-toggle span {
       display: block;
-      width: 4px;
-      height: 4px;
+      width: 16px;
+      height: 2px;
       border-radius: 999px;
       background: currentColor;
     }
@@ -1035,7 +1789,7 @@ ${renderThemeCssVariables(settings)}
       align-content: start;
       gap: 18px;
       box-sizing: border-box;
-      width: min(360px, calc(100vw - 36px));
+      width: min(340px, calc(100vw - 56px));
       border-left: 1px solid var(--color-border);
       background: var(--color-page);
       box-shadow: -18px 0 44px rgba(20, 20, 19, 0.14);
@@ -1088,87 +1842,45 @@ ${renderThemeCssVariables(settings)}
     main {
       position: relative;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 300px;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 360px);
       align-items: center;
-      gap: clamp(28px, 6vw, 72px);
-      width: min(1440px, calc(100% - clamp(32px, 6vw, 96px)));
+      gap: clamp(22px, 4vw, 52px);
+      width: min(1560px, calc(100% - clamp(24px, 5vw, 80px)));
       margin: 0 auto;
-      padding: clamp(64px, 10vh, 112px) 0 clamp(72px, 12vh, 132px);
+      padding: clamp(34px, 7vh, 72px) 0 clamp(42px, 8vh, 88px);
     }
 
-    .liax-home-author {
-      display: inline-flex;
-      width: max-content;
-      align-items: center;
-      gap: 10px;
-      border: 1px solid var(--color-border);
-      border-radius: 999px;
-      background: var(--color-surface);
-      padding: 8px 12px;
-      font-size: 14px;
-      font-weight: 760;
+    main::before {
+      content: "";
+      position: absolute;
+      inset: clamp(18px, 4vw, 46px) auto auto 0;
+      width: min(380px, 46vw);
+      height: 1px;
+      background: linear-gradient(90deg, var(--color-accent), transparent);
+      opacity: 0.48;
     }
 
     .liax-home-title {
       max-width: 820px;
-      margin: 20px 0 0;
-      font-size: clamp(56px, 8vw, 112px);
-      line-height: 0.96;
+      margin: 0;
+      font-size: 88px;
+      line-height: 1;
       letter-spacing: 0;
     }
 
-    .liax-home-entry-grid {
-      display: grid;
-      gap: 10px;
-      justify-self: end;
-      width: 100%;
-      max-width: 320px;
-    }
-
-    .liax-home-entry-grid a {
-      display: grid;
-      gap: 4px;
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-      background: var(--color-surface);
-      box-shadow: 0 12px 38px rgba(20, 20, 19, 0.04);
-      color: var(--color-text);
-      padding: 14px 16px;
-      text-decoration: none;
-      transition: border-color 180ms ease, color 180ms ease, transform 180ms ease;
-    }
-
-    .liax-home-entry-grid a:hover,
-    .liax-home-entry-grid a:focus-visible {
-      border-color: var(--color-accent);
-      color: var(--color-accent);
-      outline: 0;
-      transform: translateY(-1px);
-    }
-
-    .liax-home-entry-grid span {
-      font-size: 18px;
-      font-weight: 820;
-      line-height: 1.2;
-    }
-
-    .liax-home-entry-grid small {
-      color: rgb(20 20 19 / 66%);
-      font-size: 13px;
-      font-weight: 720;
-      line-height: 1.35;
-    }
-
     .liax-home-contact {
+      box-sizing: border-box;
       display: grid;
-      gap: 12px;
+      gap: 14px;
       justify-self: end;
-      border: 1px solid var(--color-border);
+      align-self: center;
+      border: 1px solid rgb(199 194 185 / 58%);
       border-radius: 8px;
-      background: var(--color-surface);
-      box-shadow: 0 12px 38px rgba(20, 20, 19, 0.04);
-      padding: 20px;
+      background: rgb(255 255 255 / 62%);
+      box-shadow: 0 10px 30px rgba(20, 20, 19, 0.035);
+      padding: 18px 20px;
       width: 100%;
+      max-width: 360px;
     }
 
     .liax-home-contact__item {
@@ -1190,11 +1902,19 @@ ${renderThemeCssVariables(settings)}
       white-space: normal;
     }
 
+    .liax-home-contact__empty {
+      margin: 0;
+      color: rgb(20 20 19 / 62%);
+      font-size: 14px;
+      font-weight: 720;
+      line-height: 1.5;
+    }
+
     .liax-home-footer {
       display: flex;
       justify-content: space-between;
       gap: 16px;
-      width: min(1440px, calc(100% - clamp(32px, 6vw, 96px)));
+      width: min(1560px, calc(100% - clamp(24px, 5vw, 80px)));
       margin: 0 auto;
       border-top: 1px solid var(--color-border);
       padding-top: 14px;
@@ -1225,9 +1945,8 @@ ${renderThemeCssVariables(settings)}
         max-width: 420px;
       }
 
-      .liax-home-entry-grid {
-        justify-self: start;
-        max-width: 520px;
+      .liax-home-title {
+        font-size: 64px;
       }
     }
 
@@ -1242,7 +1961,7 @@ ${renderThemeCssVariables(settings)}
         height: 76px;
         min-height: 76px;
         gap: 10px;
-        overflow-x: auto;
+        overflow: visible;
         padding: 10px 14px;
         scrollbar-width: none;
       }
@@ -1268,6 +1987,8 @@ ${renderThemeCssVariables(settings)}
 
       main {
         align-items: start;
+        gap: 22px;
+        padding: 34px 0 52px;
       }
 
       .liax-home-contact {
@@ -1276,22 +1997,15 @@ ${renderThemeCssVariables(settings)}
         box-sizing: border-box;
       }
 
-      .liax-home-entry-grid {
-        justify-self: stretch;
-        max-width: none;
-        width: 100%;
-      }
-
       .liax-home-title {
-        font-size: 48px;
-      }
-
-      .liax-home-entry-grid span {
-        font-size: 17px;
+        max-width: 100%;
+        font-size: 40px;
+        line-height: 1.05;
       }
 
       .liax-home-footer {
         display: grid;
+        width: calc(100% - 28px);
       }
     }
 
@@ -1305,70 +2019,13 @@ ${renderThemeCssVariables(settings)}
       }
     }
 
-    @keyframes liax-language-wipe-ripple {
-      0% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0);
-      }
-
-      12% {
-        opacity: 0.62;
-        transform: translate(-50%, -50%) scale(0.14);
-      }
-
-      70% {
-        opacity: 0.42;
-        transform: translate(-50%, -50%) scale(0.78);
-      }
-
-      100% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(1);
-      }
-    }
-
-    @keyframes liax-language-wipe-ripple-soft {
-      0% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0);
-      }
-
-      18% {
-        opacity: 0.34;
-        transform: translate(-50%, -50%) scale(0.2);
-      }
-
-      100% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(1.04);
-      }
-    }
-
-    @keyframes liax-page-enter {
-      from {
-        opacity: 0;
-        transform: translateY(12px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
     @media (prefers-reduced-motion: reduce) {
-      .liax-public-header,
-      main,
-      .liax-home-entry-grid,
-      .liax-home-footer {
-        animation: none;
-      }
-
       .liax-public-sidebar-layer,
       .liax-public-sidebar {
         transition: none;
       }
     }
+${renderPublicPolishCss()}
   </style>
 </head>
 <body>
@@ -1395,7 +2052,7 @@ ${renderThemeCssVariables(settings)}
       <section>
         <h1 class="liax-home-title">${escapeHtml(signature)}</h1>
       </section>
-      ${renderHomeEntryLinks(prefix, isZh)}
+      ${renderHomeContactPanel(settings, isZh)}
     </main>
     <footer class="liax-home-footer">
       <span>${escapeHtml(brandInfo)}</span>
@@ -1409,7 +2066,6 @@ ${renderLanguageSwitchScript()}
 }
 
 const publicSectionLabels = {
-  account: { en: "Account", zh: "个人" },
   archives: { en: "Archives", zh: "归档" },
   contact: { en: "Contact", zh: "联系" },
   guestbook: { en: "Guestbook", zh: "留言" },
@@ -1441,26 +2097,68 @@ function formatPublicVisitCount(locale: ArticleLocale, count: number): string {
   return `${count} ${count === 1 ? "read" : "reads"}`;
 }
 
+type LocalizedPublicTag = {
+  articleCount: number;
+  createdAt: Date;
+  id: number;
+  name: string;
+  slug: string;
+};
+
+function compareLocalizedPublicTags(locale: ArticleLocale, left: LocalizedPublicTag, right: LocalizedPublicTag): number {
+  const articleCountDelta = right.articleCount - left.articleCount;
+
+  if (articleCountDelta !== 0) {
+    return articleCountDelta;
+  }
+
+  const createdAtDelta = right.createdAt.getTime() - left.createdAt.getTime();
+
+  if (createdAtDelta !== 0) {
+    return createdAtDelta;
+  }
+
+  return left.name.localeCompare(right.name, locale);
+}
+
+function formatPublicTagBadge(locale: ArticleLocale, tag: LocalizedPublicTag, index: number): string {
+  if (index === 0) {
+    return locale === "zh-CN" ? "热门" : "Popular";
+  }
+
+  if (tag.articleCount > 1) {
+    return locale === "zh-CN" ? "活跃" : "Active";
+  }
+
+  return locale === "zh-CN" ? "有内容" : "In use";
+}
+
 export function renderTagCards(locale: ArticleLocale, tags: TagDetail[]): string {
   const localizedTags = tags.flatMap((tagDetail) => {
     const translation = tagDetail.translations.find((item) => item.locale === locale);
 
     return translation ? [{
       articleCount: tagDetail.articleCounts?.[locale] ?? 0,
+      createdAt: tagDetail.tag.createdAt,
       id: tagDetail.tag.id,
       name: translation.name,
       slug: translation.slug
     }] : [];
   });
 
-  const visibleTags = localizedTags.filter((tag) => tag.articleCount > 0);
+  const visibleTags = localizedTags
+    .filter((tag) => tag.articleCount > 0)
+    .sort((left, right) => compareLocalizedPublicTags(locale, left, right));
 
   if (visibleTags.length === 0) {
     return `<p class="liax-section-empty">${locale === "zh-CN" ? "当前语言还没有标签。" : "No tags are available in this language yet."}</p>`;
   }
 
   return `<ul class="liax-tag-grid">
-${visibleTags.map((tag) => `        <li><a href="/${locale === "zh-CN" ? "zh" : "en"}/tags/${escapeHtml(tag.slug)}"><span>#</span><strong>${escapeHtml(tag.name)}</strong><code>${escapeHtml(tag.slug)}</code><small>${escapeHtml(formatPublicArticleCount(locale, tag.articleCount))}</small></a></li>`).join("\n")}
+${visibleTags.map((tag, index) => {
+    const tagClass = index === 0 ? "liax-tag-grid__link liax-tag-grid__link--featured" : "liax-tag-grid__link";
+    return `        <li><a class="${tagClass}" href="/${locale === "zh-CN" ? "zh" : "en"}/tags/${encodeURIComponent(tag.slug)}"><span class="liax-tag-grid__mark">#</span><strong>${escapeHtml(tag.name)}</strong><em class="liax-tag-grid__badge">${escapeHtml(formatPublicTagBadge(locale, tag, index))}</em><code>${escapeHtml(tag.slug)}</code><small>${escapeHtml(formatPublicArticleCount(locale, tag.articleCount))}</small></a></li>`;
+  }).join("\n")}
       </ul>`;
 }
 
@@ -1472,14 +2170,16 @@ export function renderArticleCards(locale: ArticleLocale, prefix: LocalePrefix, 
   return `<div class="liax-article-list">
 ${articles.map((article) => {
   const dateLabel = article.publishedAt ? new Date(article.publishedAt).toISOString().slice(0, 10) : "";
-  const summary = article.summary ?? article.seoDescription ?? "";
+  const title = safePublicTitle(locale, article.title);
+  const summary = safePublicSummary(article.summary ?? article.seoDescription ?? "");
 
   return `        <a class="liax-article-card" href="/${prefix}/posts/${encodeURIComponent(article.slug)}">
-          <strong>${escapeHtml(article.title)}</strong>
+          <strong>${escapeHtml(title.label)}</strong>
           <span class="liax-article-meta">
             <time datetime="${escapeHtml(dateLabel)}">${escapeHtml(dateLabel)}</time>
             <span>${escapeHtml(formatPublicVisitCount(locale, article.visitCount))}</span>
           </span>
+          ${title.repaired ? `<span class="liax-data-quality-note">${escapeHtml(publicDataRepairLabel(locale))}</span>` : ""}
           ${summary ? `<p>${escapeHtml(summary)}</p>` : ""}
         </a>`;
 }).join("\n")}
@@ -1510,11 +2210,13 @@ ${[...grouped.entries()].map(([groupLabel, groupArticles]) => `        <section 
 ${groupArticles.map((article) => {
   const date = article.publishedAt ? new Date(article.publishedAt) : null;
   const dateLabel = date && Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : "";
+  const title = safePublicTitle(locale, article.title);
 
   return `            <li>
               <a href="/${prefix}/posts/${encodeURIComponent(article.slug)}">
                 <time datetime="${escapeHtml(dateLabel)}">${escapeHtml(dateLabel || (isZh ? "未注明" : "Undated"))}</time>
-                <strong>${escapeHtml(article.title)}</strong>
+                <strong>${escapeHtml(title.label)}</strong>
+                ${title.repaired ? `<span class="liax-data-quality-note">${escapeHtml(publicDataRepairLabel(locale))}</span>` : ""}
               </a>
             </li>`;
 }).join("\n")}
@@ -1547,8 +2249,9 @@ function renderTagDetailBody(locale: ArticleLocale, prefix: LocalePrefix, tagNam
       <a class="liax-section-back" href="/${prefix}/tags">${escapeHtml(isZh ? "返回全部标签" : "Back to all tags")}</a>`;
 }
 
-export function renderMomentsBody(locale: ArticleLocale, moments: Moment[]): string {
+export function renderMomentsBody(locale: ArticleLocale, moments: Moment[], options: RenderMomentsOptions = {}): string {
   const isZh = locale === "zh-CN";
+  const shouldRenderImage = options.shouldRenderImage ?? (() => true);
 
   if (moments.length === 0) {
     return `<p class="liax-section-empty">${isZh ? "当前语言还没有已发布瞬间。" : "No published moments are available in this language yet."}</p>`;
@@ -1560,10 +2263,11 @@ ${moments.map((moment) => {
   const date = moment.publishedAt ?? moment.createdAt;
   const dateLabel = date.toISOString().slice(0, 10);
 
-  const images = moment.images.length > 0
+  const renderableImages = moment.images.filter((image) => shouldRenderImage(image));
+  const images = renderableImages.length > 0
     ? `
           <div class="liax-moment-images">
-${moment.images.map((image) => `            <img alt="" loading="lazy" onerror="this.remove()" src="${escapeHtml(image)}">`).join("\n")}
+${renderableImages.map((image) => `            <img alt="" loading="lazy" onerror="const p=this.parentElement;this.remove();if(p&&!p.querySelector('img'))p.remove();" src="${escapeHtml(image)}">`).join("\n")}
           </div>`
     : "";
 
@@ -1669,22 +2373,24 @@ ${state.errors.map((error) => `            <li>${escapeHtml(error)}</li>`).join(
 
 function renderGuestbookEntries(locale: ArticleLocale, entries: GuestbookEntry[]): string {
   const isZh = locale === "zh-CN";
-  const visibleEntries = entries.filter((entry) => !/^(?:AutoTestBot|QA user)$/iu.test(entry.authorName.trim()));
 
-  if (visibleEntries.length === 0) {
+  if (entries.length === 0) {
     return `<p class="liax-section-empty">${isZh ? "暂无公开留言。" : "No public messages yet."}</p>`;
   }
 
   return `<div class="liax-guestbook-list" aria-label="${isZh ? "公开留言" : "Public messages"}">
-${visibleEntries.map((entry) => {
+${entries.map((entry) => {
   const dateLabel = entry.createdAt.toISOString().slice(0, 10);
+  const repaired = hasQuestionMarkMojibake(entry.content);
+  const content = repaired ? (isZh ? "这条留言内容待修复。" : "This message needs repair.") : entry.content;
 
   return `        <article class="liax-guestbook-entry">
           <header>
             <strong>${escapeHtml(entry.authorName)}</strong>
             <time datetime="${escapeHtml(entry.createdAt.toISOString())}">${escapeHtml(dateLabel)}</time>
           </header>
-          <p>${escapeHtml(entry.content)}</p>
+          ${repaired ? `<span class="liax-data-quality-note">${escapeHtml(publicDataRepairLabel(locale))}</span>` : ""}
+          <p>${escapeHtml(content)}</p>
         </article>`;
 }).join("\n")}
       </div>`;
@@ -1704,29 +2410,35 @@ export function renderGuestbookBody(
   const messageInvalid = isZh ? "请填写留言内容。" : "Please enter a message.";
 
   return `<p class="liax-section-description">${escapeHtml(isZh ? "邮箱不会在前台公开。公开留言会自动通过并展示；重要留言可选择只发送给站主。" : "Email addresses are never shown publicly. Public messages are displayed immediately; important notes can be sent only to the site owner.")}</p>
-      ${renderGuestbookStatus(locale, state)}
-      <form class="liax-guestbook-form" action="/${prefix}/guestbook" method="post">
-        <label>
-          <span>${isZh ? "昵称" : "Name"}</span>
-          <input name="authorName" autocomplete="name" maxlength="80" required oninvalid="this.setCustomValidity('${escapeHtml(nameInvalid)}')" oninput="this.setCustomValidity('')" value="${escapeHtml(values.authorName ?? "")}">
-        </label>
-        <label>
-          <span>${isZh ? "邮箱" : "Email"}</span>
-          <input name="email" autocomplete="email" maxlength="255" type="email" oninvalid="this.setCustomValidity('${escapeHtml(emailInvalid)}')" oninput="this.setCustomValidity('')" value="${escapeHtml(values.email ?? "")}">
-        </label>
-        <label class="liax-guestbook-form__message">
-          <span>${isZh ? "留言" : "Message"}</span>
-          <textarea name="content" maxlength="1000" required rows="3" oninvalid="this.setCustomValidity('${escapeHtml(messageInvalid)}')" oninput="this.setCustomValidity('')">${escapeHtml(values.content ?? "")}</textarea>
-        </label>
-        <label class="liax-guestbook-form__notify">
-          <input name="notifyOnly" type="checkbox" value="true"${notifyOnlyChecked}>
-          <span>${isZh ? "仅发送给站主" : "Only send to the site owner"}</span>
-        </label>
-        <p class="liax-guestbook-form__help">${escapeHtml(isZh ? "勾选后这条留言不会在前台公开展示，会作为私密留言保存给站主查看。" : "When checked, this message is saved as private and will not appear on the public page.")}</p>
-        <button type="submit">${isZh ? "提交留言" : "Submit message"}</button>
-      </form>
-      <h2 class="liax-guestbook-list-title">${isZh ? "公开留言" : "Public messages"}</h2>
-      ${renderGuestbookEntries(locale, entries)}`;
+      <div class="liax-guestbook-layout">
+        <section class="liax-guestbook-compose" aria-label="${escapeHtml(isZh ? "发布留言" : "Write a message")}">
+          ${renderGuestbookStatus(locale, state)}
+          <form class="liax-guestbook-form" action="/${prefix}/guestbook" method="post">
+            <label>
+              <span>${isZh ? "昵称" : "Name"}</span>
+              <input name="authorName" autocomplete="name" maxlength="80" required oninvalid="this.setCustomValidity('${escapeHtml(nameInvalid)}')" oninput="this.setCustomValidity('')" value="${escapeHtml(values.authorName ?? "")}">
+            </label>
+            <label>
+              <span>${isZh ? "邮箱" : "Email"}</span>
+              <input name="email" autocomplete="email" maxlength="255" type="email" oninvalid="this.setCustomValidity('${escapeHtml(emailInvalid)}')" oninput="this.setCustomValidity('')" value="${escapeHtml(values.email ?? "")}">
+            </label>
+            <label class="liax-guestbook-form__message">
+              <span>${isZh ? "留言" : "Message"}</span>
+              <textarea name="content" maxlength="1000" required rows="2" oninvalid="this.setCustomValidity('${escapeHtml(messageInvalid)}')" oninput="this.setCustomValidity('')">${escapeHtml(values.content ?? "")}</textarea>
+            </label>
+            <label class="liax-guestbook-form__notify">
+              <input name="notifyOnly" type="checkbox" value="true"${notifyOnlyChecked}>
+              <span>${isZh ? "仅发送给站主" : "Only send to the site owner"}</span>
+            </label>
+            <p class="liax-guestbook-form__help">${escapeHtml(isZh ? "勾选后这条留言不会在前台公开展示，会作为私密留言保存给站主查看。" : "When checked, this message is saved as private and will not appear on the public page.")}</p>
+            <button type="submit">${isZh ? "提交留言" : "Submit message"}</button>
+          </form>
+        </section>
+        <section class="liax-guestbook-stream" aria-label="${escapeHtml(isZh ? "公开留言" : "Public messages")}">
+          <h2 class="liax-guestbook-list-title">${isZh ? "公开留言" : "Public messages"}</h2>
+          ${renderGuestbookEntries(locale, entries)}
+        </section>
+      </div>`;
 }
 
 export function renderContactBody(locale: ArticleLocale, settings: SiteSettings): string {
@@ -1749,17 +2461,6 @@ ${items.map((item) => {
           ${valueHtml}
         </article>`;
 }).join("\n")}
-      </div>`;
-}
-
-function renderAccountBody(locale: ArticleLocale): string {
-  const isZh = locale === "zh-CN";
-
-  return `<div class="liax-account-card">
-        <p class="liax-section-eyebrow">${escapeHtml(isZh ? "个人页面" : "Account")}</p>
-        <h2>${escapeHtml(isZh ? "控制台入口" : "Console access")}</h2>
-        <p>${escapeHtml(isZh ? "个人头像入口已指向控制台登录页，公开站点不展示未完成的账号占位功能。" : "The avatar entry opens the console sign-in page. The public site does not expose unfinished account features.")}</p>
-        <p><a class="liax-section-back" href="/console">${escapeHtml(isZh ? "打开控制台" : "Open console")}</a></p>
       </div>`;
 }
 
@@ -1789,6 +2490,7 @@ export function renderPublicSectionPage(
   <link rel="canonical" href="/${prefix}/${section}">
   <link rel="alternate" hreflang="${alternateLocale}" href="/${alternatePrefix}/${section}">
   ${renderFaviconLink(settings)}
+  ${renderLogoPreviewTags(settings)}
   ${renderHeadInjection(settings, false)}
   <title>${escapeHtml(label)} · Liax Space</title>
   <style>
@@ -1831,15 +2533,6 @@ ${renderThemeCssVariables(settings)}
       width: 100%;
       margin: 0;
       padding: 0;
-    }
-
-    .liax-public-header,
-    .liax-section-card {
-      animation: liax-page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    }
-
-    .liax-section-card {
-      animation-delay: 70ms;
     }
 
     .liax-section-card {
@@ -1921,6 +2614,18 @@ ${renderThemeCssVariables(settings)}
       object-fit: cover;
     }
 
+    .liax-public-logo > span,
+    .liax-public-logo > img,
+    .liax-public-avatar > span,
+    .liax-public-avatar > img {
+      grid-area: 1 / 1;
+    }
+
+    .liax-public-logo > img,
+    .liax-public-avatar > img {
+      background: var(--color-surface-muted);
+    }
+
     .liax-public-menu {
       display: grid;
       grid-template-columns: repeat(6, 86px);
@@ -1979,8 +2684,9 @@ ${renderThemeCssVariables(settings)}
       width: 38px;
       height: 38px;
       align-items: center;
+      flex-direction: column;
       justify-content: center;
-      gap: 3px;
+      gap: 4px;
       border: 1px solid var(--color-border);
       border-radius: 999px;
       background: var(--color-surface-muted);
@@ -1991,8 +2697,8 @@ ${renderThemeCssVariables(settings)}
 
     .liax-public-menu-toggle span {
       display: block;
-      width: 4px;
-      height: 4px;
+      width: 16px;
+      height: 2px;
       border-radius: 999px;
       background: currentColor;
     }
@@ -2031,7 +2737,7 @@ ${renderThemeCssVariables(settings)}
       align-content: start;
       gap: 18px;
       box-sizing: border-box;
-      width: min(360px, calc(100vw - 36px));
+      width: min(340px, calc(100vw - 56px));
       border-left: 1px solid var(--color-border);
       background: var(--color-page);
       box-shadow: -18px 0 44px rgba(20, 20, 19, 0.14);
@@ -2115,36 +2821,21 @@ ${renderThemeCssVariables(settings)}
       font-weight: 720;
     }
 
-    .liax-account-card {
-      max-width: 640px;
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-      background: var(--color-surface);
-      padding: 24px;
-    }
-
-    .liax-account-card h2 {
-      margin: 0 0 12px;
-      font-size: clamp(24px, 4vw, 38px);
-      line-height: 1.08;
-      letter-spacing: 0;
-    }
-
-    .liax-account-card p:last-child {
-      margin-bottom: 0;
-    }
-
     .liax-section-card {
       box-sizing: border-box;
-      width: min(1440px, calc(100% - clamp(32px, 6vw, 96px)));
-      margin: 24px auto 48px;
-      padding: 40px;
+      width: min(1440px, calc(100% - clamp(24px, 5vw, 80px)));
+      margin: 18px auto 42px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      padding: clamp(20px, 3vw, 34px) 0;
     }
 
     .liax-section-card h1 {
       margin: 0 0 14px;
-      font-size: clamp(42px, 7vw, 88px);
-      line-height: 1;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.04;
       letter-spacing: 0;
     }
 
@@ -2167,8 +2858,57 @@ ${renderThemeCssVariables(settings)}
     .liax-section-empty {
       border: 1px solid var(--color-border);
       border-radius: 8px;
-      background: var(--color-surface-muted);
-      padding: 18px;
+      background: rgb(255 255 255 / 70%);
+      color: #504b43;
+      padding: 18px 20px;
+      position: relative;
+    }
+
+    .liax-section-empty::before {
+      content: none;
+    }
+
+    .liax-section-card[data-section="posts"] {
+      background: transparent;
+    }
+
+    .liax-section-card[data-section="tags"] {
+      background: transparent;
+    }
+
+    .liax-section-card[data-section="moments"] {
+      background: transparent;
+    }
+
+    .liax-section-card[data-section="archives"] {
+      background: transparent;
+    }
+
+    .liax-section-card[data-section="guestbook"] {
+      background: transparent;
+    }
+
+    .liax-section-card[data-section="tags"] .liax-section-empty,
+    .liax-section-card[data-section="moments"] .liax-section-empty,
+    .liax-section-card[data-section="guestbook"] .liax-section-empty,
+    .liax-section-card[data-section="archives"] .liax-section-empty {
+      display: grid;
+      min-height: 92px;
+      align-content: center;
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / 64%);
+      font-weight: 760;
+    }
+
+    .liax-section-card[data-section="tags"] .liax-section-empty {
+      background: rgb(255 255 255 / 70%);
+    }
+
+    .liax-section-card[data-section="moments"] .liax-section-empty {
+      background: rgb(255 255 255 / 70%);
+    }
+
+    .liax-section-card[data-section="archives"] .liax-section-empty {
+      background: rgb(255 255 255 / 70%);
     }
 
     .liax-contact-list {
@@ -2222,10 +2962,10 @@ ${renderThemeCssVariables(settings)}
 
     .liax-tag-grid a {
       display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-columns: auto minmax(0, 1fr) max-content;
       align-items: start;
-      gap: 8px;
-      min-height: 78px;
+      gap: 8px 10px;
+      min-height: 88px;
       border: 1px solid var(--color-border);
       border-radius: 8px;
       background: var(--color-surface);
@@ -2233,6 +2973,12 @@ ${renderThemeCssVariables(settings)}
       font-weight: 760;
       padding: 14px;
       text-decoration: none;
+      transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+
+    .liax-tag-grid__link--featured {
+      border-color: rgb(217 119 87 / 52%);
+      background: var(--color-surface-muted);
     }
 
     .liax-tag-grid a:hover,
@@ -2240,10 +2986,11 @@ ${renderThemeCssVariables(settings)}
       border-color: var(--color-accent);
       box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.16);
       outline: 0;
+      transform: translateY(-1px);
     }
 
-    .liax-tag-grid span {
-      grid-row: span 2;
+    .liax-tag-grid__mark {
+      grid-row: span 3;
       color: var(--color-accent);
       font-size: 22px;
       font-weight: 900;
@@ -2257,7 +3004,22 @@ ${renderThemeCssVariables(settings)}
       line-height: 1.25;
     }
 
+    .liax-tag-grid__badge {
+      justify-self: end;
+      border: 1px solid rgb(217 119 87 / 32%);
+      border-radius: 999px;
+      background: rgb(217 119 87 / 10%);
+      color: var(--color-accent);
+      font-size: 11px;
+      font-style: normal;
+      font-weight: 820;
+      line-height: 1;
+      padding: 5px 7px;
+      white-space: nowrap;
+    }
+
     .liax-tag-grid code {
+      grid-column: 2 / 4;
       min-width: 0;
       overflow-wrap: anywhere;
       color: #6f6a5d;
@@ -2266,7 +3028,7 @@ ${renderThemeCssVariables(settings)}
     }
 
     .liax-tag-grid small {
-      grid-column: 2;
+      grid-column: 2 / 4;
       color: #6f6a5d;
       font-size: 13px;
       font-weight: 760;
@@ -2274,25 +3036,50 @@ ${renderThemeCssVariables(settings)}
 
     .liax-article-list {
       display: grid;
-      gap: 14px;
+      gap: 10px;
       margin-top: 24px;
     }
 
     .liax-article-card {
       display: grid;
-      gap: 8px;
+      grid-template-columns: minmax(0, 1fr) max-content;
+      align-items: start;
+      gap: 6px 18px;
       border: 1px solid var(--color-border);
       border-radius: 8px;
-      background: var(--color-surface-muted);
+      background: rgb(255 255 255 / 82%);
       color: var(--color-text);
-      padding: 18px;
+      box-shadow: 0 8px 22px rgb(20 20 19 / 4%);
+      padding: 18px 20px;
       text-decoration: none;
+      transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+
+    .liax-article-card::before {
+      content: "";
+      grid-column: 1 / -1;
+      width: 42px;
+      height: 3px;
+      border-radius: 999px;
+      background: rgb(217 119 87 / 36%);
     }
 
     .liax-article-card strong {
+      grid-column: 1;
       color: var(--color-text);
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 800;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .liax-article-card:hover,
+    .liax-article-card:focus-visible {
+      border-color: var(--color-accent);
+      background: #fffdfa;
+      box-shadow: 0 12px 28px rgba(20, 20, 19, 0.07);
+      outline: 0;
+      transform: translateY(-1px);
     }
 
     .liax-article-card:hover strong,
@@ -2311,20 +3098,32 @@ ${renderThemeCssVariables(settings)}
     .liax-article-meta {
       display: flex;
       flex-wrap: wrap;
+      grid-column: 2;
+      justify-self: end;
       gap: 8px 12px;
+      color: #6f6a5d;
       font-size: 13px;
       font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .liax-article-card p {
+      grid-column: 1 / -1;
+      max-width: 76ch;
+      color: #504b43;
+      line-height: 1.6;
     }
 
     .liax-archive-timeline {
       display: grid;
-      gap: 26px;
-      margin-top: 24px;
+      gap: 18px;
+      max-width: 860px;
+      margin-top: 20px;
     }
 
     .liax-archive-group {
       display: grid;
-      gap: 12px;
+      gap: 9px;
     }
 
     .liax-archive-group h2 {
@@ -2334,7 +3133,7 @@ ${renderThemeCssVariables(settings)}
       align-items: baseline;
       margin: 0;
       color: var(--color-accent);
-      font-size: 18px;
+      font-size: 17px;
     }
 
     .liax-archive-group h2 small {
@@ -2349,7 +3148,11 @@ ${renderThemeCssVariables(settings)}
       margin: 0;
       padding: 0;
       list-style: none;
-      border-top: 1px solid var(--color-border);
+      border: 1px solid rgb(199 194 185 / 62%);
+      border-radius: 8px;
+      background: rgb(255 255 255 / 58%);
+      box-shadow: none;
+      overflow: hidden;
     }
 
     .liax-archive-group li {
@@ -2358,11 +3161,12 @@ ${renderThemeCssVariables(settings)}
 
     .liax-archive-group a {
       display: grid;
-      grid-template-columns: 116px minmax(0, 1fr);
-      gap: 18px;
+      grid-template-columns: 96px minmax(0, 1fr);
+      gap: 12px;
       align-items: baseline;
       color: var(--color-text);
-      padding: 13px 0;
+      min-height: 38px;
+      padding: 8px 12px;
       text-decoration: none;
     }
 
@@ -2380,7 +3184,7 @@ ${renderThemeCssVariables(settings)}
     }
 
     .liax-archive-group strong {
-      font-size: 17px;
+      font-size: 15px;
       overflow-wrap: anywhere;
     }
 
@@ -2391,10 +3195,24 @@ ${renderThemeCssVariables(settings)}
     }
 
     .liax-moment-card {
+      position: relative;
       border: 1px solid var(--color-border);
       border-radius: 8px;
-      background: var(--color-surface-muted);
-      padding: 18px;
+      background: linear-gradient(135deg, #ffffff, var(--color-surface-muted));
+      box-shadow: 0 8px 22px rgb(20 20 19 / 4%);
+      padding: 18px 18px 18px 46px;
+    }
+
+    .liax-moment-card::before {
+      content: "";
+      position: absolute;
+      inset-block-start: 22px;
+      inset-inline-start: 18px;
+      width: 12px;
+      height: 12px;
+      border: 3px solid rgb(217 119 87 / 28%);
+      border-radius: 999px;
+      background: #ffffff;
     }
 
     .liax-moment-card p {
@@ -2426,15 +3244,29 @@ ${renderThemeCssVariables(settings)}
       font-weight: 760;
     }
 
+    .liax-guestbook-layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+      align-items: start;
+      gap: 24px;
+      margin-top: 22px;
+    }
+
+    .liax-guestbook-compose,
+    .liax-guestbook-stream {
+      min-width: 0;
+    }
+
     .liax-guestbook-form {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      max-width: 460px;
-      margin-top: 24px;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      max-width: none;
+      margin-top: 0;
       border: 1px solid var(--color-border);
       border-radius: 8px;
-      background: var(--color-surface-muted);
+      background: rgb(255 255 255 / 78%);
+      box-shadow: 0 10px 28px rgb(20 20 19 / 4%);
       padding: 16px;
     }
 
@@ -2455,11 +3287,25 @@ ${renderThemeCssVariables(settings)}
       color: var(--color-text);
       font: inherit;
       line-height: 1.5;
-      padding: 12px 14px;
+      padding: 10px 12px;
+    }
+
+    .liax-guestbook-form input:focus,
+    .liax-guestbook-form textarea:focus {
+      border-color: #5f7a50;
+      box-shadow: 0 0 0 3px rgb(95 122 80 / 18%);
+      outline: 0;
+    }
+
+    .liax-guestbook-form input[aria-invalid="true"],
+    .liax-guestbook-form textarea[aria-invalid="true"] {
+      border-color: #b85c48;
+      box-shadow: 0 0 0 3px rgb(184 92 72 / 16%);
     }
 
     .liax-guestbook-form textarea {
-      min-height: 76px;
+      min-height: 58px;
+      max-height: 132px;
       resize: vertical;
     }
 
@@ -2486,29 +3332,46 @@ ${renderThemeCssVariables(settings)}
     }
 
     .liax-guestbook-form__help {
-      margin: -6px 0 0;
+      margin: -4px 0 0;
       max-width: none;
       color: #6f6a5d;
-      font-size: 14px;
+      font-size: 13px;
+    }
+
+    .liax-guestbook-form__validation {
+      grid-column: 1 / -1;
+      margin: 0;
+      border: 1px solid #d79682;
+      border-radius: 8px;
+      background: #fff0ec;
+      color: #7d301f;
+      font-size: 13px;
+      font-weight: 760;
+      padding: 10px 12px;
+    }
+
+    .liax-guestbook-form__validation:empty {
+      display: none;
     }
 
     .liax-guestbook-form button {
       justify-self: start;
-      border: 0;
+      border: 1px solid var(--color-brand);
       border-radius: 8px;
-      background: var(--color-primary);
-      color: var(--color-primary-text);
+      background: var(--color-brand);
+      color: var(--color-brand-text);
       cursor: pointer;
       font: inherit;
       font-weight: 800;
-      padding: 12px 18px;
+      padding: 10px 16px;
+      transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
     }
 
-    @media (max-width: 620px) {
-      .liax-guestbook-form {
-        grid-template-columns: 1fr;
-        max-width: none;
-      }
+    .liax-guestbook-form button:hover,
+    .liax-guestbook-form button:focus-visible {
+      box-shadow: 0 10px 24px rgb(201 100 66 / 20%);
+      outline: 0;
+      transform: translateY(-1px);
     }
 
     .liax-guestbook-alert {
@@ -2537,7 +3400,7 @@ ${renderThemeCssVariables(settings)}
     }
 
     .liax-guestbook-list-title {
-      margin: 34px 0 14px;
+      margin: 0 0 14px;
       font-size: 22px;
       line-height: 1.2;
       letter-spacing: 0;
@@ -2546,14 +3409,15 @@ ${renderThemeCssVariables(settings)}
     .liax-guestbook-list {
       display: grid;
       gap: 14px;
-      margin-top: 14px;
+      margin-top: 0;
     }
 
     .liax-guestbook-entry {
-      border: 1px solid var(--color-border);
+      border: 1px solid rgb(199 194 185 / 62%);
       border-radius: 8px;
-      background: var(--color-surface-muted);
-      padding: 18px;
+      background: rgb(255 255 255 / 72%);
+      box-shadow: none;
+      padding: 14px 16px;
     }
 
     .liax-guestbook-entry header {
@@ -2572,7 +3436,7 @@ ${renderThemeCssVariables(settings)}
 
     .liax-guestbook-entry p {
       max-width: none;
-      margin: 0;
+      margin: 8px 0 0;
       white-space: pre-wrap;
     }
 
@@ -2611,13 +3475,39 @@ ${renderThemeCssVariables(settings)}
       text-underline-offset: 0.18em;
     }
 
+    @media (max-width: 900px) {
+      .liax-guestbook-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .liax-guestbook-compose {
+        max-width: 420px;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .liax-article-card {
+        grid-template-columns: 1fr;
+      }
+
+      .liax-article-meta {
+        grid-column: 1;
+        justify-self: start;
+        white-space: normal;
+      }
+
+      .liax-guestbook-compose {
+        max-width: none;
+      }
+    }
+
     @media (max-width: 860px) {
       .liax-public-header {
         grid-template-columns: max-content minmax(0, 1fr) max-content;
         height: 76px;
         min-height: 76px;
         gap: 10px;
-        overflow-x: auto;
+        overflow: visible;
         padding: 10px 14px;
         scrollbar-width: none;
       }
@@ -2645,7 +3535,32 @@ ${renderThemeCssVariables(settings)}
       .liax-section-card {
         width: calc(100% - 24px);
         margin: 18px auto 40px;
-        padding: 24px;
+        padding: 18px 0;
+      }
+
+      .liax-section-card h1 {
+        font-size: 36px;
+      }
+
+      .liax-section-description {
+        font-size: 15px;
+      }
+
+      .liax-tag-grid,
+      .liax-article-list,
+      .liax-moment-list,
+      .liax-guestbook-list,
+      .liax-archive-timeline {
+        margin-top: 18px;
+      }
+
+      .liax-tag-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .liax-archive-group a {
+        grid-template-columns: 1fr;
+        gap: 4px;
       }
     }
 
@@ -2659,68 +3574,13 @@ ${renderThemeCssVariables(settings)}
       }
     }
 
-    @keyframes liax-language-wipe-ripple {
-      0% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0);
-      }
-
-      12% {
-        opacity: 0.62;
-        transform: translate(-50%, -50%) scale(0.14);
-      }
-
-      70% {
-        opacity: 0.42;
-        transform: translate(-50%, -50%) scale(0.78);
-      }
-
-      100% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(1);
-      }
-    }
-
-    @keyframes liax-language-wipe-ripple-soft {
-      0% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0);
-      }
-
-      18% {
-        opacity: 0.34;
-        transform: translate(-50%, -50%) scale(0.2);
-      }
-
-      100% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(1.04);
-      }
-    }
-
-    @keyframes liax-page-enter {
-      from {
-        opacity: 0;
-        transform: translateY(12px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
     @media (prefers-reduced-motion: reduce) {
-      .liax-public-header,
-      .liax-section-card {
-        animation: none;
-      }
-
       .liax-public-sidebar-layer,
       .liax-public-sidebar {
         transition: none;
       }
     }
+${renderPublicPolishCss()}
   </style>
 </head>
 <body>
@@ -2743,7 +3603,7 @@ ${renderThemeCssVariables(settings)}
       </div>
     </header>
     ${renderPublicSidebar(prefix, isZh)}
-    <main class="liax-section-card">
+    <main class="liax-section-card" data-section="${escapeHtml(section)}">
       <h1>${escapeHtml(label)}</h1>
       ${bodyHtml ?? `<p>${escapeHtml(description)}</p>`}
     </main>
@@ -2772,10 +3632,12 @@ function sendPublicNotFound(
   response.status(404).type("html").send(renderPublicSectionPage(locale, prefix, "not-found", renderNotFoundBody(locale, prefix), settings, avatarUrl));
 }
 
-function renderForbiddenBody(locale: ArticleLocale, prefix: LocalePrefix): string {
+function renderForbiddenBody(locale: ArticleLocale, prefix: LocalePrefix, allowedRoles: readonly string[]): string {
   const isZh = locale === "zh-CN";
+  const audience = formatArticleAudienceLabel(allowedRoles, locale);
 
   return `<p>${isZh ? "当前文章只允许指定身份访问。" : "This article is limited to selected identities."}</p>
+      <p><strong>${escapeHtml(isZh ? "\u9700\u8981\u8eab\u4efd" : "Required identity")}:</strong> ${escapeHtml(audience)}</p>
       <p>${isZh ? "请使用有权限的账号访问，公开站点不会自动降级展示内容。" : "Use an account with access. The public site will not downgrade and reveal the content."}</p>
       <p><a class="liax-section-back" href="/${prefix}/posts">${isZh ? "返回文章列表" : "Back to articles"}</a></p>`;
 }
@@ -2784,10 +3646,11 @@ function sendPublicForbidden(
   response: Response,
   locale: ArticleLocale,
   prefix: LocalePrefix,
+  allowedRoles: readonly string[] = [],
   settings: SiteSettings = {},
   avatarUrl: string | null = null
 ): void {
-  response.status(403).type("html").send(renderPublicSectionPage(locale, prefix, "not-found", renderForbiddenBody(locale, prefix), settings, avatarUrl));
+  response.status(403).type("html").send(renderPublicSectionPage(locale, prefix, "not-found", renderForbiddenBody(locale, prefix, allowedRoles), settings, avatarUrl));
 }
 
 export class PublicArticleController {
@@ -2864,13 +3727,42 @@ export class PublicArticleController {
     const currentArticle = currentIndex >= 0 ? articles[currentIndex] : null;
 
     return {
+      allowedRoles: translation.allowedRoles,
       locale: translation.locale,
       newerArticle: currentIndex > 0 ? articles[currentIndex - 1] ?? null : null,
       olderArticle: currentIndex >= 0 ? articles[currentIndex + 1] ?? null : null,
       prefix,
       publishedAt: translation.publishedAt,
+      tags: await this.readPublishedArticleTags(translation.articleId, translation.locale),
       visitCount: currentArticle?.visitCount ?? 0
     };
+  }
+
+  private async readPublishedArticleTags(articleId: number, locale: ArticleLocale): Promise<PublishedArticleTag[]> {
+    const tagRepository = this.tagRepository as Partial<TagRepository>;
+
+    if (typeof tagRepository.findByArticleId !== "function") {
+      return [];
+    }
+
+    try {
+      const tags = await this.tagRepository.findByArticleId(articleId);
+
+      return tags.flatMap((tag) => {
+        const translation = tag.translations.find((item) => item.locale === locale) ?? tag.translations[0];
+
+        if (!translation?.name || !translation.slug) {
+          return [];
+        }
+
+        return [{
+          name: translation.name,
+          slug: translation.slug
+        }];
+      });
+    } catch {
+      return [];
+    }
   }
 
   getHome = async (request: Request, response: Response): Promise<void> => {
@@ -2889,7 +3781,16 @@ export class PublicArticleController {
     const prefix = request.params.localePrefix;
     const section = request.params.section;
 
-    if ((prefix !== "zh" && prefix !== "en") || !isPublicSection(section)) {
+    if (prefix !== "zh" && prefix !== "en") {
+      throw notFoundError();
+    }
+
+    if (section === "account") {
+      response.redirect(302, "/console");
+      return;
+    }
+
+    if (!isPublicSection(section)) {
       throw notFoundError();
     }
 
@@ -2916,7 +3817,9 @@ export class PublicArticleController {
 
     if (section === "moments") {
       const moments = await this.momentRepository.listMoments({ locale, limit: 100, status: "published" });
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderMomentsBody(locale, moments), settings, avatarUrl));
+      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderMomentsBody(locale, moments, {
+        shouldRenderImage: isExistingPublicUploadImage
+      }), settings, avatarUrl));
       return;
     }
 
@@ -2935,11 +3838,6 @@ export class PublicArticleController {
 
     if (section === "contact") {
       response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderContactBody(locale, settings), settings, avatarUrl));
-      return;
-    }
-
-    if (section === "account") {
-      response.status(200).type("html").send(renderPublicSectionPage(locale, prefix, section, renderAccountBody(locale), settings, avatarUrl));
       return;
     }
 
@@ -3028,7 +3926,7 @@ export class PublicArticleController {
     }
 
     if (!this.canViewTranslation(request, translation)) {
-      sendPublicForbidden(response, locale, prefix, settings, avatarUrl);
+      sendPublicForbidden(response, locale, prefix, translation.allowedRoles, settings, avatarUrl);
       return;
     }
 
@@ -3067,21 +3965,9 @@ export class PublicArticleController {
   };
 
   private canViewTranslation(request: Request, translation: ArticleTranslation): boolean {
-    if (translation.allowedRoles.length === 0) {
-      return true;
-    }
-
     const auth = this.readOptionalAuth(request);
 
-    if (auth?.role === "admin") {
-      return true;
-    }
-
-    if (auth !== null && translation.allowedRoles.includes(auth.role)) {
-      return true;
-    }
-
-    return auth === null && translation.allowedRoles.includes("guest");
+    return canRoleViewArticleAudience(auth?.role ?? null, translation.allowedRoles);
   }
 
   private readOptionalAuth(request: Request): AuthTokenPayload | null {

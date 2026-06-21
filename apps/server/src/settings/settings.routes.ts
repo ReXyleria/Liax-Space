@@ -5,10 +5,12 @@ import { authRequired } from "../common/authRequired.js";
 import { AppError } from "../common/AppError.js";
 import { errorCodes } from "../common/errorCodes.js";
 import { permissionRequired } from "../common/permissionRequired.js";
+import { MaintenanceService } from "./MaintenanceService.js";
 import { SiteSettingsService } from "./SiteSettingsService.js";
 import { UserPreferencesService } from "./UserPreferencesService.js";
 import type { UserPreferences } from "./settings.types.js";
 
+const maintenanceService = new MaintenanceService();
 const siteSettingsService = new SiteSettingsService();
 const userPreferencesService = new UserPreferencesService();
 
@@ -59,6 +61,32 @@ settingsRoutes.patch(
   })
 );
 
+settingsRoutes.get(
+  "/settings/preflight",
+  authRequired,
+  permissionRequired("system:maintain"),
+  asyncHandler(async (_request, response) => {
+    response.status(200).json(await maintenanceService.getPreflight());
+  })
+);
+
+settingsRoutes.get(
+  "/settings/test-data/guestbook",
+  authRequired,
+  permissionRequired("system:maintain"),
+  asyncHandler(async (_request, response) => {
+    response.status(200).json(await maintenanceService.listGuestbookTestEntries());
+  })
+);
+
+settingsRoutes.post(
+  "/settings/test-data/guestbook/cleanup",
+  authRequired,
+  permissionRequired("system:maintain"),
+  asyncHandler(async (_request, response) => {
+    response.status(200).json(await maintenanceService.cleanupGuestbookTestEntries());
+  })
+);
 settingsRoutes.get(
   "/settings/appearance",
   authRequired,

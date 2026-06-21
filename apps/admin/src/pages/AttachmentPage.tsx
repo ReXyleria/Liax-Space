@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactElement } from "react";
 
-import { attachmentApi, type Attachment } from "../api/attachmentApi";
+import { attachmentApi, type Attachment, type AttachmentReferenceType } from "../api/attachmentApi";
+import { AdminLoadingSkeleton } from "../components/AdminLoadingSkeleton";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
+
+const attachmentReferenceTypeKeys: Record<AttachmentReferenceType, string> = {
+  article: "attachment.reference.article",
+  avatar: "attachment.reference.avatar",
+  moment: "attachment.reference.moment",
+  siteLogo: "attachment.reference.siteLogo"
+};
 
 export function AttachmentPage(): ReactElement {
   const t = useT();
@@ -40,6 +48,37 @@ export function AttachmentPage(): ReactElement {
   useEffect(() => {
     void loadAttachments("");
   }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    attachments.forEach((attachment) => {
+      if (!attachment.publicUrl || !attachment.mimeType.startsWith("image/") || brokenPreviewIdSet.has(attachment.id)) {
+        return;
+      }
+
+      const probe = new Image();
+      probe.onload = () => {
+        probe.onload = null;
+        probe.onerror = null;
+      };
+      probe.onerror = () => {
+        probe.onload = null;
+        probe.onerror = null;
+        if (isCancelled) {
+          return;
+        }
+        setBrokenPreviewIds((currentIds) => (
+          currentIds.includes(attachment.id) ? currentIds : [...currentIds, attachment.id]
+        ));
+      };
+      probe.src = attachment.publicUrl;
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [attachments, brokenPreviewIdSet]);
 
   function handleSearchChange(event: ChangeEvent<HTMLInputElement>): void {
     setSearch(event.target.value);
@@ -145,7 +184,7 @@ export function AttachmentPage(): ReactElement {
           </div>
 
           {isLoadingAttachments ? (
-            <p className="admin-muted-text">{t("category.loading")}</p>
+            <AdminLoadingSkeleton label={t("category.loading")} rows={4} variant="cards" />
           ) : attachments.length === 0 ? (
             <p className="admin-muted-text">{t(unusedOnly ? "attachment.unusedEmpty" : "attachment.allEmpty")}</p>
           ) : (
@@ -164,6 +203,14 @@ export function AttachmentPage(): ReactElement {
                   const previewUrl = attachment.publicUrl;
                   const canPreviewImage = Boolean(previewUrl) && attachment.mimeType.startsWith("image/");
                   const isBrokenPreview = brokenPreviewIdSet.has(attachment.id);
+                  const previewState = !previewUrl ? "missing" : isBrokenPreview ? "failed" : "empty";
+                  const previewFallbackLabel = previewState === "missing"
+                    ? t("attachment.statusMissingUrl")
+                    : previewState === "failed"
+                      ? t("attachment.previewFailed")
+                      : t("attachment.noPreview");
+                  const references = attachment.references ?? [];
+                  const visibleReferences = references.slice(0, 4);
 
                   return (
                     <article className="admin-attachment-card" key={attachment.id}>
@@ -184,6 +231,30 @@ export function AttachmentPage(): ReactElement {
                         <span className="admin-attachment-status" data-status={!previewUrl || isBrokenPreview ? "missing" : "available"}>
                           {t(!previewUrl ? "attachment.statusMissingUrl" : isBrokenPreview ? "attachment.previewFailed" : "attachment.statusAvailable")}
                         </span>
+                      </div>
+
+                      <div className="admin-attachment-references" data-empty={references.length === 0 ? "true" : "false"}>
+                        <span className="admin-attachment-references__label">{t("attachment.references")}</span>
+                        {visibleReferences.length > 0 ? (
+                          <ul>
+                            {visibleReferences.map((reference, index) => {
+                              const label = `${t(attachmentReferenceTypeKeys[reference.type])} - ${reference.label}`;
+
+                              return (
+                                <li className="admin-attachment-reference" key={`${reference.type}-${reference.href ?? "none"}-${index}`}>
+                                  {reference.href ? <a href={reference.href}>{label}</a> : <span>{label}</span>}
+                                </li>
+                              );
+                            })}
+                            {references.length > visibleReferences.length ? (
+                              <li className="admin-attachment-reference">
+                                <span>{t("attachment.referencesMore")}: {references.length - visibleReferences.length}</span>
+                              </li>
+                            ) : null}
+                          </ul>
+                        ) : (
+                          <p className="admin-attachment-references__empty">{t("attachment.referencesEmpty")}</p>
+                        )}
                       </div>
 
                       {previewUrl && !isBrokenPreview ? (
@@ -209,8 +280,12 @@ export function AttachmentPage(): ReactElement {
                           )}
                         </a>
                       ) : (
-                        <div className="admin-attachment-preview admin-attachment-preview--empty">
-                          <span>{t("attachment.noPreview")}</span>
+                        <div
+                          aria-label={`${t("attachment.preview")}: ${previewFallbackLabel}`}
+                          className="admin-attachment-preview admin-attachment-preview--empty"
+                          data-state={previewState}
+                        >
+                          <span>{previewFallbackLabel}</span>
                         </div>
                       )}
 

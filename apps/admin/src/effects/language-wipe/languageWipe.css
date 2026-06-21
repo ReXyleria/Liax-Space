@@ -18,57 +18,24 @@
   inset: 0;
   z-index: 1000;
   min-height: 100vh;
-  overflow: auto;
-  background: #faf9f5;
-  color: #141413;
-  clip-path: circle(0 at var(--admin-language-wipe-x, 50%) var(--admin-language-wipe-y, 50%));
+  overflow: hidden;
+  background: rgb(250 249 245 / 68%);
+  color: inherit;
+  opacity: 0;
   pointer-events: none;
 }
 
 .admin-language-wipe__overlay[data-wipe-state="entering"] {
-  animation: admin-language-wipe-reveal 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: admin-language-refresh 160ms ease forwards;
 }
 
 .admin-language-wipe__overlay[data-ui-debug="true"] {
   animation: none;
-  clip-path: circle(
-    var(--admin-language-wipe-current-radius, 0)
-    at var(--admin-language-wipe-x, 50%) var(--admin-language-wipe-y, 50%)
-  );
+  opacity: calc(1 - var(--admin-language-wipe-progress, 0));
 }
 
 .admin-language-wipe__ripple {
-  position: fixed;
-  left: var(--admin-language-wipe-x, 50%);
-  top: var(--admin-language-wipe-y, 50%);
-  z-index: 2;
-  width: calc(var(--admin-language-wipe-radius, 150vmax) * 2);
-  height: calc(var(--admin-language-wipe-radius, 150vmax) * 2);
-  border: 2px solid rgb(217 119 87 / 34%);
-  border-radius: 999px;
-  box-shadow:
-    0 0 0 1px rgb(250 249 245 / 72%),
-    0 0 40px rgb(217 119 87 / 16%),
-    0 0 80px rgb(20 20 19 / 5%);
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, -50%) scale(0);
-}
-
-.admin-language-wipe__ripple--one {
-  animation: admin-language-wipe-ripple 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-.admin-language-wipe__ripple--two {
-  animation: admin-language-wipe-ripple-soft 900ms cubic-bezier(0.22, 1, 0.36, 1) 90ms forwards;
-}
-
-.admin-language-wipe__overlay[data-ui-debug="true"] .admin-language-wipe__ripple {
-  animation: none;
-  width: calc(var(--admin-language-wipe-current-radius, 0px) * 2);
-  height: calc(var(--admin-language-wipe-current-radius, 0px) * 2);
-  opacity: 0.46;
-  transform: translate(-50%, -50%) scale(1);
+  display: none;
 }
 
 .admin-language-switch {
@@ -103,7 +70,7 @@
 }
 
 .admin-language-switch:focus-visible {
-  outline: 3px solid rgb(217 119 87 / 35%);
+  outline: 3px solid rgb(95 122 80 / 28%);
   outline-offset: 3px;
   background: #ffffff;
 }
@@ -113,51 +80,17 @@
   opacity: 0.72;
 }
 
-@keyframes admin-language-wipe-reveal {
-  to {
-    clip-path: circle(
-      var(--admin-language-wipe-radius, 150vmax)
-      at var(--admin-language-wipe-x, 50%) var(--admin-language-wipe-y, 50%)
-    );
-  }
-}
-
-@keyframes admin-language-wipe-ripple {
+@keyframes admin-language-refresh {
   0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.86;
   }
 
-  12% {
-    opacity: 0.62;
-    transform: translate(-50%, -50%) scale(0.14);
-  }
-
-  70% {
+  55% {
     opacity: 0.42;
-    transform: translate(-50%, -50%) scale(0.78);
   }
 
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(1);
-  }
-}
-
-@keyframes admin-language-wipe-ripple-soft {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0);
-  }
-
-  18% {
-    opacity: 0.34;
-    transform: translate(-50%, -50%) scale(0.2);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1.04);
   }
 }
 

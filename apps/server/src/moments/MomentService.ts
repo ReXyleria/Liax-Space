@@ -1,3 +1,5 @@
+import { AttachmentRepository } from "../attachments/AttachmentRepository.js";
+import type { Attachment } from "../attachments/attachments.types.js";
 import { isArticleLocale, type ArticleLocale } from "../articles/articles.types.js";
 import { AppError } from "../common/AppError.js";
 import { errorCodes } from "../common/errorCodes.js";
@@ -6,10 +8,13 @@ import type { CreateMomentInput, ListMomentsInput, Moment, MomentStatus } from "
 
 type MomentBody = Record<string, unknown>;
 
+type AttachmentLookup = Pick<AttachmentRepository, "findById">;
+
 const momentStatuses = ["draft", "published"] as const;
 const maxMomentLength = 500;
 const maxMomentImages = 12;
 const maxMomentImageLength = 1000;
+const directTimestampFields = ["createdAt", "created_at", "updatedAt", "updated_at", "publishedAt", "published_at"] as const;
 
 function validationError(message: string): AppError {
   return new AppError(message, {
@@ -103,8 +108,46 @@ function parseOptionalImages(value: unknown): string[] | undefined {
   return value === undefined ? undefined : parseImages(value);
 }
 
+function parseAttachmentReferenceId(image: string): number | null {
+  if (!image.startsWith("attachment://")) {
+    return null;
+  }
+
+  const attachmentId = Number(image.slice("attachment://".length));
+
+  if (!Number.isInteger(attachmentId) || attachmentId <= 0) {
+    throw validationError("attachment image reference must include a positive attachment id.");
+  }
+
+  return attachmentId;
+}
+
+function requireMomentImageAttachment(image: string, attachment: Attachment | null): string {
+  if (!attachment || attachment.deletedAt) {
+    throw validationError(`moment image attachment is missing: ${image}`);
+  }
+
+  if (!attachment.mimeType.startsWith("image/")) {
+    throw validationError(`moment image attachment is not an image: ${image}`);
+  }
+
+  if (!attachment.publicUrl) {
+    throw validationError(`moment image attachment has no public URL: ${image}`);
+  }
+
+  return attachment.publicUrl;
+}
+
 function parseOptionalLocale(value: unknown): ArticleLocale | undefined {
   return value === undefined ? undefined : parseLocale(value);
+}
+
+function rejectDirectTimestampUpdates(body: MomentBody): void {
+  const requestedField = directTimestampFields.find((field) => body[field] !== undefined);
+
+  if (requestedField) {
+    throw validationError(`${requestedField} cannot be updated directly. Use publish or unpublish actions for publish state.`);
+  }
 }
 
 function parseListInput(input: ListMomentsInput = {}): ListMomentsInput {
@@ -118,7 +161,10 @@ function parseListInput(input: ListMomentsInput = {}): ListMomentsInput {
 }
 
 export class MomentService {
-  constructor(private readonly momentRepository = new MomentRepository()) {}
+  constructor(
+    private readonly momentRepository = new MomentRepository(),
+    private readonly attachmentRepository: AttachmentLookup = new AttachmentRepository()
+  ) {}
 
   async listMoments(input: ListMomentsInput = {}): Promise<Moment[]> {
     return this.momentRepository.listMoments(parseListInput(input));
@@ -130,7 +176,7 @@ export class MomentService {
     const input: CreateMomentInput = {
       authorId: actorUserId,
       content: parseContent(body.content),
-      images: parseImages(body.images),
+      images: await this.normalizeImages(parseImages(body.images)),
       locale: parseLocale(body.locale),
       status: parseStatus(body.status)
     };
@@ -143,14 +189,13 @@ export class MomentService {
     await this.requireMoment(momentId);
     const status = body.status === undefined ? undefined : parseStatus(body.status);
 
-    if (body.publishedAt !== undefined) {
-      throw validationError("publishedAt cannot be updated directly. Use publish or unpublish actions.");
-    }
+    rejectDirectTimestampUpdates(body);
 
+    const images = parseOptionalImages(body.images);
     const moment = await this.momentRepository.updateMoment({
       content: parseOptionalContent(body.content),
       id: momentId,
-      images: parseOptionalImages(body.images),
+      images: images === undefined ? undefined : await this.normalizeImages(images),
       locale: parseOptionalLocale(body.locale),
       status
     });
@@ -202,6 +247,23 @@ export class MomentService {
     const moment = await this.momentRepository.softDeleteMoment(existingMoment.id);
 
     return moment ?? existingMoment;
+  }
+
+  private async normalizeImages(images: string[]): Promise<string[]> {
+    const normalizedImages: string[] = [];
+
+    for (const image of images) {
+      const attachmentId = parseAttachmentReferenceId(image);
+
+      if (attachmentId === null) {
+        normalizedImages.push(image);
+        continue;
+      }
+
+      normalizedImages.push(requireMomentImageAttachment(image, await this.attachmentRepository.findById(attachmentId)));
+    }
+
+    return normalizedImages;
   }
 
   private async requireMoment(id: number): Promise<Moment> {

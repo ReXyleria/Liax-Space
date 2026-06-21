@@ -7,7 +7,7 @@ export type AdminLanguageWipeTransition = LanguageWipeTransition<SupportedLocale
 };
 
 export type LanguageWipeOverlayProps = {
-  children: ReactNode;
+  children?: ReactNode;
   debugProgress?: number | null;
   transition: AdminLanguageWipeTransition;
   onComplete: () => void;
@@ -15,6 +15,7 @@ export type LanguageWipeOverlayProps = {
 
 type LanguageWipeStyle = CSSProperties & {
   "--admin-language-wipe-current-radius"?: string;
+  "--admin-language-wipe-progress"?: string;
   "--admin-language-wipe-radius": string;
   "--admin-language-wipe-x": string;
   "--admin-language-wipe-y": string;
@@ -31,6 +32,7 @@ export function LanguageWipeOverlay({
     : `${Math.max(0, Math.min(1, debugProgress)) * transition.origin.radius}px`;
   const style: LanguageWipeStyle = {
     "--admin-language-wipe-current-radius": progressRadius,
+    "--admin-language-wipe-progress": debugProgress === null ? undefined : Math.max(0, Math.min(1, debugProgress)).toFixed(2),
     "--admin-language-wipe-radius": `${transition.origin.radius}px`,
     "--admin-language-wipe-x": `${transition.origin.x}px`,
     "--admin-language-wipe-y": `${transition.origin.y}px`
@@ -47,7 +49,7 @@ export function LanguageWipeOverlay({
       return undefined;
     }
 
-    const timeout = window.setTimeout(onComplete, 1120);
+    const timeout = window.setTimeout(onComplete, 220);
 
     return () => window.clearTimeout(timeout);
   }, [debugProgress, onComplete]);

@@ -1,5 +1,13 @@
 export type AttachmentMimeType = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
 
+export type AttachmentReferenceType = "article" | "avatar" | "siteLogo" | "moment";
+
+export type AttachmentReference = {
+  type: AttachmentReferenceType;
+  label: string;
+  href: string | null;
+};
+
 export type Attachment = {
   id: number;
   ownerId: number;
@@ -10,6 +18,7 @@ export type Attachment = {
   sizeBytes: number;
   sha256: string;
   isUsed?: boolean;
+  references?: AttachmentReference[];
   createdAt: Date;
   deletedAt: Date | null;
 };

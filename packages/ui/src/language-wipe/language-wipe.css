@@ -12,60 +12,29 @@
   inset: 0;
   z-index: 1;
   min-height: inherit;
-  background: #faf9f5;
-  clip-path: circle(0 at var(--liax-wipe-x, 50%) var(--liax-wipe-y, 50%));
+  background: rgb(250 249 245 / 68%);
+  opacity: 0;
   pointer-events: none;
 }
 
 .liax-language-wipe__overlay[data-wipe-state="entering"] {
-  animation: liax-language-wipe-reveal var(--liax-wipe-duration, 980ms)
-    cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: liax-language-refresh var(--liax-wipe-duration, 160ms) ease forwards;
 }
 
 .liax-language-wipe__ripple {
-  position: absolute;
-  left: var(--liax-wipe-x, 50%);
-  top: var(--liax-wipe-y, 50%);
-  width: calc(var(--liax-wipe-radius, 150vmax) * 2);
-  height: calc(var(--liax-wipe-radius, 150vmax) * 2);
-  border: 2px solid rgb(250 249 245 / 88%);
-  border-radius: 999px;
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, -50%) scale(0);
+  display: none;
 }
 
-.liax-language-wipe__overlay[data-wipe-state="entering"] .liax-language-wipe__ripple {
-  animation: liax-language-wipe-ripple var(--liax-wipe-duration, 980ms)
-    cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-@keyframes liax-language-wipe-reveal {
-  to {
-    clip-path: circle(
-      var(--liax-wipe-radius, 150vmax) at var(--liax-wipe-x, 50%) var(--liax-wipe-y, 50%)
-    );
-  }
-}
-
-@keyframes liax-language-wipe-ripple {
+@keyframes liax-language-refresh {
   0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.86;
   }
 
-  12% {
-    opacity: 0.62;
-    transform: translate(-50%, -50%) scale(0.14);
-  }
-
-  70% {
+  55% {
     opacity: 0.42;
-    transform: translate(-50%, -50%) scale(0.78);
   }
 
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(1);
   }
 }

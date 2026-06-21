@@ -144,6 +144,63 @@ function isHexColor(value: unknown): value is string {
   return typeof value === "string" && /^#[0-9a-f]{6}$/iu.test(value);
 }
 
+function normalizePlaceholderCandidate(value: string): string {
+  return value.trim().replace(/\s+/gu, " ").toLocaleLowerCase();
+}
+
+const placeholderIcpNumbers = new Set([
+  "备案号待配置",
+  "icp pending",
+  "icp备案号",
+  "icp 备案号"
+]);
+
+export function isPlaceholderSiteSettingValue(key: string, value: unknown): boolean {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const normalized = normalizePlaceholderCandidate(value);
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (key === "home.icpNumber") {
+    return placeholderIcpNumbers.has(normalized);
+  }
+
+  if (key === "home.contactItems" || key === "home.contactItems.en-US" || key === "home.contactItems.zh-CN") {
+    const compact = normalized.replace(/[\s:：-]/gu, "");
+
+    return compact.includes("hello@example.com") || compact.includes("qq123456") || normalized === "contact pending" || normalized === "联系方式待配置";
+  }
+
+  if (key === "home.brandInfo" || key === "home.signature") {
+    return /当前版本先提供稳定跳转/u.test(value) || /作者\s*·\s*liax/iu.test(value) || /author\s*·\s*liax/iu.test(value);
+  }
+
+  return false;
+}
+
+function sanitizeSiteSettingValue(key: string, value: unknown): unknown {
+  return isPlaceholderSiteSettingValue(key, value) ? "" : value;
+}
+
+function sanitizeSiteSettings(settings: SiteSettings): SiteSettings {
+  const sanitizedSettings: SiteSettings = {};
+
+  for (const [key, value] of Object.entries(settings)) {
+    sanitizedSettings[key] = sanitizeSiteSettingValue(key, value);
+  }
+
+  return sanitizedSettings;
+}
+
+function sanitizeStringValidator(validator: SiteSettingValidator): SiteSettingValidator {
+  return (key, value) => sanitizeSiteSettingValue(key, validator(key, value));
+}
+
 function validateThemeCustomColors(key: string, value: unknown): Record<string, Record<string, string>> {
   if (!isPlainObject(value)) {
     validationError(`${key} must be an object.`);
@@ -185,13 +242,13 @@ const knownSettingValidators: Record<string, SiteSettingValidator> = {
   "ai.model": (key, value) => assertString(value, key, 160),
   "ai.provider": (key, value) => assertOneOf(value, key, aiProviders),
   "ai.translationTemperature": assertTemperature,
-  "home.brandInfo": (key, value) => assertString(value, key, 240),
-  "home.contactItems": (key, value) => assertString(value, key, 2000),
-  "home.contactItems.en-US": (key, value) => assertString(value, key, 2000),
-  "home.contactItems.zh-CN": (key, value) => assertString(value, key, 2000),
-  "home.icpNumber": (key, value) => assertString(value, key, 120),
+  "home.brandInfo": sanitizeStringValidator((key, value) => assertString(value, key, 240)),
+  "home.contactItems": sanitizeStringValidator((key, value) => assertString(value, key, 2000)),
+  "home.contactItems.en-US": sanitizeStringValidator((key, value) => assertString(value, key, 2000)),
+  "home.contactItems.zh-CN": sanitizeStringValidator((key, value) => assertString(value, key, 2000)),
+  "home.icpNumber": sanitizeStringValidator((key, value) => assertString(value, key, 120)),
   "home.icpUrl": assertHttpUrl,
-  "home.signature": (key, value) => assertString(value, key, 160),
+  "home.signature": sanitizeStringValidator((key, value) => assertString(value, key, 160)),
   "codeInjection.contentHead": (key, value) => assertString(value, key, 50000),
   "codeInjection.footer": (key, value) => assertString(value, key, 50000),
   "codeInjection.globalHead": (key, value) => assertString(value, key, 50000),
@@ -242,7 +299,7 @@ function validateSiteSettingsPatch(value: unknown): SiteSettings {
 }
 
 function redactSiteSettings(settings: SiteSettings): SiteSettings {
-  const redactedSettings = { ...settings };
+  const redactedSettings = sanitizeSiteSettings(settings);
 
   for (const [secretKey, configuredKey] of [
     ["ai.apiKey", "ai.apiKeyConfigured"],

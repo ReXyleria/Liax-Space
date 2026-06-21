@@ -109,8 +109,11 @@ describe("SiteSettingsService", () => {
       "ai.model": " deepseek-chat ",
       "ai.provider": "deepseek",
       "ai.translationTemperature": "0.7",
+      "home.brandInfo": "当前版本先提供稳定跳转",
+      "home.signature": "作者 · Liax",
       "home.contactItems.en-US": " Email:hello@example.com ",
       "home.contactItems.zh-CN": " 邮箱:hello@example.com ",
+      "home.icpNumber": "备案号待配置",
       "home.icpUrl": "https://beian.miit.gov.cn/",
       "smtp.encryption": "ssl_tls",
       "smtp.from": " site@example.test ",
@@ -130,8 +133,11 @@ describe("SiteSettingsService", () => {
     assert.equal(repository.settings["ai.baseUrl"], "https://api.deepseek.com");
     assert.equal(repository.settings["ai.model"], "deepseek-chat");
     assert.equal(repository.settings["ai.translationTemperature"], 0.7);
-    assert.equal(repository.settings["home.contactItems.en-US"], "Email:hello@example.com");
-    assert.equal(repository.settings["home.contactItems.zh-CN"], "邮箱:hello@example.com");
+    assert.equal(repository.settings["home.brandInfo"], "");
+    assert.equal(repository.settings["home.signature"], "");
+    assert.equal(repository.settings["home.contactItems.en-US"], "");
+    assert.equal(repository.settings["home.contactItems.zh-CN"], "");
+    assert.equal(repository.settings["home.icpNumber"], "");
     assert.equal(repository.settings["home.icpUrl"], "https://beian.miit.gov.cn");
     assert.equal(repository.settings["smtp.encryption"], "ssl_tls");
     assert.equal(repository.settings["smtp.from"], "site@example.test");
@@ -145,6 +151,26 @@ describe("SiteSettingsService", () => {
         "--color-accent": "#abcdef"
       }
     });
+  });
+
+  it("does not expose saved placeholder copy to the admin settings form", async () => {
+    const repository = new MemorySettingsRepository();
+    repository.settings = {
+      "home.brandInfo": "当前版本先提供稳定跳转",
+      "home.signature": "Author · Liax",
+      "home.contactItems.en-US": "Email: hello@example.com",
+      "home.contactItems.zh-CN": "QQ 123456",
+      "home.icpNumber": "备案号待配置"
+    };
+    const service = new SiteSettingsService(repository as never);
+
+    const loaded = await service.getSiteSettings();
+
+    assert.equal(loaded["home.brandInfo"], "");
+    assert.equal(loaded["home.signature"], "");
+    assert.equal(loaded["home.contactItems.en-US"], "");
+    assert.equal(loaded["home.contactItems.zh-CN"], "");
+    assert.equal(loaded["home.icpNumber"], "");
   });
 
   it("returns only safe appearance settings for non-maintenance readers", async () => {

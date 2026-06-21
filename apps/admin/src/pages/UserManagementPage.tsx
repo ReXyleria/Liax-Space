@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type Re
 
 import { roleApi, type AdminRoleDefinition } from "../api/roleApi";
 import { userApi, type AdminUser, type AdminUserRole } from "../api/userApi";
+import { AdminLoadingSkeleton } from "../components/AdminLoadingSkeleton";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
 
@@ -286,7 +287,7 @@ export function UserManagementPage(): ReactElement {
 
       <section className="liax-card admin-table-card">
         {isLoading ? (
-          <p className="admin-muted-text">{t("users.loading")}</p>
+          <AdminLoadingSkeleton label={t("users.loading")} rows={6} variant="table" />
         ) : users.length === 0 ? (
           <p className="admin-muted-text">{t("users.empty")}</p>
         ) : (

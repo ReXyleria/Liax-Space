@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactElement } from "react";
 
 import { articleApi, type ArticleLocale, type ArticleTranslation } from "../api/articleApi";
 import { attachmentApi } from "../api/attachmentApi";
@@ -9,11 +9,11 @@ import {
   extractHeadingsFromMarkdown,
   largeMarkdownDocumentThreshold,
   MarkdownEditor,
-  shouldUsePlainMarkdownEditor,
   type EditorHeading
 } from "../components/MarkdownEditor";
 import { AdminLayout } from "../layout/AdminLayout";
 import { useT } from "../i18n/useT";
+import { loadAttachmentPreviewUrlsForMarkdown } from "../utils/attachmentPreviewUrls";
 
 export type ArticleMarkdownEditPageProps = {
   articleId: number;
@@ -32,16 +32,33 @@ function oppositeLocale(locale: ArticleLocale): ArticleLocale {
   return locale === "zh-CN" ? "en-US" : "zh-CN";
 }
 
+function formatBytes(value: number): string {
+  if (value >= 1024 * 1024) {
+    return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  if (value >= 1024) {
+    return `${Math.round(value / 1024)} KB`;
+  }
+
+  return `${value} B`;
+}
+
 export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEditPageProps): ReactElement {
   const t = useT();
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const [translation, setTranslation] = useState<ArticleTranslation | null>(null);
   const [baseVersionId, setBaseVersionId] = useState<number | null>(null);
   const [mdContent, setMdContent] = useState("");
+  const [attachmentPreviewUrls, setAttachmentPreviewUrls] = useState<Record<string, string>>({});
+  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isHydratingContent, setIsHydratingContent] = useState(false);
   const [forcePlainEditor, setForcePlainEditor] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [isImportingMarkdown, setIsImportingMarkdown] = useState(false);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -52,10 +69,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const suppressNextAutoSaveRef = useRef(false);
   const sourceLocale = oppositeLocale(locale);
   const pageTitle = useMemo(() => `${t("article.markdownTitle")} #${articleId} - ${locale}`, [articleId, locale, t]);
-  const headings = useMemo(
-    () => forcePlainEditor || shouldUsePlainMarkdownEditor(mdContent) ? [] : extractHeadingsFromMarkdown(mdContent),
-    [forcePlainEditor, mdContent]
-  );
+  const headings = useMemo(() => extractHeadingsFromMarkdown(mdContent), [mdContent]);
 
   function setHydratingContent(nextValue: boolean): void {
     isHydratingContentRef.current = nextValue;
@@ -69,8 +83,15 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       setIsLoading(true);
       setHydratingContent(false);
       setForcePlainEditor(false);
+      setSelectedImportFile(null);
+      setImportProgress(null);
+      setIsImportingMarkdown(false);
       setMessage(null);
       setErrorMessage(null);
+
+      if (importFileInputRef.current) {
+        importFileInputRef.current.value = "";
+      }
 
       try {
         const articleDetail = await articleApi.getArticle(articleId);
@@ -105,10 +126,16 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
             })
           : "";
 
+        const nextAttachmentPreviewUrls = await loadAttachmentPreviewUrlsForMarkdown(
+          nextMarkdown,
+          attachmentApi.listAttachments
+        ).catch(() => ({}));
+
         if (isMounted) {
           setTranslation(activeTranslation);
           setBaseVersionId(latestVersion?.id ?? null);
           setForcePlainEditor(shouldForcePlainEditor);
+          setAttachmentPreviewUrls(nextAttachmentPreviewUrls);
           setMdContent(nextMarkdown);
           mdContentRef.current = nextMarkdown;
           lastSavedContentRef.current = nextMarkdown;
@@ -142,6 +169,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
     if (
       isLoading ||
       isHydratingContent ||
+      isImportingMarkdown ||
       isSaving ||
       isAutoSaving ||
       !translation ||
@@ -160,11 +188,16 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
         window.clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [baseVersionId, isAutoSaving, isHydratingContent, isLoading, isSaving, mdContent, translation]);
+  }, [baseVersionId, isAutoSaving, isHydratingContent, isImportingMarkdown, isLoading, isSaving, mdContent, translation]);
 
   async function saveContent(options: { auto: boolean }): Promise<void> {
     if (isHydratingContentRef.current) {
       setErrorMessage(t("article.markdownLoading"));
+      return;
+    }
+
+    if (isImportingMarkdown) {
+      setErrorMessage(t("article.importing"));
       return;
     }
 
@@ -214,6 +247,81 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
 
   async function handleSave(): Promise<void> {
     await saveContent({ auto: false });
+  }
+
+  function openImportFilePicker(): void {
+    if (isHydratingContent || isImportingMarkdown || !translation) {
+      return;
+    }
+
+    importFileInputRef.current?.click();
+  }
+
+  async function handleImportFileSelected(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const input = event.currentTarget;
+    const file = input.files?.[0] ?? null;
+
+    if (!file) {
+      return;
+    }
+
+    if (!translation) {
+      setErrorMessage(t("article.markdownNeedsMetadata"));
+      setMessage(null);
+      input.value = "";
+      return;
+    }
+
+    setSelectedImportFile(file);
+    setIsImportingMarkdown(true);
+    setImportProgress(0);
+    setHydratingContent(false);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await versionApi.importMarkdownFile(articleId, locale, file, setImportProgress);
+      const shouldForcePlainEditor = response.version.contentSizeBytes >= largeMarkdownDocumentThreshold;
+
+      setForcePlainEditor(shouldForcePlainEditor);
+      setHydratingContent(true);
+
+      const importedMarkdown = await versionApi.getVersionMarkdown(articleId, locale, response.version.id, {
+        onProgress: ({ content, done }) => {
+          if (!shouldForcePlainEditor) {
+            return;
+          }
+
+          mdContentRef.current = content;
+          lastSavedContentRef.current = content;
+          setMdContent(content);
+          setHydratingContent(!done);
+        }
+      });
+      const nextAttachmentPreviewUrls = await loadAttachmentPreviewUrlsForMarkdown(
+        importedMarkdown,
+        attachmentApi.listAttachments
+      ).catch(() => ({}));
+
+      suppressNextAutoSaveRef.current = true;
+      setBaseVersionId(response.version.id);
+      setAttachmentPreviewUrls(nextAttachmentPreviewUrls);
+      setMdContent(importedMarkdown);
+      mdContentRef.current = importedMarkdown;
+      lastSavedContentRef.current = importedMarkdown;
+      setSelectedImportFile(null);
+      setMessage(
+        `${response.unchanged ? t("article.importUnchanged") : t("article.importSaved")} ${t("article.versionNo")} ${response.version.versionNo} · ${formatBytes(response.version.contentSizeBytes)}`
+      );
+
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("article.importFailed"));
+    } finally {
+      setHydratingContent(false);
+      setIsImportingMarkdown(false);
+      setImportProgress(null);
+      input.value = "";
+    }
   }
 
   function handleEditorChange(value: string): void {
@@ -280,10 +388,20 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
 
     try {
       const result = await attachmentApi.uploadAttachment(file);
+      const previewUrl = result.attachment.publicUrl ?? result.markdown;
+
+      if (result.attachment.publicUrl) {
+        setAttachmentPreviewUrls((currentPreviewUrls) => ({
+          ...currentPreviewUrls,
+          [String(result.attachment.id)]: result.attachment.publicUrl ?? previewUrl,
+          [`attachment://${result.attachment.id}`]: result.attachment.publicUrl ?? previewUrl
+        }));
+      }
+
       setMessage(t("attachment.pasted"));
       return {
         markdown: result.markdown,
-        previewUrl: result.attachment.publicUrl ?? result.markdown
+        previewUrl
       };
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("attachment.uploadFailed"));
@@ -325,8 +443,40 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                   <p className="admin-error-text">{t("article.markdownNeedsMetadata")}</p>
                 ) : null}
 
+                <div className="admin-markdown-import admin-markdown-import--editor">
+                  <input
+                    accept=".md,.markdown,.mdown,.txt,text/markdown,text/plain"
+                    className="admin-markdown-import__input"
+                    disabled={isHydratingContent || isImportingMarkdown || !translation}
+                    onChange={(event) => void handleImportFileSelected(event)}
+                    ref={importFileInputRef}
+                    type="file"
+                  />
+                  <button
+                    className="liax-button liax-button--primary"
+                    disabled={isHydratingContent || isImportingMarkdown || !translation}
+                    onClick={openImportFilePicker}
+                    type="button"
+                  >
+                    {isImportingMarkdown ? t("article.importing") : t("article.importAction")}
+                  </button>
+                  {selectedImportFile ? (
+                    <p className="admin-muted-text admin-markdown-import__selection">
+                      {selectedImportFile.name} · {formatBytes(selectedImportFile.size)}
+                    </p>
+                  ) : (
+                    <p className="admin-muted-text admin-markdown-import__selection">{t("article.importHelp")}</p>
+                  )}
+                  {typeof importProgress === "number" ? (
+                    <div className="admin-markdown-import__progress" aria-label={t("article.importProgress")}>
+                      <span style={{ width: `${importProgress}%` }} />
+                    </div>
+                  ) : null}
+                </div>
+
                 <MarkdownEditor
-                  disabled={isSaving || isTranslating || isHydratingContent}
+                  attachmentPreviewUrls={attachmentPreviewUrls}
+                  disabled={isSaving || isTranslating || isHydratingContent || isImportingMarkdown}
                   forcePlainTextMode={forcePlainEditor}
                   onChange={handleEditorChange}
                   onDraftChange={(value) => {
@@ -340,7 +490,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                 <div className="admin-form-actions">
                   <button
                     className="liax-button"
-                    disabled={isTranslating || isHydratingContent}
+                    disabled={isTranslating || isHydratingContent || isImportingMarkdown}
                     onClick={() => void handleTranslateContent()}
                     type="button"
                   >
@@ -348,7 +498,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                   </button>
                   <button
                     className="liax-button liax-button--primary"
-                    disabled={isSaving || isHydratingContent || !translation}
+                    disabled={isSaving || isHydratingContent || isImportingMarkdown || !translation}
                     onClick={() => void handleSave()}
                     type="button"
                   >

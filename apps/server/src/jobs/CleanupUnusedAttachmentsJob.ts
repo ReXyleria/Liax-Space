@@ -75,8 +75,10 @@ export const unusedAttachmentCleanupQuery = `SELECT id, storage_key, created_at
            SELECT 1
            FROM moments
            WHERE moments.deleted_at IS NULL
-             AND attachments.public_url IS NOT NULL
-             AND JSON_CONTAINS(moments.images_json, JSON_QUOTE(attachments.public_url))
+             AND (
+               (attachments.public_url IS NOT NULL AND JSON_CONTAINS(moments.images_json, JSON_QUOTE(attachments.public_url)))
+               OR JSON_CONTAINS(moments.images_json, JSON_QUOTE(CONCAT('attachment://', attachments.id)))
+             )
          )
        ORDER BY created_at ASC, id ASC`;
 

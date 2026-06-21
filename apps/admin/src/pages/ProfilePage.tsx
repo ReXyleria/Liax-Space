@@ -4,6 +4,7 @@ import type { SupportedLocale } from "../../../../packages/shared/src/locales";
 import { attachmentApi } from "../api/attachmentApi";
 import { settingsApi, type Passkey } from "../api/settingsApi";
 import { useLanguageWipe } from "../effects/language-wipe/LanguageWipeProvider";
+import { useVerifiedImageUrl } from "../hooks/useVerifiedImageUrl";
 import { enUSDictionary } from "../i18n/dictionaries/en-US";
 import { zhCNDictionary } from "../i18n/dictionaries/zh-CN";
 import { useT } from "../i18n/useT";
@@ -91,6 +92,7 @@ export function ProfilePage(): ReactElement {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const avatarImage = useVerifiedImageUrl(avatarPublicUrl);
 
   useEffect(() => {
     let isMounted = true;
@@ -318,8 +320,10 @@ export function ProfilePage(): ReactElement {
           </div>
           <div className="liax-card__body">
             <div className="admin-profile-avatar-panel">
-              <div className="admin-profile-avatar-preview" aria-label={t("profile.avatarPreview")}>
-                {avatarPublicUrl ? <img alt="" src={avatarPublicUrl} /> : <span>LS</span>}
+              <div className="admin-profile-avatar-preview" aria-label={t("profile.avatarPreview")} data-status={avatarImage.status}>
+                {avatarImage.url ? <img alt="" onError={() => {
+                  avatarImage.markFailed();
+                }} src={avatarImage.url} /> : <span>LS</span>}
               </div>
               <div className="admin-profile-avatar-meta">
                 <p>{t("profile.avatarHelp")}</p>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { articleApi, type ArticleDetail, type ArticleLocale, type ArticleTranslation } from "../api/articleApi";
+import { AdminLoadingSkeleton } from "../components/AdminLoadingSkeleton";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
 
@@ -85,14 +86,14 @@ export function ArchivesPage(): ReactElement {
 
       <section className="liax-card admin-table-card" aria-label={t("archive.title")}>
         <div className="liax-card__body">
-          {isLoading ? <p className="admin-muted-text">{t("archive.loading")}</p> : null}
+          {isLoading ? <AdminLoadingSkeleton label={t("archive.loading")} rows={5} variant="table" /> : null}
           {errorMessage ? <p className="admin-error-text">{errorMessage}</p> : null}
           {!isLoading && !errorMessage && items.length === 0 ? (
             <p className="admin-muted-text">{t("archive.empty")}</p>
           ) : null}
 
           {!isLoading && !errorMessage && items.length > 0 ? (
-            <table className="admin-article-table">
+            <table className="admin-article-table admin-archive-table">
               <thead>
                 <tr>
                   <th>{t("article.id")}</th>
@@ -105,10 +106,10 @@ export function ArchivesPage(): ReactElement {
               <tbody>
                 {items.map((item) => (
                   <tr key={`${item.articleId}-${item.locale}`}>
-                    <td>{item.articleId}</td>
+                    <td><span className="admin-archive-id">#{item.articleId}</span></td>
                     <td>
-                      <strong>{item.title}</strong>
-                      <div className="admin-muted-text">{item.slug}</div>
+                      <strong className="admin-archive-title">{item.title}</strong>
+                      <div className="admin-muted-text admin-archive-slug">{item.slug}</div>
                     </td>
                     <td>{item.locale}</td>
                     <td>{formatDate(item.publishedAt, formatterLocale)}</td>

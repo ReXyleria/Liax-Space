@@ -1,7 +1,9 @@
 import { useEffect, useState, type ChangeEvent, type ReactElement } from "react";
 
 import { attachmentApi } from "../api/attachmentApi";
-import { settingsApi, type MailLog, type MailTemplate, type SeoPushProvider, type SeoPushSubmission } from "../api/settingsApi";
+import { buildApiUrl } from "../api/httpClient";
+import { settingsApi, type GuestbookTestEntry, type MailLog, type MailTemplate, type PreflightCheck, type PreflightCheckStatus, type SeoPushProvider, type SeoPushSubmission } from "../api/settingsApi";
+import { useVerifiedImageUrl } from "../hooks/useVerifiedImageUrl";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
 import { notifySiteAppearanceUpdated } from "../theme/siteTheme";
@@ -53,7 +55,7 @@ type SeoPushProviderSettings = {
 type SeoPushSettingsForm = Record<SeoPushProvider, SeoPushProviderSettings>;
 
 const defaultHomeSettings: HomeSettingsForm = {
-  brandInfo: "Liax Space · 温暖极简内容空间",
+  brandInfo: "Liax Space",
   contactItemsEn: "",
   contactItemsZh: "",
   icpNumber: "",
@@ -124,6 +126,16 @@ const defaultSeoPushSettings: SeoPushSettingsForm = {
 };
 
 const allowedLogoTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+function resolveLogoPreviewUrl(value: string): string {
+  const normalized = value.trim();
+
+  if (normalized.startsWith("/") && !normalized.startsWith("//")) {
+    return buildApiUrl(normalized);
+  }
+
+  return normalized;
+}
 
 function readSiteString(settings: Record<string, unknown>, key: string, fallback: string): string {
   const value = settings[key];
@@ -220,7 +232,7 @@ function formatSeoPushProvider(provider: SeoPushProvider): string {
   return "Google";
 }
 
-type SettingsPanel = "ai" | "mail" | "seo" | "site";
+type SettingsPanel = "ai" | "code" | "mail" | "maintenance" | "seo" | "site";
 
 export function SettingsPage(): ReactElement {
   const t = useT();
@@ -229,6 +241,10 @@ export function SettingsPage(): ReactElement {
   const [smtpSettings, setSmtpSettings] = useState<SmtpSettingsForm>(defaultSmtpSettings);
   const [seoPushSettings, setSeoPushSettings] = useState<SeoPushSettingsForm>(defaultSeoPushSettings);
   const [seoPushSubmissions, setSeoPushSubmissions] = useState<SeoPushSubmission[]>([]);
+  const [preflightChecks, setPreflightChecks] = useState<PreflightCheck[]>([]);
+  const [preflightSummary, setPreflightSummary] = useState<Record<PreflightCheckStatus, number>>({ fail: 0, pass: 0, warning: 0 });
+  const [testDataEntries, setTestDataEntries] = useState<GuestbookTestEntry[]>([]);
+  const [testDataCount, setTestDataCount] = useState(0);
   const [mailTemplates, setMailTemplates] = useState<MailTemplate[]>([]);
   const [mailLogs, setMailLogs] = useState<MailLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -238,10 +254,19 @@ export function SettingsPage(): ReactElement {
   const [isSavingSmtp, setIsSavingSmtp] = useState(false);
   const [isSavingSeoPush, setIsSavingSeoPush] = useState(false);
   const [isSubmittingSeoPush, setIsSubmittingSeoPush] = useState(false);
+  const [isRunningPreflight, setIsRunningPreflight] = useState(false);
+  const [isCleaningTestData, setIsCleaningTestData] = useState(false);
   const [savingMailTemplateId, setSavingMailTemplateId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<SettingsPanel>("site");
+  const isSiteFormDisabled = isLoading || isSavingSite || isUploadingLogo;
+  const isAiFormDisabled = isLoading || isSavingAi;
+  const isSmtpFormDisabled = isLoading || isSavingSmtp;
+  const isSeoPushFormDisabled = isLoading || isSavingSeoPush || isSubmittingSeoPush;
+  const isMaintenanceDisabled = isLoading || isRunningPreflight || isCleaningTestData;
+  const logoPreviewUrl = homeSettings.logoUrl ? resolveLogoPreviewUrl(homeSettings.logoUrl) : null;
+  const logoPreviewImage = useVerifiedImageUrl(logoPreviewUrl);
 
   useEffect(() => {
     let isMounted = true;
@@ -251,11 +276,13 @@ export function SettingsPage(): ReactElement {
       setErrorMessage(null);
 
       try {
-        const [siteSettingsResponse, seoPushResponse, mailTemplatesResponse, mailLogsResponse] = await Promise.all([
+        const [siteSettingsResponse, seoPushResponse, mailTemplatesResponse, mailLogsResponse, preflightResponse, testDataResponse] = await Promise.all([
           settingsApi.getSiteSettings(),
           settingsApi.listSeoPushSubmissions(),
           settingsApi.listMailTemplates(),
-          settingsApi.listMailLogs()
+          settingsApi.listMailLogs(),
+          settingsApi.getPreflight(),
+          settingsApi.listGuestbookTestData()
         ]);
 
         if (isMounted) {
@@ -315,6 +342,10 @@ export function SettingsPage(): ReactElement {
           });
           setSeoPushSettings(readSeoPushSettings(siteSettingsResponse.settings));
           setSeoPushSubmissions(seoPushResponse.submissions);
+          setPreflightChecks(preflightResponse.checks);
+          setPreflightSummary(preflightResponse.summary);
+          setTestDataEntries(testDataResponse.entries);
+          setTestDataCount(testDataResponse.count);
           setMailTemplates(mailTemplatesResponse.templates);
           setMailLogs(mailLogsResponse.logs);
         }
@@ -336,7 +367,7 @@ export function SettingsPage(): ReactElement {
     };
   }, [t]);
 
-  async function handleSaveHomeSettings(): Promise<void> {
+  async function handleSaveHomeSettings(successMessageKey = "settings.siteSaved"): Promise<void> {
     setIsSavingSite(true);
     setMessage(null);
     setErrorMessage(null);
@@ -370,7 +401,7 @@ export function SettingsPage(): ReactElement {
         logoUrl: readSiteString(response.settings, "site.logoUrl", defaultHomeSettings.logoUrl),
         signature: readSiteString(response.settings, "home.signature", defaultHomeSettings.signature)
       });
-      setMessage(t("settings.siteSaved"));
+      setMessage(t(successMessageKey));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("settings.siteSaveFailed"));
     } finally {
@@ -550,7 +581,52 @@ export function SettingsPage(): ReactElement {
     }
   }
 
-  function updateMailTemplate(templateId: number, patch: Partial<Pick<MailTemplate, "bodyText" | "enabled" | "subject">>): void {
+  async function handleRunPreflight(): Promise<void> {
+    setIsRunningPreflight(true);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await settingsApi.getPreflight();
+      setPreflightChecks(response.checks);
+      setPreflightSummary(response.summary);
+      setMessage(t("settings.preflightCompleted"));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("settings.preflightFailed"));
+    } finally {
+      setIsRunningPreflight(false);
+    }
+  }
+
+  async function refreshGuestbookTestData(): Promise<void> {
+    const response = await settingsApi.listGuestbookTestData();
+    setTestDataEntries(response.entries);
+    setTestDataCount(response.count);
+  }
+
+  async function handleCleanupGuestbookTestData(): Promise<void> {
+    if (testDataCount > 0 && !window.confirm(t("settings.testDataCleanupConfirm"))) {
+      return;
+    }
+
+    setIsCleaningTestData(true);
+    setMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await settingsApi.cleanupGuestbookTestData();
+      await refreshGuestbookTestData();
+      const preflightResponse = await settingsApi.getPreflight();
+      setPreflightChecks(preflightResponse.checks);
+      setPreflightSummary(preflightResponse.summary);
+      setMessage(t("settings.testDataCleaned").replace("{count}", String(response.deleted)));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("settings.testDataCleanupFailed"));
+    } finally {
+      setIsCleaningTestData(false);
+    }
+  }
+function updateMailTemplate(templateId: number, patch: Partial<Pick<MailTemplate, "bodyText" | "enabled" | "subject">>): void {
     setMailTemplates((current) => current.map((template) => (
       template.id === templateId
         ? {
@@ -624,9 +700,11 @@ export function SettingsPage(): ReactElement {
       <nav className="admin-settings-tabs" aria-label={t("settings.tabs")}>
         {([
           ["site", "settings.tab.public"],
+          ["code", "settings.tab.code"],
           ["ai", "settings.tab.ai"],
           ["mail", "settings.tab.mail"],
-          ["seo", "settings.tab.seo"]
+          ["seo", "settings.tab.seo"],
+          ["maintenance", "settings.tab.maintenance"]
         ] as Array<[SettingsPanel, string]>).map(([panel, labelKey]) => (
           <button
             aria-current={activePanel === panel ? "page" : undefined}
@@ -651,6 +729,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field admin-home-settings-grid__wide">
                 <span>{t("settings.homeSignature")}</span>
                 <input
+                  disabled={isSiteFormDisabled}
                   value={homeSettings.signature}
                   onChange={(event) => setHomeSettings((current) => ({ ...current, signature: event.target.value }))}
                 />
@@ -658,6 +737,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.homeBrandInfo")}</span>
                 <input
+                  disabled={isSiteFormDisabled}
                   value={homeSettings.brandInfo}
                   onChange={(event) => setHomeSettings((current) => ({ ...current, brandInfo: event.target.value }))}
                 />
@@ -665,6 +745,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.homeIcpNumber")}</span>
                 <input
+                  disabled={isSiteFormDisabled}
                   value={homeSettings.icpNumber}
                   onChange={(event) => setHomeSettings((current) => ({ ...current, icpNumber: event.target.value }))}
                 />
@@ -672,6 +753,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.homeIcpUrl")}</span>
                 <input
+                  disabled={isSiteFormDisabled}
                   type="url"
                   value={homeSettings.icpUrl}
                   onChange={(event) => setHomeSettings((current) => ({ ...current, icpUrl: event.target.value }))}
@@ -680,8 +762,10 @@ export function SettingsPage(): ReactElement {
               <div className="admin-form-field admin-home-settings-grid__wide">
                 <span>{t("settings.siteLogoImage")}</span>
                 <div className="admin-site-logo-upload">
-                  <div className="admin-site-logo-upload__preview" aria-label={t("settings.siteLogoPreview")}>
-                    {homeSettings.logoUrl ? <img alt={homeSettings.logoAlt || "Liax Space"} src={homeSettings.logoUrl} /> : <span>LS</span>}
+                  <div className="admin-site-logo-upload__preview" aria-label={t("settings.siteLogoPreview")} data-status={logoPreviewImage.status}>
+                    {logoPreviewImage.url ? <img alt={homeSettings.logoAlt || "Liax Space"} onError={() => {
+                      logoPreviewImage.markFailed();
+                    }} src={logoPreviewImage.url} /> : <span>LS</span>}
                   </div>
                   <div className="admin-site-logo-upload__actions">
                     <p className="admin-muted-text">{homeSettings.logoUrl ? t("settings.siteLogoConfigured") : t("settings.siteLogoEmpty")}</p>
@@ -690,7 +774,7 @@ export function SettingsPage(): ReactElement {
                         <input
                           accept="image/jpeg,image/png,image/webp,image/gif"
                           className="admin-avatar-file-input"
-                          disabled={isUploadingLogo || isSavingSite}
+                          disabled={isSiteFormDisabled}
                           onChange={(event) => void handleLogoFileChange(event)}
                           type="file"
                         />
@@ -698,7 +782,7 @@ export function SettingsPage(): ReactElement {
                       </label>
                       <button
                         className="liax-button"
-                        disabled={isUploadingLogo || isSavingSite || !homeSettings.logoUrl}
+                        disabled={isSiteFormDisabled || !homeSettings.logoUrl}
                         onClick={() => setHomeSettings((current) => ({ ...current, logoUrl: "" }))}
                         type="button"
                       >
@@ -712,6 +796,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.siteLogoAlt")}</span>
                 <input
+                  disabled={isSiteFormDisabled}
                   value={homeSettings.logoAlt}
                   onChange={(event) => setHomeSettings((current) => ({ ...current, logoAlt: event.target.value }))}
                 />
@@ -719,6 +804,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.homeContactItemsZh")}</span>
                 <textarea
+                  disabled={isSiteFormDisabled}
                   rows={4}
                   value={homeSettings.contactItemsZh}
                   onChange={(event) => setHomeSettings((current) => ({ ...current, contactItemsZh: event.target.value }))}
@@ -728,15 +814,33 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.homeContactItemsEn")}</span>
                 <textarea
+                  disabled={isSiteFormDisabled}
                   rows={4}
                   value={homeSettings.contactItemsEn}
                   onChange={(event) => setHomeSettings((current) => ({ ...current, contactItemsEn: event.target.value }))}
                 />
                 <small>{t("settings.homeContactItemsEnHelp")}</small>
               </label>
+
+            </div>
+            <div className="admin-form-actions">
+              <button className="liax-button liax-button--primary" disabled={isSiteFormDisabled} onClick={() => void handleSaveHomeSettings()} type="button">
+                {isSavingSite ? t("settings.saving") : t("settings.save")}
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <article className="liax-card admin-settings-panel" data-active={activePanel === "code"}>
+          <div className="liax-card__header">
+            <h3>{t("settings.codeInjection")}</h3>
+          </div>
+          <div className="liax-card__body">
+            <div className="admin-home-settings-grid">
               <label className="admin-form-field admin-home-settings-grid__wide">
                 <span>{t("settings.codeInjectionGlobalHead")}</span>
                 <textarea
+                  disabled={isSiteFormDisabled}
                   rows={5}
                   spellCheck={false}
                   value={homeSettings.injectionGlobalHead}
@@ -747,6 +851,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field admin-home-settings-grid__wide">
                 <span>{t("settings.codeInjectionContentHead")}</span>
                 <textarea
+                  disabled={isSiteFormDisabled}
                   rows={5}
                   spellCheck={false}
                   value={homeSettings.injectionContentHead}
@@ -757,6 +862,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field admin-home-settings-grid__wide">
                 <span>{t("settings.codeInjectionFooter")}</span>
                 <textarea
+                  disabled={isSiteFormDisabled}
                   rows={5}
                   spellCheck={false}
                   value={homeSettings.injectionFooter}
@@ -766,8 +872,8 @@ export function SettingsPage(): ReactElement {
               </label>
             </div>
             <div className="admin-form-actions">
-              <button className="liax-button liax-button--primary" disabled={isSavingSite || isUploadingLogo} onClick={() => void handleSaveHomeSettings()} type="button">
-                {isSavingSite ? t("settings.saving") : t("settings.save")}
+              <button className="liax-button liax-button--primary" disabled={isSiteFormDisabled} onClick={() => void handleSaveHomeSettings("settings.codeInjectionSaved")} type="button">
+                {isSavingSite ? t("settings.saving") : t("settings.codeInjectionSave")}
               </button>
             </div>
           </div>
@@ -782,6 +888,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.aiProvider")}</span>
                 <select
+                  disabled={isAiFormDisabled}
                   onChange={(event) => handleProviderChange(event.target.value as AiSettingsForm["provider"])}
                   value={aiSettings.provider}
                 >
@@ -793,6 +900,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.aiTemperature")}</span>
                 <input
+                  disabled={isAiFormDisabled}
                   max="2"
                   min="0"
                   onChange={(event) => setAiSettings((current) => ({ ...current, temperature: event.target.value }))}
@@ -805,6 +913,7 @@ export function SettingsPage(): ReactElement {
                 <span>{t("settings.aiApiKey")}</span>
                 <input
                   autoComplete="off"
+                  disabled={isAiFormDisabled}
                   type="password"
                   value={aiSettings.apiKey}
                   onChange={(event) => setAiSettings((current) => ({ ...current, apiKey: event.target.value }))}
@@ -820,6 +929,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field admin-home-settings-grid__wide">
                 <span>{t("settings.aiBaseUrl")}</span>
                 <input
+                  disabled={isAiFormDisabled}
                   type="url"
                   value={aiSettings.baseUrl}
                   onChange={(event) => setAiSettings((current) => ({ ...current, baseUrl: event.target.value }))}
@@ -828,6 +938,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field admin-home-settings-grid__wide">
                 <span>{t("settings.aiModel")}</span>
                 <input
+                  disabled={isAiFormDisabled}
                   value={aiSettings.model}
                   onChange={(event) => setAiSettings((current) => ({ ...current, model: event.target.value }))}
                 />
@@ -835,7 +946,7 @@ export function SettingsPage(): ReactElement {
               </label>
             </div>
             <div className="admin-form-actions">
-              <button className="liax-button liax-button--primary" disabled={isSavingAi} onClick={() => void handleSaveAiSettings()} type="button">
+              <button className="liax-button liax-button--primary" disabled={isAiFormDisabled} onClick={() => void handleSaveAiSettings()} type="button">
                 {isSavingAi ? t("settings.saving") : t("settings.aiSave")}
               </button>
             </div>
@@ -851,6 +962,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.smtpHost")}</span>
                 <input
+                  disabled={isSmtpFormDisabled}
                   value={smtpSettings.host}
                   onChange={(event) => setSmtpSettings((current) => ({ ...current, host: event.target.value }))}
                 />
@@ -858,6 +970,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.smtpPort")}</span>
                 <input
+                  disabled={isSmtpFormDisabled}
                   inputMode="numeric"
                   max="65535"
                   min="1"
@@ -870,6 +983,7 @@ export function SettingsPage(): ReactElement {
                 <span>{t("settings.smtpUser")}</span>
                 <input
                   autoComplete="username"
+                  disabled={isSmtpFormDisabled}
                   value={smtpSettings.user}
                   onChange={(event) => setSmtpSettings((current) => ({ ...current, user: event.target.value }))}
                 />
@@ -878,6 +992,7 @@ export function SettingsPage(): ReactElement {
                 <span>{t("settings.smtpPass")}</span>
                 <input
                   autoComplete="new-password"
+                  disabled={isSmtpFormDisabled}
                   type="password"
                   value={smtpSettings.pass}
                   onChange={(event) => setSmtpSettings((current) => ({ ...current, pass: event.target.value }))}
@@ -887,6 +1002,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.smtpFrom")}</span>
                 <input
+                  disabled={isSmtpFormDisabled}
                   type="email"
                   value={smtpSettings.from}
                   onChange={(event) => setSmtpSettings((current) => ({ ...current, from: event.target.value }))}
@@ -895,6 +1011,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.smtpFromName")}</span>
                 <input
+                  disabled={isSmtpFormDisabled}
                   value={smtpSettings.fromName}
                   onChange={(event) => setSmtpSettings((current) => ({ ...current, fromName: event.target.value }))}
                 />
@@ -902,6 +1019,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-form-field">
                 <span>{t("settings.smtpEncryption")}</span>
                 <select
+                  disabled={isSmtpFormDisabled}
                   onChange={(event) => setSmtpSettings((current) => ({ ...current, encryption: event.target.value as SmtpEncryption }))}
                   value={smtpSettings.encryption}
                 >
@@ -913,6 +1031,7 @@ export function SettingsPage(): ReactElement {
               <label className="admin-toggle-row admin-home-settings-grid__wide">
                 <input
                   checked={smtpSettings.notificationsEnabled}
+                  disabled={isSmtpFormDisabled}
                   onChange={(event) => setSmtpSettings((current) => ({ ...current, notificationsEnabled: event.target.checked }))}
                   type="checkbox"
                 />
@@ -920,7 +1039,7 @@ export function SettingsPage(): ReactElement {
               </label>
             </div>
             <div className="admin-form-actions">
-              <button className="liax-button liax-button--primary" disabled={isSavingSmtp} onClick={() => void handleSaveSmtpSettings()} type="button">
+              <button className="liax-button liax-button--primary" disabled={isSmtpFormDisabled} onClick={() => void handleSaveSmtpSettings()} type="button">
                 {isSavingSmtp ? t("settings.saving") : t("settings.smtpSave")}
               </button>
             </div>
@@ -937,6 +1056,7 @@ export function SettingsPage(): ReactElement {
                       <label className="admin-toggle-row">
                         <input
                           checked={template.enabled}
+                          disabled={isLoading || savingMailTemplateId === templateId}
                           onChange={(event) => updateMailTemplate(template.id, { enabled: event.target.checked })}
                           type="checkbox"
                         />
@@ -945,6 +1065,7 @@ export function SettingsPage(): ReactElement {
                       <label className="admin-form-field">
                         <span>{t("settings.mailTemplateSubject")}</span>
                         <input
+                          disabled={isLoading || savingMailTemplateId === templateId}
                           value={template.subject}
                           onChange={(event) => updateMailTemplate(template.id, { subject: event.target.value })}
                         />
@@ -952,6 +1073,7 @@ export function SettingsPage(): ReactElement {
                       <label className="admin-form-field">
                         <span>{t("settings.mailTemplateBody")}</span>
                         <textarea
+                          disabled={isLoading || savingMailTemplateId === templateId}
                           rows={7}
                           value={template.bodyText}
                           onChange={(event) => updateMailTemplate(template.id, { bodyText: event.target.value })}
@@ -960,7 +1082,7 @@ export function SettingsPage(): ReactElement {
                       <div className="admin-form-actions">
                         <button
                           className="liax-button"
-                          disabled={savingMailTemplateId === templateId}
+                          disabled={isLoading || savingMailTemplateId === templateId}
                           onClick={() => void handleSaveMailTemplate(template)}
                           type="button"
                         >
@@ -1000,6 +1122,7 @@ export function SettingsPage(): ReactElement {
                   <label className="admin-toggle-row">
                     <input
                       checked={seoPushSettings[provider].enabled}
+                      disabled={isSeoPushFormDisabled}
                       onChange={(event) => updateSeoPushProvider(provider, { enabled: event.target.checked })}
                       type="checkbox"
                     />
@@ -1008,6 +1131,7 @@ export function SettingsPage(): ReactElement {
                   <label className="admin-form-field">
                     <span>{t("settings.seoPushSite")}</span>
                     <input
+                      disabled={isSeoPushFormDisabled}
                       value={seoPushSettings[provider].site}
                       onChange={(event) => updateSeoPushProvider(provider, { site: event.target.value })}
                     />
@@ -1016,6 +1140,7 @@ export function SettingsPage(): ReactElement {
                     <span>{t(provider === "google" ? "settings.seoPushAccessToken" : "settings.seoPushKey")}</span>
                     <input
                       autoComplete="off"
+                      disabled={isSeoPushFormDisabled}
                       type="password"
                       value={seoPushSettings[provider].key}
                       onChange={(event) => updateSeoPushProvider(provider, { key: event.target.value })}
@@ -1024,6 +1149,7 @@ export function SettingsPage(): ReactElement {
                   <label className="admin-form-field">
                     <span>{t("settings.seoPushEndpoint")}</span>
                     <input
+                      disabled={isSeoPushFormDisabled}
                       value={seoPushSettings[provider].url}
                       onChange={(event) => updateSeoPushProvider(provider, { url: event.target.value })}
                     />
@@ -1032,10 +1158,10 @@ export function SettingsPage(): ReactElement {
               ))}
             </div>
             <div className="admin-form-actions">
-              <button className="liax-button liax-button--primary" disabled={isSavingSeoPush} onClick={() => void handleSaveSeoPushSettings()} type="button">
+              <button className="liax-button liax-button--primary" disabled={isSeoPushFormDisabled} onClick={() => void handleSaveSeoPushSettings()} type="button">
                 {isSavingSeoPush ? t("settings.saving") : t("settings.seoPushSave")}
               </button>
-              <button className="liax-button" disabled={isSubmittingSeoPush || isSavingSeoPush} onClick={() => void handleSubmitSeoPush()} type="button">
+              <button className="liax-button" disabled={isSeoPushFormDisabled} onClick={() => void handleSubmitSeoPush()} type="button">
                 {isSubmittingSeoPush ? t("settings.seoPushSubmitting") : t("settings.seoPushSubmit")}
               </button>
             </div>
@@ -1053,6 +1179,73 @@ export function SettingsPage(): ReactElement {
                 </article>
               ))}
             </div>
+          </div>
+        </article>
+
+        <article className="liax-card admin-settings-panel" data-active={activePanel === "maintenance"}>
+          <div className="liax-card__header">
+            <h3>{t("settings.maintenance")}</h3>
+          </div>
+          <div className="liax-card__body">
+            <section className="admin-maintenance-block">
+              <div>
+                <h4>{t("settings.preflightTitle")}</h4>
+                <p className="admin-muted-text">{t("settings.preflightHelp")}</p>
+              </div>
+              <div className="admin-form-actions">
+                <button className="liax-button liax-button--primary" disabled={isMaintenanceDisabled} onClick={() => void handleRunPreflight()} type="button">
+                  {isRunningPreflight ? t("settings.preflightRunning") : t("settings.preflightRun")}
+                </button>
+              </div>
+              <div className="admin-preflight-summary" aria-label={t("settings.preflightSummary")}>
+                {(["fail", "warning", "pass"] as PreflightCheckStatus[]).map((status) => (
+                  <span className="admin-status-badge" data-status={status} key={status}>
+                    {t(`settings.preflightStatus.${status}`)} · {preflightSummary[status] ?? 0}
+                  </span>
+                ))}
+              </div>
+              <div className="admin-preflight-list">
+                {preflightChecks.map((check) => (
+                  <article className="admin-preflight-check" data-status={check.status} key={check.key}>
+                    <div>
+                      <strong>{t(`settings.preflight.${check.key}.title`)}</strong>
+                      <span className="admin-status-badge" data-status={check.status}>{t(`settings.preflightStatus.${check.status}`)}</span>
+                    </div>
+                    <p>{t(`settings.preflight.${check.key}.${check.status}`)}</p>
+                    {check.count > 0 ? <small>{t("settings.preflightCount").replace("{count}", String(check.count))}</small> : null}
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="admin-maintenance-block">
+              <div>
+                <h4>{t("settings.testDataTitle")}</h4>
+                <p className="admin-muted-text">{t("settings.testDataHelp")}</p>
+              </div>
+              <div className="admin-form-actions">
+                <button className="liax-button" disabled={isMaintenanceDisabled} onClick={() => void refreshGuestbookTestData()} type="button">
+                  {t("settings.testDataRefresh")}
+                </button>
+                <button className="liax-button liax-button--danger" disabled={isMaintenanceDisabled || testDataCount === 0} onClick={() => void handleCleanupGuestbookTestData()} type="button">
+                  {isCleaningTestData ? t("settings.testDataCleaning") : t("settings.testDataCleanup")}
+                </button>
+              </div>
+              <p className="admin-muted-text">{t("settings.testDataMatched").replace("{count}", String(testDataCount))}</p>
+              {testDataEntries.length === 0 ? (
+                <p className="admin-empty-card">{t("settings.testDataEmpty")}</p>
+              ) : (
+                <div className="admin-test-data-list">
+                  {testDataEntries.map((entry) => (
+                    <article className="admin-test-data-item" key={entry.id}>
+                      <strong>#{entry.id} · {entry.authorName}</strong>
+                      <small>{entry.locale} · {new Date(entry.createdAt).toLocaleString()}</small>
+                      <p>{entry.content}</p>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         </article>
       </section>

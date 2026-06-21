@@ -48,6 +48,27 @@ async function fulfillJson(route: Route, body: unknown, status = 200): Promise<v
   });
 }
 
+function dashboardResponse() {
+  return {
+    dashboard: {
+      loginCountries: [{ label: "China", visits: 8 }, { label: "United States", visits: 2 }],
+      loginDevices: [{ label: "Windows 11", visits: 7 }, { label: "macOS 15", visits: 3 }],
+      popularPages: [{ path: "/zh/posts", visits: 12 }],
+      range: 7,
+      recentPublished: [],
+      totals: {
+        articles: 3,
+        comments: 0,
+        guestbook: 1,
+        loginEvents: 10,
+        loginUsers: 2,
+        moments: 2,
+        users: 2
+      }
+    }
+  };
+}
+
 async function installAdminFlowMocks(page: Page, state: AdminFlowMockState): Promise<void> {
   let siteSettings: Record<string, unknown> = {
     "ai.apiKeyConfigured": true,
@@ -130,6 +151,88 @@ async function installAdminFlowMocks(page: Page, state: AdminFlowMockState): Pro
       }
 
       await fulfillJson(route, { settings: siteSettings });
+      return;
+    }
+
+    if (path === "/admin/settings/appearance") {
+      await fulfillJson(route, {
+        settings: {
+          "site.logoAlt": siteSettings["site.logoAlt"] ?? null,
+          "site.logoUrl": siteSettings["site.logoUrl"] ?? null,
+          "theme.customColors": siteSettings["theme.customColors"],
+          "theme.preset": siteSettings["theme.preset"]
+        }
+      });
+      return;
+    }
+
+    if (path === "/admin/dashboard") {
+      await fulfillJson(route, dashboardResponse());
+      return;
+    }
+
+    if (path === "/admin/roles") {
+      await fulfillJson(route, {
+        permissions: allPermissions,
+        roles: [
+          {
+            builtIn: true,
+            createdAt: now,
+            displayName: "Admin",
+            permissions: allPermissions,
+            roleKey: "admin",
+            updatedAt: now
+          },
+          {
+            builtIn: true,
+            createdAt: now,
+            displayName: "Editor",
+            permissions: ["article:create", "article:update", "article:publish", "attachment:upload"],
+            roleKey: "editor",
+            updatedAt: now
+          }
+        ]
+      });
+      return;
+    }
+
+    if (path === "/admin/settings/preflight") {
+      await fulfillJson(route, {
+        checks: [
+          { count: 0, key: "icp", status: "pass" },
+          { count: 0, key: "contact", status: "pass" },
+          { count: 0, key: "logo", status: "pass" },
+          { count: 0, key: "homeCopy", status: "pass" },
+          { count: 0, key: "brokenImages", status: "pass" },
+          { count: 0, key: "testGuestbook", status: "pass" }
+        ],
+        summary: { fail: 0, pass: 6, warning: 0 }
+      });
+      return;
+    }
+
+    if (path === "/admin/settings/test-data/guestbook") {
+      await fulfillJson(route, { count: 0, entries: [] });
+      return;
+    }
+
+    if (path === "/admin/settings/test-data/guestbook/cleanup") {
+      await fulfillJson(route, { deleted: 0, remaining: 0 });
+      return;
+    }
+
+    if (path === "/admin/seo/push/submissions") {
+      await fulfillJson(route, { submissions: [] });
+      return;
+    }
+
+    if (path === "/admin/mail/templates") {
+      await fulfillJson(route, { templates: [] });
+      return;
+    }
+
+    if (path === "/admin/mail/logs") {
+      await fulfillJson(route, { logs: [] });
       return;
     }
 
@@ -234,8 +337,8 @@ function expectStableShell(actual: ShellMetrics, expected: ShellMetrics): void {
   expectStableBox(actual.topbar, expected.topbar);
   expectStableBox(actual.languageButton, expected.languageButton);
   expectStableBox(actual.avatar, expected.avatar);
-  expect(actual.contentAnimationName).toBe("admin-page-enter");
-  expect(actual.contentAnimationDuration).toBe("0.36s");
+  expect(actual.contentAnimationName).toBe("none");
+  expect(actual.contentAnimationDuration).toBe("0s");
 }
 
 test("admin page transitions keep the shell stable and content animation bounded", async ({ page }) => {
@@ -272,21 +375,24 @@ test("admin settings keep AI provider presets and validation predictable", async
   await page.goto("/#settings");
   await expect(page.locator("main").getByRole("heading", { name: "Site settings" }).first()).toBeVisible();
 
-  await page.getByLabel("Translation provider").selectOption("openai");
-  await expect(page.getByLabel("API base URL")).toHaveValue("https://api.openai.com/v1");
-  await expect(page.getByLabel("Model name")).toHaveValue("gpt-4.1-mini");
+  await page.getByRole("button", { exact: true, name: "AI" }).click();
+  const aiPanel = page.locator(".admin-settings-panel[data-active='true']").filter({ hasText: "AI translation" });
 
-  await page.getByLabel("Translation provider").selectOption("ollama");
-  await expect(page.getByLabel("API base URL")).toHaveValue("http://localhost:11434/v1");
-  await expect(page.getByLabel("Model name")).toHaveValue("llama3.1");
+  await aiPanel.getByLabel("Translation provider").selectOption("openai");
+  await expect(aiPanel.getByLabel("API base URL")).toHaveValue("https://api.openai.com/v1");
+  await expect(aiPanel.getByLabel("Model name")).toHaveValue("gpt-4.1-mini");
 
-  await page.getByLabel("Temperature").fill("2.5");
-  await page.getByRole("button", { name: "Save AI settings" }).click();
+  await aiPanel.getByLabel("Translation provider").selectOption("ollama");
+  await expect(aiPanel.getByLabel("API base URL")).toHaveValue("http://localhost:11434/v1");
+  await expect(aiPanel.getByLabel("Model name")).toHaveValue("llama3.1");
+
+  await aiPanel.getByLabel("Temperature").fill("2.5");
+  await aiPanel.getByRole("button", { name: "Save AI settings" }).click();
   await expect(page.getByText("Temperature must be a number from 0 to 2.")).toBeVisible();
   expect(mockState.sitePatches).toEqual([]);
 
-  await page.getByLabel("Temperature").fill("0.3");
-  await page.getByRole("button", { name: "Save AI settings" }).click();
+  await aiPanel.getByLabel("Temperature").fill("0.3");
+  await aiPanel.getByRole("button", { name: "Save AI settings" }).click();
   await expect(page.getByText("AI settings saved.")).toBeVisible();
 
   expect(mockState.sitePatches[mockState.sitePatches.length - 1]).toEqual({
@@ -307,23 +413,28 @@ test("admin settings save public home content as deliberate site settings", asyn
   await page.goto("/#settings");
   await expect(page.locator("main").getByRole("heading", { name: "Site settings" }).first()).toBeVisible();
 
-  const homeCard = page.locator(".liax-card").filter({ hasText: "Home information" });
+  const homeCard = page.locator(".admin-settings-panel[data-active='true']").filter({ hasText: "Public information" });
   await homeCard.getByLabel("Signature").fill("Quiet Orbit");
   await homeCard.getByLabel("Bottom-left brand text").fill("Liax Space · Clean personal publishing");
   await homeCard.getByLabel("Bottom-right ICP text").fill("蜀ICP备20260606号-1");
   await homeCard.getByLabel("ICP platform link").fill("https://beian.miit.gov.cn");
-  await homeCard.getByLabel("Chinese contact methods").fill("邮箱:quiet@example.com\n主页:https://liax.example");
-  await homeCard.getByLabel("English contact methods").fill("Email:quiet@example.com\nWebsite:https://liax.example");
+  await homeCard.getByLabel("Chinese contact page content").fill("邮箱:quiet@example.com\n主页:https://liax.example");
+  await homeCard.getByLabel("English contact page content").fill("Email:quiet@example.com\nWebsite:https://liax.example");
   await homeCard.getByRole("button", { name: "Save settings" }).click();
 
   await expect(page.getByText("Home information saved.")).toBeVisible();
   expect(mockState.sitePatches[mockState.sitePatches.length - 1]).toEqual({
+    "codeInjection.contentHead": "",
+    "codeInjection.footer": "",
+    "codeInjection.globalHead": "",
     "home.brandInfo": "Liax Space · Clean personal publishing",
     "home.contactItems.en-US": "Email:quiet@example.com\nWebsite:https://liax.example",
     "home.contactItems.zh-CN": "邮箱:quiet@example.com\n主页:https://liax.example",
     "home.icpNumber": "蜀ICP备20260606号-1",
     "home.icpUrl": "https://beian.miit.gov.cn",
-    "home.signature": "Quiet Orbit"
+    "home.signature": "Quiet Orbit",
+    "site.logoAlt": "Liax Space",
+    "site.logoUrl": ""
   });
   expect(mockState.unknownRequests).toEqual([]);
 });
@@ -361,7 +472,7 @@ test("profile avatar flow rejects unsafe files before upload and updates the she
   expect(mockState.unknownRequests).toEqual([]);
 });
 
-test("public language switch uses a real old-to-new overlay without moving header controls", async ({ page }) => {
+test("public language switch crossfades content without moving header controls", async ({ page }) => {
   await page.goto(`${publicBaseUrl}/zh`);
   await expect(page.locator(".liax-public-header")).toBeVisible();
   await page.waitForTimeout(450);
@@ -388,15 +499,13 @@ test("public language switch uses a real old-to-new overlay without moving heade
   });
 
   await page.locator("[data-locale-target='en-US']").click();
-  const overlay = page.locator("[data-language-wipe-overlay='true']");
-  await expect(overlay).toBeVisible();
+  await page.waitForURL(`${publicBaseUrl}/en`);
+  await expect(page.locator("[data-language-wipe-overlay='true']")).toHaveCount(0);
+  await expect(page.locator("html")).toHaveAttribute("lang", "en-US");
 
-  const during = await page.evaluate(() => {
-    const overlayRoot = document.querySelector<HTMLElement>("[data-language-wipe-overlay='true']")!;
-    const overlayHeader = overlayRoot.querySelector<HTMLElement>(".liax-public-header")!;
-    const overlayButton = overlayRoot.querySelector<HTMLElement>("[data-locale-target='zh-CN']")!;
-    const overlayMain = overlayRoot.querySelector<HTMLElement>("main")!;
-    const overlayStyle = window.getComputedStyle(overlayRoot);
+  const after = await page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>(".liax-public-header")!;
+    const languageButton = document.querySelector<HTMLElement>("[data-locale-target='zh-CN']")!;
     const toBox = (element: HTMLElement): Box => {
       const rect = element.getBoundingClientRect();
 
@@ -409,28 +518,16 @@ test("public language switch uses a real old-to-new overlay without moving heade
     };
 
     return {
-      currentLang: document.documentElement.lang,
-      currentMainText: document.querySelector<HTMLElement>("main")?.innerText ?? "",
-      overlayButton: toBox(overlayButton),
-      overlayClipPath: overlayStyle.clipPath,
-      overlayHeader: toBox(overlayHeader),
-      overlayMainText: overlayMain.innerText,
-      overlayTransitionDuration: overlayStyle.transitionDuration
+      button: toBox(languageButton),
+      header: toBox(header),
+      mainText: document.querySelector<HTMLElement>("main")?.innerText ?? ""
     };
   });
 
-  expect(before.mainText).toContain("作者");
-  expect(during.currentLang).toBe("zh-CN");
-  expect(during.currentMainText).toContain("作者");
-  expect(during.overlayMainText).toContain("Author");
-  expect(during.overlayClipPath).toContain("circle");
-  expect(during.overlayTransitionDuration).toContain("0.9s");
-  expectStableBox(during.overlayHeader, before.header);
-  expectStableBox(during.overlayButton, before.languageButton);
-
-  await page.waitForURL(`${publicBaseUrl}/en`);
-  await expect(overlay).toHaveCount(0);
-  await expect(page.locator("html")).toHaveAttribute("lang", "en-US");
+  expect(before.mainText).toContain("联系方式");
+  expect(after.mainText).toContain("No public contact methods");
+  expectStableBox(after.header, before.header);
+  expectStableBox(after.button, before.languageButton);
 
   const finalLocaleState = await page.evaluate(() => ({
     adminLocale: window.localStorage.getItem("liax.admin.locale"),
@@ -448,18 +545,87 @@ test("public search opens as a focused overlay, closes cleanly, and keeps the cu
   await expect(page.locator(".liax-public-header")).toBeVisible();
   await page.waitForTimeout(450);
 
-  await page.locator(".liax-public-search").click();
+  await page.locator(".liax-public-header .liax-public-search").click();
   const overlay = page.locator("[data-public-search-overlay='true']");
   await expect(overlay).toBeVisible();
   await expect(page.locator("[data-public-search-overlay-input='true']")).toBeFocused();
 
+  const backdropStyle = await page.locator("[data-public-search-backdrop='true']").evaluate((backdrop) => {
+    const style = window.getComputedStyle(backdrop);
+
+    return {
+      backdropFilter: style.backdropFilter,
+      backgroundColor: style.backgroundColor
+    };
+  });
+
+  expect(backdropStyle.backdropFilter).toBe("blur(2px)");
+  expect(backdropStyle.backgroundColor).toBe("rgba(250, 249, 245, 0.42)");
+
+  expect(await page.locator("[data-public-search-overlay-trigger]").evaluateAll((inputs) => inputs.map((input) => ({
+    ariaHidden: input.getAttribute("aria-hidden"),
+    inert: input.hasAttribute("inert"),
+    tabIndex: input.getAttribute("tabindex")
+  })))).toEqual(expect.arrayContaining([
+    { ariaHidden: "true", inert: true, tabIndex: "-1" }
+  ]));
+
   await page.keyboard.press("Escape");
   await expect(overlay).toHaveCount(0);
+  expect(await page.locator("[data-public-search-overlay-trigger]").evaluateAll((inputs) => inputs.map((input) => ({
+    ariaHidden: input.getAttribute("aria-hidden"),
+    inert: input.hasAttribute("inert"),
+    tabIndex: input.getAttribute("tabindex")
+  })))).toEqual(expect.arrayContaining([
+    { ariaHidden: null, inert: false, tabIndex: null }
+  ]));
 
-  await page.locator(".liax-public-search").click();
+  await page.locator(".liax-public-header .liax-public-search").click();
   await page.locator("[data-public-search-overlay-input='true']").fill("用户体验");
   await page.keyboard.press("Enter");
   await page.waitForURL(/\/zh\/search\?q=/u);
   await expect(page).toHaveTitle(/搜索/u);
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+});
+
+test("public mobile menu opens navigation without triggering the search overlay", async ({ page }) => {
+  await page.setViewportSize({ height: 760, width: 390 });
+  await page.goto(`${publicBaseUrl}/zh`);
+  await expect(page.locator(".liax-public-header")).toBeVisible();
+  await page.waitForTimeout(450);
+
+  const toggle = page.locator("[data-public-sidebar-toggle]");
+  const sidebarLayer = page.locator("[data-public-sidebar-layer]");
+
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(sidebarLayer).toHaveAttribute("aria-hidden", "true");
+
+  const toggleIcon = await toggle.evaluate((button) => {
+    const lines = Array.from(button.querySelectorAll("span")).map((line) => {
+      const rect = line.getBoundingClientRect();
+
+      return { height: rect.height, width: rect.width };
+    });
+
+    return {
+      lineCount: lines.length,
+      usesHorizontalLines: lines.every((line) => line.width >= 14 && line.height <= 3)
+    };
+  });
+
+  expect(toggleIcon.lineCount).toBe(3);
+  expect(toggleIcon.usesHorizontalLines).toBe(true);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(sidebarLayer).toHaveAttribute("aria-hidden", "false");
+  await expect(sidebarLayer).toHaveClass(/is-open/u);
+  await expect(page.locator("[data-public-search-overlay='true']")).toHaveCount(0);
+  await expect(sidebarLayer.locator(".liax-public-sidebar-menu a")).toHaveCount(6);
+
+  await page.keyboard.press("Escape");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(sidebarLayer).toHaveAttribute("aria-hidden", "true");
+  await expect(sidebarLayer).not.toHaveClass(/is-open/u);
 });

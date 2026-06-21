@@ -1,4 +1,5 @@
-import type { TemplateRenderInput } from "./renderer.types.js";
+import type { ArticleTocItem, TemplateRenderInput } from "./renderer.types.js";
+import { formatArticleAudienceLabel } from "../articles/articleAudience.js";
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -53,17 +54,267 @@ function renderPublicMenuToggle(locale: string): string {
 }
 
 function renderPublicSidebar(localePrefix: string, locale: string): string {
-  const closeLabel = locale === "zh-CN" ? "关闭导航" : "Close navigation";
+  const isZh = locale === "zh-CN";
+  const closeLabel = isZh ? "关闭导航" : "Close navigation";
+  const title = isZh ? "浏览 Liax Space" : "Browse Liax Space";
+  const description = isZh ? "选择一个内容入口，或直接搜索公开内容。" : "Choose a section, or search public content directly.";
+  const footer = "Liax Space";
 
   return `<div class="liax-public-sidebar-layer" aria-hidden="true" inert data-public-sidebar-layer>
       <button class="liax-public-sidebar-backdrop" type="button" aria-label="${closeLabel}" data-public-sidebar-close></button>
       <aside class="liax-public-sidebar" aria-label="${closeLabel}">
+        <header class="liax-public-sidebar__header">
+          <strong>${escapeHtml(title)}</strong>
+          <span>${escapeHtml(description)}</span>
+        </header>
         ${renderPublicSearchForm(localePrefix, locale, "sidebar")}
         <nav class="liax-public-sidebar-menu" aria-label="Primary">
           ${renderPublicMenuLinks(localePrefix, locale)}
         </nav>
+        <p class="liax-public-sidebar__footer">${escapeHtml(footer)}</p>
       </aside>
     </div>`;
+}
+
+function renderPublicPolishCss(): string {
+  return `    .liax-public-header {
+      position: relative;
+      z-index: 60;
+      background: rgb(250 249 245 / 88%);
+      backdrop-filter: blur(14px);
+    }
+
+    .liax-public-logo {
+      border: 0 !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      color: var(--color-text) !important;
+      overflow: visible !important;
+    }
+
+    .liax-public-logo img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain !important;
+      background: transparent !important;
+    }
+
+    .liax-public-avatar {
+      width: 40px;
+      height: 40px;
+      overflow: hidden;
+      border-radius: 999px;
+    }
+
+    .liax-public-avatar img {
+      border-radius: inherit;
+      object-fit: cover;
+    }
+
+    .liax-public-menu {
+      grid-template-columns: repeat(6, max-content);
+      gap: 2px;
+    }
+
+    .liax-public-menu a {
+      width: auto;
+      min-width: 0;
+      min-height: 30px;
+      align-items: center;
+      border-radius: 999px;
+      font-size: 13px;
+      padding: 4px 10px;
+      transition: background-color 180ms ease, box-shadow 180ms ease, color 180ms ease, transform 180ms ease;
+    }
+
+    .liax-public-menu a[aria-current="page"],
+    .liax-public-sidebar-menu a[aria-current="page"] {
+      background: rgb(238 245 233 / 74%);
+      color: #3f6b4a;
+      box-shadow: inset 0 0 0 1px rgb(95 122 80 / 22%);
+      text-decoration: none;
+    }
+
+    .liax-public-menu a:hover,
+    .liax-public-menu a:focus-visible {
+      background: rgb(238 245 233 / 62%);
+      box-shadow: inset 0 0 0 1px rgb(95 122 80 / 18%);
+      text-decoration: none;
+      transform: translateY(-1px);
+    }
+
+    .liax-public-search {
+      min-height: 38px;
+      transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+    }
+
+    .liax-public-search:focus {
+      border-color: #5f7a50;
+      background: #fffdfa;
+      box-shadow: 0 0 0 4px rgb(95 122 80 / 14%);
+      outline: 0;
+    }
+
+    .liax-public-avatar {
+      background: var(--color-surface);
+      box-shadow: 0 2px 10px rgb(20 20 19 / 5%);
+      transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+
+    .liax-public-avatar > span {
+      opacity: 1;
+    }
+
+    .liax-article-tags {
+      position: fixed !important;
+      inset-block-start: 96px !important;
+      inset-inline-end: clamp(18px, 3vw, 40px) !important;
+      z-index: 22 !important;
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 7px !important;
+      box-sizing: border-box !important;
+      width: clamp(220px, 20vw, 300px) !important;
+      max-height: 92px !important;
+      margin: 0 !important;
+      overflow-y: auto !important;
+      border: 1px solid rgb(199 194 185 / 76%) !important;
+      border-radius: 8px !important;
+      background: rgb(250 249 245 / 92%) !important;
+      box-shadow: 0 14px 36px rgb(20 20 19 / 9%) !important;
+      padding: 11px 12px !important;
+      backdrop-filter: blur(10px);
+    }
+
+    .liax-article-tags a {
+      background: var(--color-surface) !important;
+      font-size: 12px !important;
+      padding: 6px 9px !important;
+    }
+
+    .liax-article-toc {
+      inset-block-start: 204px !important;
+      max-height: calc(100vh - 228px) !important;
+    }
+
+    @media (max-width: 1080px) {
+      .liax-article-tags {
+        position: static !important;
+        inset: auto !important;
+        width: auto !important;
+        max-height: none !important;
+        margin-top: 14px !important;
+        overflow: visible !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+      }
+
+      .liax-article-toc {
+        inset-block-start: 84px !important;
+        max-height: 42vh !important;
+      }
+    }
+
+    .liax-public-avatar:hover,
+    .liax-public-avatar:focus-visible {
+      border-color: rgb(95 122 80 / 42%);
+      box-shadow: 0 8px 22px rgb(20 20 19 / 8%);
+      outline: 0;
+      transform: translateY(-1px);
+    }
+
+    .liax-public-sidebar-backdrop {
+      background: rgb(20 20 19 / 12%);
+      backdrop-filter: blur(3px);
+    }
+
+    .liax-public-sidebar {
+      border-radius: 8px 0 0 8px;
+      background: rgb(250 249 245 / 96%);
+    }
+
+    .liax-public-sidebar__header,
+    .liax-public-sidebar__footer {
+      display: grid;
+      gap: 6px;
+      border: 1px solid rgb(199 194 185 / 70%);
+      border-radius: 8px;
+      background: rgb(255 255 255 / 74%);
+      padding: 14px;
+    }
+
+    .liax-public-sidebar__header strong {
+      font-size: 18px;
+      line-height: 1.2;
+    }
+
+    .liax-public-sidebar__header span,
+    .liax-public-sidebar__footer {
+      margin: 0;
+      color: #6f6a5d;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .liax-public-sidebar-menu a {
+      min-height: 44px;
+      border-radius: 8px;
+      transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+
+    .liax-public-sidebar-menu a:hover,
+    .liax-public-sidebar-menu a:focus-visible {
+      background: rgb(238 245 233 / 62%);
+      box-shadow: 0 8px 20px rgb(20 20 19 / 6%);
+      text-decoration: none;
+      transform: translateX(-2px);
+    }
+
+    @media (max-width: 860px) {
+      .liax-public-sidebar {
+        width: min(340px, calc(100vw - 56px));
+        padding: 18px;
+      }
+    }
+
+`;
+}
+
+function renderArticleTocItem(item: ArticleTocItem): string {
+  return `          <li data-level="${item.level}"><a href="#${escapeHtml(item.id)}">${escapeHtml(item.text)}</a></li>`;
+}
+
+function renderArticleToc(input: TemplateRenderInput): string {
+  const tocItems = input.articleToc ?? [];
+
+  if (tocItems.length === 0) {
+    return "";
+  }
+
+  const label = input.locale === "zh-CN" ? "标题目录" : "Contents";
+
+  return `      <nav class="liax-article-toc" aria-label="${escapeHtml(label)}">
+        <strong>${escapeHtml(label)}</strong>
+        <ol>
+${tocItems.map(renderArticleTocItem).join("\n")}
+        </ol>
+      </nav>
+`;
+}
+
+function renderArticleAudience(input: TemplateRenderInput): string {
+  if (input.allowedRoles === undefined) {
+    return "";
+  }
+
+  const isZh = input.locale === "zh-CN";
+  const label = isZh ? "可见范围" : "Audience";
+  const value = formatArticleAudienceLabel(input.allowedRoles, input.locale);
+
+  return `        <p class="liax-article-audience"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></p>
+`;
 }
 
 export function renderLanguageSwitchScript(): string {
@@ -74,7 +325,6 @@ export function renderLanguageSwitchScript(): string {
   const sidebarToggleSelector = "[data-public-sidebar-toggle]";
   const sidebarCloseSelector = "[data-public-sidebar-close]";
   const searchInputSelector = "[data-public-search-overlay-trigger]";
-  const durationMs = 900;
   const adminLocaleStorageKey = "liax.admin.locale";
   const localeCookieKey = "liax.locale";
   const publicLocaleStorageKey = "liax.public.locale";
@@ -104,6 +354,33 @@ export function renderLanguageSwitchScript(): string {
 
   function closeSidebars() {
     document.querySelectorAll(sidebarLayerSelector).forEach((layer) => setSidebarOpen(layer, false));
+  }
+
+  function currentPublicSection() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const section = parts[1] || "home";
+
+    if (parts.length >= 3 && parts[1] === "posts") {
+      return "posts";
+    }
+
+    return ["home", "posts", "tags", "moments", "guestbook", "archives", "search"].includes(section) ? section : "";
+  }
+
+  function updatePublicNavigationState() {
+    const activeSection = currentPublicSection();
+    document.querySelectorAll(".liax-public-menu a, .liax-public-sidebar-menu a").forEach((link) => {
+      const href = link.getAttribute("href") || "";
+      const targetParts = href.split("?")[0].split("/").filter(Boolean);
+      const targetSection = targetParts[1] || "home";
+      const isActive = activeSection !== "" && targetSection === activeSection;
+
+      if (isActive) {
+        link.setAttribute("aria-current", "page");
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
   }
 
   function writeLocalePreference(locale) {
@@ -153,20 +430,6 @@ export function renderLanguageSwitchScript(): string {
     window.setTimeout(() => message?.remove(), 2600);
   }
 
-  function originFromEvent(event, element) {
-    if (event.clientX !== 0 || event.clientY !== 0) {
-      return { x: event.clientX, y: event.clientY };
-    }
-    const rect = element.getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  }
-
-  function radiusForViewport(origin) {
-    const farthestX = Math.max(origin.x, window.innerWidth - origin.x);
-    const farthestY = Math.max(origin.y, window.innerHeight - origin.y);
-    return Math.ceil(Math.hypot(farthestX, farthestY));
-  }
-
   async function fetchTargetDocument(url) {
     const response = await fetch(url, {
       credentials: "same-origin",
@@ -212,7 +475,10 @@ export function renderLanguageSwitchScript(): string {
     const currentSidebar = document.querySelector(sidebarLayerSelector);
     const targetSidebar = targetDocument.querySelector(sidebarLayerSelector);
     if (currentHeader && targetHeader) {
-      currentHeader.replaceWith(targetHeader.cloneNode(true));
+      const nextHeader = targetHeader.cloneNode(true);
+      nextHeader.style.animation = "none";
+      nextHeader.style.transform = "none";
+      currentHeader.replaceWith(nextHeader);
     }
     if (!currentMain) {
       throw new Error("Current main content was not found.");
@@ -226,92 +492,58 @@ export function renderLanguageSwitchScript(): string {
     }
     updateHead(targetDocument);
     removeDuplicateLanguageSwitches();
+    updatePublicNavigationState();
     enhanceArticlePage();
+    attachGuestbookValidation();
     window.scrollTo({ left: scrollX, top: scrollY });
   }
 
-  function createOverlay(targetDocument, origin) {
-    const overlay = document.createElement("div");
-    const rippleOne = document.createElement("span");
-    const rippleTwo = document.createElement("span");
-    const radius = radiusForViewport(origin);
-    const overlayWidth = document.documentElement.clientWidth;
-    const overlayHeight = window.innerHeight;
-    const shell = document.createElement("div");
-    const targetHeader = targetDocument.querySelector(".liax-public-header");
-    const targetMain = readMain(targetDocument);
-    shell.className = "liax-public-shell";
-    if (targetHeader) {
-      shell.append(targetHeader.cloneNode(true));
-    }
-    shell.append(targetMain.cloneNode(true));
-    shell.querySelectorAll(".liax-public-header, main, footer, .liax-section-card, .liax-article-card").forEach((node) => {
-      node.style.animation = "none";
-      node.style.transform = "none";
-    });
-    Object.assign(shell.style, {
-      opacity: "0",
-      transform: "translateY(10px)",
-      transition: \`opacity 360ms ease 120ms, transform 520ms cubic-bezier(0.22, 1, 0.36, 1) 120ms\`
-    });
-    overlay.dataset.languageWipeOverlay = "true";
-    Object.assign(overlay.style, {
-      background: "rgba(250, 249, 245, 0.98)",
-      backdropFilter: "blur(2px)",
-      clipPath: \`circle(0px at \${origin.x}px \${origin.y}px)\`,
-      color: "#141413",
-      height: \`\${overlayHeight}px\`,
-      insetBlockStart: "0",
-      insetInlineStart: "0",
-      overflow: "auto",
-      position: "fixed",
-      transition: \`clip-path \${durationMs}ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 240ms ease\`,
-      width: \`\${overlayWidth}px\`,
-      zIndex: "2147483646"
-    });
-    [rippleOne, rippleTwo].forEach((ripple, index) => {
-      Object.assign(ripple.style, {
-        animation: \`\${index === 0 ? "liax-language-wipe-ripple" : "liax-language-wipe-ripple-soft"} \${durationMs}ms cubic-bezier(0.22, 1, 0.36, 1) \${index * 90}ms forwards\`,
-        border: "2px solid rgba(217, 119, 87, 0.34)",
-        borderRadius: "999px",
-        boxShadow: "0 0 0 1px rgba(250, 249, 245, 0.72), 0 0 40px rgba(217, 119, 87, 0.16), 0 0 80px rgba(20, 20, 19, 0.05)",
-        height: \`\${radius * 2}px\`,
-        left: \`\${origin.x}px\`,
-        opacity: "0",
-        pointerEvents: "none",
-        position: "fixed",
-        top: \`\${origin.y}px\`,
-        transform: "translate(-50%, -50%) scale(0)",
-        width: \`\${radius * 2}px\`,
-        zIndex: "2"
-      });
-      overlay.append(ripple);
-    });
-    overlay.append(shell);
-    return overlay;
+  function sleep(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 
-  function animateOverlay(overlay, origin) {
-    const radius = radiusForViewport(origin);
-    return new Promise((resolve) => {
-      let done = false;
-      function finish() {
-        if (!done) {
-          done = true;
-          resolve();
+  async function swapTargetDocument(targetDocument) {
+    const currentMain = document.querySelector("main");
+    const currentFooter = document.querySelector("footer");
+
+    if (!shouldReduceMotion()) {
+      [currentMain, currentFooter].forEach((node) => {
+        if (!node) {
+          return;
         }
+        node.style.transition = "opacity 80ms ease";
+        node.style.opacity = "0";
+      });
+      await sleep(80);
+    }
+
+    replaceFromTarget(targetDocument);
+
+    if (shouldReduceMotion()) {
+      return;
+    }
+
+    const nextMain = document.querySelector("main");
+    const nextFooter = document.querySelector("footer");
+    [nextMain, nextFooter].forEach((node) => {
+      if (!node) {
+        return;
       }
-      overlay.addEventListener("transitionend", finish, { once: true });
-      window.setTimeout(finish, durationMs + 80);
-      overlay.getBoundingClientRect();
-      window.setTimeout(() => {
-        overlay.style.clipPath = \`circle(\${radius}px at \${origin.x}px \${origin.y}px)\`;
-        const shell = overlay.querySelector(".liax-public-shell");
-        if (shell) {
-          shell.style.opacity = "1";
-          shell.style.transform = "translateY(0)";
+      node.style.transition = "none";
+      node.style.opacity = "0";
+    });
+    requestAnimationFrame(() => {
+      [nextMain, nextFooter].forEach((node) => {
+        if (!node) {
+          return;
         }
-      }, 24);
+        node.style.transition = "opacity 120ms ease";
+        node.style.opacity = "1";
+        window.setTimeout(() => {
+          node.style.transition = "";
+          node.style.opacity = "";
+        }, 140);
+      });
     });
   }
 
@@ -332,6 +564,19 @@ export function renderLanguageSwitchScript(): string {
     activeSearchOverlay = null;
     document.querySelectorAll(searchInputSelector).forEach((input) => {
       input.removeAttribute("aria-hidden");
+      input.removeAttribute("inert");
+      const originalTabIndex = input.dataset.publicSearchOriginalTabindex;
+      if (originalTabIndex) {
+        input.setAttribute("tabindex", originalTabIndex);
+      } else {
+        input.removeAttribute("tabindex");
+      }
+      delete input.dataset.publicSearchOriginalTabindex;
+    });
+    document.querySelectorAll("[data-public-search-form-hidden]").forEach((form) => {
+      form.style.opacity = "";
+      form.style.pointerEvents = "";
+      form.removeAttribute("data-public-search-form-hidden");
     });
 
     if (shouldReduceMotion()) {
@@ -359,6 +604,15 @@ export function renderLanguageSwitchScript(): string {
 
     document.querySelectorAll(searchInputSelector).forEach((input) => {
       input.setAttribute("aria-hidden", "true");
+      input.dataset.publicSearchOriginalTabindex = input.getAttribute("tabindex") || "";
+      input.setAttribute("tabindex", "-1");
+      input.setAttribute("inert", "");
+      const form = input.closest(".liax-public-search-form");
+      if (form) {
+        form.dataset.publicSearchFormHidden = "true";
+        form.style.opacity = "0";
+        form.style.pointerEvents = "none";
+      }
     });
 
     overlay.dataset.publicSearchOverlay = "true";
@@ -378,8 +632,8 @@ export function renderLanguageSwitchScript(): string {
     backdrop.dataset.publicSearchBackdrop = "true";
     backdrop.setAttribute("aria-label", label);
     Object.assign(backdrop.style, {
-      backdropFilter: "blur(18px)",
-      background: "rgba(250, 249, 245, 0.66)",
+      backdropFilter: "blur(2px)",
+      background: "rgba(250, 249, 245, 0.42)",
       border: "0",
       cursor: "default",
       inset: "0",
@@ -391,9 +645,9 @@ export function renderLanguageSwitchScript(): string {
     panel.setAttribute("role", "search");
     Object.assign(panel.style, {
       background: "#ffffff",
-      border: "1px solid #d1cfc5",
+      border: "1px solid rgba(199, 194, 185, 0.78)",
       borderRadius: "8px",
-      boxShadow: "0 24px 70px rgba(20, 20, 19, 0.18)",
+      boxShadow: "0 18px 46px rgba(20, 20, 19, 0.13)",
       boxSizing: "border-box",
       display: "grid",
       gap: "8px",
@@ -401,8 +655,8 @@ export function renderLanguageSwitchScript(): string {
       opacity: shouldReduceMotion() ? "1" : "0",
       padding: "14px",
       position: "relative",
-      transform: shouldReduceMotion() ? "none" : "translateY(-16px) scale(0.98)",
-      transition: "opacity 240ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
+      transform: "none",
+      transition: "opacity 140ms ease",
       width: "min(840px, calc(100vw - 40px))"
     });
 
@@ -413,15 +667,27 @@ export function renderLanguageSwitchScript(): string {
     input.placeholder = label;
     input.setAttribute("aria-label", label);
     Object.assign(input.style, {
-      background: "#f5f4ed",
-      border: "1px solid #d1cfc5",
+      background: "#fffdfa",
+      border: "1px solid #c6d0bf",
       borderRadius: "999px",
       boxSizing: "border-box",
       color: "#141413",
       font: "inherit",
       fontSize: "20px",
+      outline: "0",
       padding: "15px 18px",
+      transition: "border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease",
       width: "100%"
+    });
+    input.addEventListener("focus", () => {
+      input.style.background = "#ffffff";
+      input.style.borderColor = "#5f7a50";
+      input.style.boxShadow = "0 0 0 4px rgba(95, 122, 80, 0.14)";
+    });
+    input.addEventListener("blur", () => {
+      input.style.background = "#fffdfa";
+      input.style.borderColor = "#c6d0bf";
+      input.style.boxShadow = "none";
     });
 
     hint.textContent = document.documentElement.lang.toLowerCase().startsWith("zh") ? "输入关键词后按 Enter 搜索，Esc 关闭。" : "Type keywords and press Enter. Esc closes search.";
@@ -452,9 +718,84 @@ export function renderLanguageSwitchScript(): string {
     requestAnimationFrame(() => {
       overlay.style.opacity = "1";
       panel.style.opacity = "1";
-      panel.style.transform = "translateY(0) scale(1)";
+      panel.style.transform = "none";
     });
     window.setTimeout(() => input.focus(), shouldReduceMotion() ? 0 : 180);
+  }
+
+  function guestbookText(key) {
+    const isZh = document.documentElement.lang.toLowerCase().startsWith("zh");
+    const text = {
+      validation: isZh ? "请补全必填内容后再提交。" : "Complete the required fields before submitting.",
+      message: isZh ? "留言内容不能为空。" : "Message is required.",
+      email: isZh ? "邮箱格式不正确。" : "Enter a valid email address.",
+      name: isZh ? "昵称不能为空。" : "Name is required."
+    };
+    return text[key] || key;
+  }
+
+  function ensureGuestbookValidationMessage(form) {
+    let message = form.querySelector("[data-guestbook-validation-message]");
+    if (!message) {
+      message = document.createElement("p");
+      message.className = "liax-guestbook-form__validation";
+      message.dataset.guestbookValidationMessage = "true";
+      message.setAttribute("role", "alert");
+      message.setAttribute("aria-live", "polite");
+      form.append(message);
+    }
+    return message;
+  }
+
+  function showGuestbookValidation(form, field) {
+    const message = ensureGuestbookValidationMessage(form);
+    field?.setAttribute("aria-invalid", "true");
+    const fieldName = field?.getAttribute("name");
+    message.textContent = guestbookText(fieldName === "content" ? "message" : fieldName === "authorName" ? "name" : fieldName === "email" ? "email" : "validation");
+    form.dataset.validationState = "error";
+  }
+
+  function attachGuestbookValidation() {
+    document.querySelectorAll(".liax-guestbook-form").forEach((form) => {
+      if (form.dataset.guestbookValidationAttached) {
+        return;
+      }
+      form.dataset.guestbookValidationAttached = "true";
+      form.addEventListener("invalid", (event) => {
+        const field = event.target instanceof HTMLElement ? event.target : null;
+        if (!field || !form.contains(field)) {
+          return;
+        }
+        event.preventDefault();
+        showGuestbookValidation(form, field);
+        window.setTimeout(() => field.focus(), 0);
+      }, true);
+      form.addEventListener("input", (event) => {
+        const field = event.target instanceof HTMLElement ? event.target : null;
+        if (field) {
+          field.removeAttribute("aria-invalid");
+        }
+        const fields = Array.from(form.elements).filter((element) => (
+          element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement
+        ));
+        const isValid = fields.every((element) => !element.willValidate || element.validity.valid);
+        if (isValid) {
+          form.removeAttribute("data-validation-state");
+          const message = form.querySelector("[data-guestbook-validation-message]");
+          if (message) {
+            message.textContent = "";
+          }
+        }
+      });
+      form.addEventListener("submit", (event) => {
+        if (form.checkValidity()) {
+          return;
+        }
+        event.preventDefault();
+        const firstInvalid = form.querySelector(":invalid");
+        showGuestbookValidation(form, firstInvalid instanceof HTMLElement ? firstInvalid : null);
+      });
+    });
   }
 
   function articleUiText(key) {
@@ -612,14 +953,9 @@ export function renderLanguageSwitchScript(): string {
         writeLocalePreference(locale);
         return;
       }
-      const origin = originFromEvent(event, element);
-      const overlay = createOverlay(targetDocument, origin);
-      document.body.append(overlay);
-      await animateOverlay(overlay, origin);
-      replaceFromTarget(targetDocument);
+      await swapTargetDocument(targetDocument);
       history.pushState({}, "", targetUrl);
       writeLocalePreference(locale);
-      overlay.remove();
     } catch {
       window.location.href = targetUrl;
     } finally {
@@ -628,7 +964,9 @@ export function renderLanguageSwitchScript(): string {
   });
 
   removeDuplicateLanguageSwitches();
+  updatePublicNavigationState();
   enhanceArticlePage();
+  attachGuestbookValidation();
 })();
 </script>`;
 }
@@ -706,18 +1044,11 @@ export class TemplateRenderer {
       display: grid;
       min-height: 100vh;
       grid-template-rows: auto 1fr;
+      min-width: 0;
+      max-width: 100%;
       width: 100%;
       margin: 0;
       padding: 0;
-    }
-
-    .liax-public-header,
-    .liax-article-card {
-      animation: liax-page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    }
-
-    .liax-article-card {
-      animation-delay: 70ms;
     }
 
     .liax-public-header {
@@ -726,6 +1057,8 @@ export class TemplateRenderer {
       grid-template-columns: max-content minmax(0, 1fr) max-content;
       align-items: center;
       gap: clamp(12px, 2vw, 24px);
+      min-width: 0;
+      max-width: 100vw;
       width: 100%;
       height: 76px;
       min-height: 76px;
@@ -765,6 +1098,18 @@ export class TemplateRenderer {
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+
+    .liax-public-logo > span,
+    .liax-public-logo > img,
+    .liax-public-avatar > span,
+    .liax-public-avatar > img {
+      grid-area: 1 / 1;
+    }
+
+    .liax-public-logo > img,
+    .liax-public-avatar > img {
+      background: var(--color-surface-muted);
     }
 
     .liax-public-header__center,
@@ -853,8 +1198,9 @@ export class TemplateRenderer {
       width: 38px;
       height: 38px;
       align-items: center;
+      flex-direction: column;
       justify-content: center;
-      gap: 3px;
+      gap: 4px;
       border: 1px solid var(--color-border);
       border-radius: 999px;
       background: var(--color-surface-muted);
@@ -865,8 +1211,8 @@ export class TemplateRenderer {
 
     .liax-public-menu-toggle span {
       display: block;
-      width: 4px;
-      height: 4px;
+      width: 16px;
+      height: 2px;
       border-radius: 999px;
       background: currentColor;
     }
@@ -875,6 +1221,8 @@ export class TemplateRenderer {
       position: fixed;
       inset: 0;
       z-index: 2147483644;
+      width: 100vw;
+      max-width: 100vw;
       opacity: 0;
       pointer-events: none;
       transition: opacity 220ms ease;
@@ -890,6 +1238,8 @@ export class TemplateRenderer {
     .liax-public-sidebar-backdrop {
       position: absolute;
       inset: 0;
+      width: 100vw;
+      max-width: 100vw;
       border: 0;
       background: rgba(20, 20, 19, 0.18);
       backdrop-filter: blur(10px);
@@ -905,7 +1255,7 @@ export class TemplateRenderer {
       align-content: start;
       gap: 18px;
       box-sizing: border-box;
-      width: min(360px, calc(100vw - 36px));
+      width: min(340px, calc(100vw - 56px));
       border-left: 1px solid var(--color-border);
       background: var(--color-page);
       box-shadow: -18px 0 44px rgba(20, 20, 19, 0.14);
@@ -961,16 +1311,23 @@ export class TemplateRenderer {
 
     .liax-article-card {
       box-sizing: border-box;
+      min-width: 0;
+      max-width: 100vw;
       width: 100%;
       margin: 0;
       border: 0;
       border-radius: 0;
       background: transparent;
       color: var(--color-text);
-      padding: clamp(24px, 4vw, 56px);
+      overflow-x: clip;
+      padding: clamp(22px, 3.4vw, 48px);
+      padding-inline-end: clamp(280px, 22vw, 360px);
     }
 
     .liax-article-header {
+      min-width: 0;
+      width: min(980px, 100%);
+      max-width: 100%;
       border-bottom: 1px solid var(--color-border);
       margin: 0 0 clamp(24px, 4vw, 44px);
       padding: 0 0 clamp(18px, 3vw, 30px);
@@ -981,6 +1338,12 @@ export class TemplateRenderer {
       letter-spacing: 0;
       line-height: 1.04;
       margin: 0;
+    }
+
+    .liax-article-body h2,
+    .liax-article-body h3,
+    .liax-article-body h4 {
+      scroll-margin-top: 96px;
     }
 
     .liax-article-utility {
@@ -1005,6 +1368,81 @@ export class TemplateRenderer {
       display: inline-flex;
       gap: 8px;
       margin: 0;
+    }
+
+    .liax-article-audience {
+      display: inline-flex;
+      width: max-content;
+      max-width: 100%;
+      align-items: center;
+      gap: 8px;
+      margin: 12px 0 0;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      font-size: 13px;
+      font-weight: 760;
+      line-height: 1.2;
+      padding: 6px 10px;
+    }
+
+    .liax-article-audience span {
+      color: #6f6a5d;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .liax-article-audience strong {
+      overflow-wrap: anywhere;
+    }
+
+    .liax-article-tags {
+      position: fixed;
+      inset-block-start: 96px;
+      inset-inline-end: clamp(18px, 3vw, 40px);
+      z-index: 22;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      box-sizing: border-box;
+      width: clamp(220px, 20vw, 300px);
+      max-height: 92px;
+      margin: 0;
+      overflow-y: auto;
+      border: 1px solid rgb(199 194 185 / 76%);
+      border-radius: 8px;
+      background: rgb(250 249 245 / 92%);
+      box-shadow: 0 14px 36px rgba(20, 20, 19, 0.09);
+      padding: 11px 12px;
+      backdrop-filter: blur(10px);
+    }
+
+    .liax-article-tags a {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface-muted);
+      color: var(--color-text);
+      font-size: 12px;
+      font-weight: 760;
+      line-height: 1;
+      padding: 6px 9px;
+      text-decoration: none;
+    }
+
+    .liax-article-tags a:hover,
+    .liax-article-tags a:focus-visible {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+      outline: 0;
+    }
+
+    .liax-article-footer {
+      width: min(980px, 100%);
+      margin-top: clamp(30px, 5vw, 56px);
     }
 
     .liax-article-neighbor-nav {
@@ -1036,14 +1474,23 @@ export class TemplateRenderer {
     }
 
     .liax-article-toc {
+      position: fixed;
+      inset-block-start: 204px;
+      inset-inline-end: clamp(18px, 3vw, 40px);
+      z-index: 20;
       display: grid;
       gap: 10px;
-      width: min(760px, 100%);
-      margin: 0 0 clamp(22px, 4vw, 38px);
+      min-width: 0;
+      width: clamp(220px, 20vw, 300px);
+      max-height: calc(100vh - 228px);
+      margin: 0;
+      overflow-y: auto;
       border: 1px solid var(--color-border);
       border-radius: 8px;
-      background: var(--color-surface-muted);
+      background: color-mix(in srgb, var(--color-surface-muted) 94%, transparent);
+      box-shadow: 0 18px 48px rgba(20, 20, 19, 0.12);
       padding: 14px 16px;
+      backdrop-filter: blur(10px);
     }
 
     .liax-article-toc strong {
@@ -1071,6 +1518,7 @@ export class TemplateRenderer {
       color: var(--color-text);
       font-size: 14px;
       font-weight: 720;
+      overflow-wrap: anywhere;
       text-decoration: none;
     }
 
@@ -1082,6 +1530,8 @@ export class TemplateRenderer {
     }
 
     .liax-article-body {
+      min-width: 0;
+      width: min(980px, 100%);
       max-width: 100%;
       margin: 0;
     }
@@ -1101,6 +1551,12 @@ export class TemplateRenderer {
     h5,
     h6 {
       line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+
+    p,
+    li {
+      overflow-wrap: anywhere;
     }
 
     a {
@@ -1196,6 +1652,7 @@ export class TemplateRenderer {
       color: #c0caf5;
       padding: 16px;
       box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+      scrollbar-color: #3b4261 #1a1b26;
     }
 
     .liax-code-frame {
@@ -1220,8 +1677,8 @@ export class TemplateRenderer {
 
     .liax-code-copy:hover,
     .liax-code-copy:focus-visible {
-      border-color: #7aa2f7;
-      color: #7aa2f7;
+      border-color: #8ab895;
+      color: #8ab895;
       outline: 0;
     }
 
@@ -1236,6 +1693,19 @@ export class TemplateRenderer {
     .liax-code-keyword {
       color: #bb9af7;
       font-weight: 760;
+    }
+
+    .liax-code-string {
+      color: #9ece6a;
+    }
+
+    .liax-code-number {
+      color: #ff9e64;
+    }
+
+    .liax-code-comment {
+      color: #565f89;
+      font-style: italic;
     }
 
     .liax-math {
@@ -1273,6 +1743,32 @@ export class TemplateRenderer {
       font-weight: 760;
     }
 
+    @media (max-width: 1080px) {
+      .liax-article-card {
+        padding-inline-end: clamp(16px, 4vw, 40px);
+      }
+
+      .liax-article-toc {
+        position: sticky;
+        inset-block-start: 84px;
+        inset-inline-end: auto;
+        width: min(360px, 100%);
+        max-height: 42vh;
+        margin: 0 0 clamp(22px, 4vw, 38px) auto;
+      }
+
+      .liax-article-tags {
+        position: static;
+        inset: auto;
+        width: auto;
+        max-height: none;
+        margin-top: 14px;
+        overflow: visible;
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+    }
+
     @media (max-width: 720px) {
       .liax-public-shell {
         padding: 0;
@@ -1283,7 +1779,7 @@ export class TemplateRenderer {
         height: 76px;
         min-height: 76px;
         gap: 10px;
-        overflow-x: auto;
+        overflow: visible;
         padding: 10px 14px;
         scrollbar-width: none;
       }
@@ -1333,68 +1829,13 @@ export class TemplateRenderer {
       }
     }
 
-    @keyframes liax-language-wipe-ripple {
-      0% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0);
-      }
-
-      12% {
-        opacity: 0.62;
-        transform: translate(-50%, -50%) scale(0.14);
-      }
-
-      70% {
-        opacity: 0.42;
-        transform: translate(-50%, -50%) scale(0.78);
-      }
-
-      100% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(1);
-      }
-    }
-
-    @keyframes liax-language-wipe-ripple-soft {
-      0% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0);
-      }
-
-      18% {
-        opacity: 0.34;
-        transform: translate(-50%, -50%) scale(0.2);
-      }
-
-      100% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(1.04);
-      }
-    }
-
-    @keyframes liax-page-enter {
-      from {
-        opacity: 0;
-        transform: translateY(12px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
     @media (prefers-reduced-motion: reduce) {
-      .liax-public-header,
-      .liax-article-card {
-        animation: none;
-      }
-
       .liax-public-sidebar-layer,
       .liax-public-sidebar {
         transition: none;
       }
     }
+${renderPublicPolishCss()}
   </style>
 </head>
 <body>
@@ -1420,8 +1861,9 @@ ${languageSwitchHtml}
     <main class="liax-article-card">
       <header class="liax-article-header">
         <h1>${title}</h1>
+${renderArticleAudience(input)}
       </header>
-      <article class="liax-article-body">
+${renderArticleToc(input)}      <article class="liax-article-body">
 ${input.bodyHtml}
       </article>
     </main>

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 
 import { roleApi, type AdminPermission, type AdminRoleDefinition } from "../api/roleApi";
+import { AdminLoadingSkeleton } from "../components/AdminLoadingSkeleton";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
 
@@ -166,7 +167,7 @@ export function PermissionsPage(): ReactElement {
       <section className="liax-card admin-table-card" aria-label={t("permissions.title")}>
         <div className="liax-card__body">
           <p className="admin-muted-text admin-page-intro">{t("permissions.summary")}</p>
-          {isLoading ? <p className="admin-muted-text">{t("permissions.loading")}</p> : null}
+          {isLoading ? <AdminLoadingSkeleton label={t("permissions.loading")} rows={3} variant="cards" /> : null}
           {!isLoading ? (
             <div className="admin-role-list">
               {roles.map((role) => (
@@ -187,7 +188,13 @@ export function PermissionsPage(): ReactElement {
                     )) : <p className="admin-muted-text">{t("permissions.emptyPermissions")}</p>}
                   </div>
                   <div className="admin-form-actions">
-                    <button className="liax-button" disabled={isSaving || role.roleKey === "admin"} onClick={() => openEditModal(role)} type="button">
+                    <button
+                      className="liax-button"
+                      disabled={isSaving || role.roleKey === "admin"}
+                      onClick={() => openEditModal(role)}
+                      title={role.roleKey === "admin" ? t("permissions.adminFixed") : undefined}
+                      type="button"
+                    >
                       {t("permissions.editRole")}
                     </button>
                     {role.roleKey !== "admin" ? (
@@ -257,7 +264,7 @@ export function PermissionsPage(): ReactElement {
                   </label>
                 ))}
               </fieldset>
-              <div className="admin-form-actions">
+              <div className="admin-form-actions admin-role-modal-actions">
                 <button className="liax-button liax-button--primary" disabled={isSaving} onClick={() => void saveRole()} type="button">
                   {isSaving ? t("users.saving") : t("permissions.saveRole")}
                 </button>

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactElement } from "react";
 
 import type { ArticleLocale } from "../api/articleApi";
 import { guestbookApi, type GuestbookEntry, type GuestbookStatusFilter } from "../api/guestbookApi";
+import { AdminLoadingSkeleton } from "../components/AdminLoadingSkeleton";
 import { useT } from "../i18n/useT";
 import { AdminLayout } from "../layout/AdminLayout";
 
@@ -134,12 +135,13 @@ export function GuestbookPage(): ReactElement {
         </label>
       </section>
 
-      {isLoading ? <p className="admin-muted-text">{t("guestbook.loading")}</p> : null}
       {message ? <p className="admin-success-text">{message}</p> : null}
       {errorMessage ? <p className="admin-error-text">{errorMessage}</p> : null}
 
       <section className="admin-guestbook-list">
-        {!isLoading && entries.length === 0 ? (
+        {isLoading ? (
+          <AdminLoadingSkeleton label={t("guestbook.loading")} rows={3} variant="list" />
+        ) : entries.length === 0 ? (
           <p className="liax-card admin-empty-card">{t("guestbook.empty")}</p>
         ) : entries.map((entry) => {
           const statusName = entryStatus(entry);

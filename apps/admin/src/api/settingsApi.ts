@@ -22,6 +22,42 @@ export type SiteSettingsResponse = {
   settings: SiteSettings;
 };
 
+export type PreflightCheckKey = "brokenImages" | "contact" | "homeCopy" | "icp" | "logo" | "testGuestbook";
+export type PreflightCheckStatus = "fail" | "pass" | "warning";
+
+export type PreflightCheck = {
+  key: PreflightCheckKey;
+  status: PreflightCheckStatus;
+  count: number;
+};
+
+export type PreflightResponse = {
+  checks: PreflightCheck[];
+  summary: Record<PreflightCheckStatus, number>;
+};
+
+export type GuestbookTestEntry = {
+  id: number;
+  locale: SupportedLocale;
+  authorName: string;
+  email: string | null;
+  content: string;
+  notifyOnly: boolean;
+  isPublic: boolean;
+  createdAt: string;
+  deletedAt: string | null;
+};
+
+export type GuestbookTestDataResponse = {
+  count: number;
+  entries: GuestbookTestEntry[];
+};
+
+export type GuestbookTestDataCleanupResponse = {
+  deleted: number;
+  remaining: number;
+};
+
 export type SeoPushProvider = "baidu" | "google" | "indexnow";
 export type SeoPushStatus = "failed" | "skipped" | "success";
 
@@ -144,6 +180,15 @@ export const settingsApi = {
   },
   updateSiteSettings(input: SiteSettings): Promise<SiteSettingsResponse> {
     return httpClient.patch<SiteSettingsResponse>("/admin/settings/site", input);
+  },
+  getPreflight(): Promise<PreflightResponse> {
+    return httpClient.get<PreflightResponse>("/admin/settings/preflight");
+  },
+  listGuestbookTestData(): Promise<GuestbookTestDataResponse> {
+    return httpClient.get<GuestbookTestDataResponse>("/admin/settings/test-data/guestbook");
+  },
+  cleanupGuestbookTestData(): Promise<GuestbookTestDataCleanupResponse> {
+    return httpClient.post<GuestbookTestDataCleanupResponse>("/admin/settings/test-data/guestbook/cleanup", {});
   },
   listSeoPushSubmissions(): Promise<SeoPushSubmissionsResponse> {
     return httpClient.get<SeoPushSubmissionsResponse>("/admin/seo/push/submissions");
