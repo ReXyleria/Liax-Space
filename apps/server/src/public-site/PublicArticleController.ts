@@ -565,8 +565,8 @@ function renderPublicPolishCss(): string {
 
       .liax-article-toc-toggle {
         position: fixed;
-        inset-block-start: 132px;
-        inset-inline-end: 0;
+        top: 132px;
+        right: 0;
         z-index: 2147483001;
         display: flex;
         width: 34px;
@@ -1478,8 +1478,10 @@ function liaxSetupMobileArticleToc(toc) {
       toc.style.transition = "transform 180ms ease";
 
       toggle.style.position = "fixed";
-      toggle.style.insetBlockStart = "132px";
-      toggle.style.insetInlineEnd = "0";
+      toggle.style.top = "132px";
+      toggle.style.right = "0";
+      toggle.style.insetBlockStart = "";
+      toggle.style.insetInlineEnd = "";
       toggle.style.zIndex = "2147483001";
       toggle.style.display = "flex";
       toggle.style.width = "34px";
@@ -1502,6 +1504,8 @@ function liaxSetupMobileArticleToc(toc) {
 
     document.body.classList.remove("liax-toc-open");
     toggle.style.display = "none";
+    toggle.style.top = "";
+    toggle.style.right = "";
     toc.style.position = "";
     toc.style.insetBlockStart = "";
     toc.style.insetInlineEnd = "";
