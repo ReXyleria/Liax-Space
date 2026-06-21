@@ -380,7 +380,7 @@ export class LegacyPublicDataSyncJob {
 
   private async listLegacyArticlePublishedDates(): Promise<LegacyArticlePublishedAtRow[]> {
     const [rows] = await this.legacyDatabase.query<LegacyArticlePublishedAtRow[]>(
-      "SELECT slug AS articleSlug, createdAt AS publishedAt FROM Article WHERE deletedAt IS NULL ORDER BY slug ASC, id ASC"
+      "SELECT slug AS articleSlug, COALESCE(publishedAt, createdAt) AS publishedAt FROM Article WHERE deletedAt IS NULL ORDER BY slug ASC, id ASC"
     );
 
     return rows;

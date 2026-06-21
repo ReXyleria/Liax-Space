@@ -30,7 +30,7 @@ function createLegacyDatabase(): LegacySyncConstructorArgs[0] {
         ];
       }
 
-      if (sql.includes("FROM Article") && sql.includes("createdAt AS publishedAt")) {
+      if (sql.includes("FROM Article") && sql.includes("COALESCE(publishedAt, createdAt) AS publishedAt")) {
         return [
           [
             { articleSlug: "first-post", publishedAt: new Date("2026-06-01T00:00:00.000Z") },
