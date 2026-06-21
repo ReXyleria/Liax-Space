@@ -220,6 +220,7 @@ export const enUSDictionary = {
   "article.publishSuccess": "Published the current language version.",
   "article.publishedAt": "Published time",
   "article.publishedAtHelp": "Adjusts the display time used by public pages and archives. It does not republish HTML.",
+  "article.publishedAtUnavailable": "Publish this language before adjusting the published time.",
   "article.publishedVersionId": "Published version ID",
   "article.publishing": "Publishing",
   "article.readOnly": "Read only",

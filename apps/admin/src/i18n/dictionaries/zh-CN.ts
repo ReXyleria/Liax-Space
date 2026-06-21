@@ -218,6 +218,7 @@ export const zhCNDictionary = {
   "article.publishSuccess": "已发布当前语言版本。",
   "article.publishedAt": "发布时间",
   "article.publishedAtHelp": "只调整公开页面和归档使用的显示时间，不会重新发布 HTML。",
+  "article.publishedAtUnavailable": "发布当前语言版本后才能调整发布时间。",
   "article.publishedVersionId": "已发布版本 ID",
   "article.publishing": "发布中",
   "article.readOnly": "只读",

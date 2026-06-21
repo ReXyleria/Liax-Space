@@ -9,6 +9,7 @@ import { hasAnyPermission } from "../auth/permissions";
 import { AdminLoadingSkeleton } from "../components/AdminLoadingSkeleton";
 import { useT } from "../i18n/useT";
 import { authStore, type AuthState } from "../stores/authStore";
+import { dateTimeLocalToIso, toDateTimeLocalValue } from "../utils/dateTime";
 
 const articleLocales: ArticleLocale[] = ["zh-CN", "en-US"];
 const articleStatusOptions = ["draft", "active", "archived"] as const;
@@ -41,17 +42,28 @@ const fallbackRoleOptions: AdminRoleDefinition[] = [
 
 type TranslationStatus = "missing" | "metadata" | "draft" | "published";
 type ExistingTranslationState = Record<ArticleLocale, ArticleTranslation | null>;
+type PublishedAtState = Record<ArticleLocale, string>;
 type VisibilityState = Record<ArticleLocale, string[]>;
 
 function editableVisibleRoles(roles: string[]): string[] {
   return roles.filter((role) => role !== "admin");
 }
 
-function formatDate(value: string, locale: string): string {
+function formatDate(value: string | null | undefined, locale: string): string {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+
+  if (!Number.isFinite(date.getTime())) {
+    return "—";
+  }
+
   return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short"
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function findTranslation(translations: ArticleTranslation[], locale: ArticleLocale): ArticleTranslation | null {
@@ -78,6 +90,10 @@ function preferredTranslation(translations: ArticleTranslation[]): ArticleTransl
   return findTranslation(translations, "zh-CN") ?? findTranslation(translations, "en-US");
 }
 
+function preferredPublishedTranslation(translations: ArticleTranslation[]): ArticleTranslation | null {
+  return translations.find((translation) => translation.publishedAt !== null) ?? preferredTranslation(translations);
+}
+
 function preferredEditLocale(translations: ArticleTranslation[]): ArticleLocale {
   return preferredTranslation(translations)?.locale ?? "zh-CN";
 }
@@ -96,19 +112,29 @@ function emptyVisibilityState(): VisibilityState {
   };
 }
 
+function emptyPublishedAtState(): PublishedAtState {
+  return {
+    "en-US": "",
+    "zh-CN": ""
+  };
+}
+
 function buildTranslationState(detail: ArticleDetail): {
   existingTranslations: ExistingTranslationState;
+  publishedAt: PublishedAtState;
   visibility: VisibilityState;
 } {
   const existingTranslations = emptyExistingState();
+  const publishedAt = emptyPublishedAtState();
   const visibility = emptyVisibilityState();
 
   for (const translation of detail.translations) {
     existingTranslations[translation.locale] = translation;
+    publishedAt[translation.locale] = toDateTimeLocalValue(translation.publishedAt);
     visibility[translation.locale] = editableVisibleRoles(translation.allowedRoles ?? []);
   }
 
-  return { existingTranslations, visibility };
+  return { existingTranslations, publishedAt, visibility };
 }
 
 export function ArticleListPage(): ReactElement {
@@ -122,6 +148,7 @@ export function ArticleListPage(): ReactElement {
   const [activeLocale, setActiveLocale] = useState<ArticleLocale>("zh-CN");
   const [existingTranslations, setExistingTranslations] = useState<ExistingTranslationState>(() => emptyExistingState());
   const [allowedRoles, setAllowedRoles] = useState<VisibilityState>(() => emptyVisibilityState());
+  const [publishedAtByLocale, setPublishedAtByLocale] = useState<PublishedAtState>(() => emptyPublishedAtState());
   const [status, setStatus] = useState("draft");
   const [coverAttachmentId, setCoverAttachmentId] = useState("");
   const [uploadedCoverAttachment, setUploadedCoverAttachment] = useState<Attachment | null>(null);
@@ -206,6 +233,7 @@ export function ArticleListPage(): ReactElement {
     setActiveLocale(preferredEditLocale(detail.translations));
     setExistingTranslations(nextState.existingTranslations);
     setAllowedRoles(nextState.visibility);
+    setPublishedAtByLocale(nextState.publishedAt);
     setStatus(detail.article.status || "draft");
     setCoverAttachmentId(detail.article.coverAttachmentId === null ? "" : String(detail.article.coverAttachmentId));
     setUploadedCoverAttachment(null);
@@ -288,6 +316,13 @@ export function ArticleListPage(): ReactElement {
     });
   }
 
+  function updateActivePublishedAt(value: string): void {
+    setPublishedAtByLocale((currentPublishedAt) => ({
+      ...currentPublishedAt,
+      [activeLocale]: value
+    }));
+  }
+
   function parseCoverAttachmentId(): number | null {
     const trimmedValue = coverAttachmentId.trim();
 
@@ -356,7 +391,10 @@ export function ArticleListPage(): ReactElement {
       });
       const translationResponse = activeTranslation
         ? await articleApi.updateTranslation(editingArticle.article.id, activeLocale, {
-            allowedRoles: editableVisibleRoles(allowedRoles[activeLocale] ?? [])
+            allowedRoles: editableVisibleRoles(allowedRoles[activeLocale] ?? []),
+            publishedAt: activeTranslation.publishedVersionId !== null
+              ? dateTimeLocalToIso(publishedAtByLocale[activeLocale] ?? "")
+              : undefined
           })
         : null;
 
@@ -376,6 +414,7 @@ export function ArticleListPage(): ReactElement {
       setEditingArticle(nextDetail);
       setExistingTranslations(nextState.existingTranslations);
       setAllowedRoles(nextState.visibility);
+      setPublishedAtByLocale(nextState.publishedAt);
       setCoverAttachmentId(nextDetail.article.coverAttachmentId === null ? "" : String(nextDetail.article.coverAttachmentId));
       setStatus(nextDetail.article.status);
       setModalSuccessMessage(t("article.configSaved"));
@@ -450,7 +489,7 @@ export function ArticleListPage(): ReactElement {
                   <th>{t("article.status")}</th>
                   <th>{t("article.translationStatus")}</th>
                   <th>{t("article.visibilityColumn")}</th>
-                  <th>{t("article.updatedAt")}</th>
+                  <th>{t("article.publishedAt")}</th>
                   <th>{t("article.actions")}</th>
                 </tr>
               </thead>
@@ -499,7 +538,7 @@ export function ArticleListPage(): ReactElement {
                         })}
                       </div>
                     </td>
-                    <td className="admin-article-updated-cell">{formatDate(item.article.updatedAt, formatterLocale)}</td>
+                    <td className="admin-article-updated-cell">{formatDate(preferredPublishedTranslation(item.translations)?.publishedAt, formatterLocale)}</td>
                     <td>
                       {canEditArticle ? (
                         <div className="admin-article-actions">
@@ -571,6 +610,21 @@ export function ArticleListPage(): ReactElement {
                       ))}
                     </select>
                     <small>{t("article.statusHelp")}</small>
+                  </label>
+
+                  <label className="admin-form-field">
+                    <span>{t("article.publishedAt")}</span>
+                    <input
+                      disabled={isConfigBusy || activeTranslation?.publishedVersionId === null || !activeTranslation}
+                      onChange={(event) => updateActivePublishedAt(event.target.value)}
+                      type="datetime-local"
+                      value={publishedAtByLocale[activeLocale] ?? ""}
+                    />
+                    <small>
+                      {activeTranslation?.publishedVersionId !== null && activeTranslation
+                        ? t("article.publishedAtHelp")
+                        : t("article.publishedAtUnavailable")}
+                    </small>
                   </label>
 
                   <div className="admin-cover-upload-panel">

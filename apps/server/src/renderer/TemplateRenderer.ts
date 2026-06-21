@@ -195,8 +195,49 @@ function renderPublicPolishCss(): string {
     }
 
     .liax-article-toc {
+      position: fixed !important;
       inset-block-start: 204px !important;
+      inset-inline-end: clamp(18px, 3vw, 40px) !important;
       max-height: calc(100vh - 228px) !important;
+    }
+
+    .liax-reading-scrollbar {
+      position: fixed;
+      inset-block-start: 82px;
+      inset-inline-end: 14px;
+      z-index: 2147483000;
+      width: 10px;
+      height: calc(100vh - 104px);
+      cursor: pointer;
+      touch-action: none;
+      opacity: 0.62;
+    }
+
+    .liax-reading-scrollbar__track,
+    .liax-reading-scrollbar__thumb {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      border-radius: 999px;
+    }
+
+    .liax-reading-scrollbar__track {
+      top: 0;
+      width: 2px;
+      height: 100%;
+      background: rgb(20 20 19 / 10%);
+    }
+
+    .liax-reading-scrollbar__thumb {
+      top: 0;
+      width: 6px;
+      min-height: 34px;
+      background: rgb(95 122 80 / 50%);
+      box-shadow: 0 6px 18px rgb(20 20 19 / 12%);
+    }
+
+    .liax-article-toc-toggle {
+      display: none;
     }
 
     @media (max-width: 1080px) {
@@ -212,8 +253,56 @@ function renderPublicPolishCss(): string {
       }
 
       .liax-article-toc {
+        position: fixed !important;
         inset-block-start: 84px !important;
+        inset-inline-end: clamp(14px, 3vw, 24px) !important;
+        width: min(300px, calc(100vw - 44px)) !important;
         max-height: 42vh !important;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .liax-article-toc {
+        inset-block-start: 82px !important;
+        inset-inline-end: 0 !important;
+        width: min(300px, calc(100vw - 52px)) !important;
+        max-height: calc(100vh - 112px) !important;
+        border-radius: 8px 0 0 8px !important;
+        transform: translateX(calc(100% + 14px));
+        transition: transform 180ms ease;
+      }
+
+      body.liax-toc-open .liax-article-toc {
+        transform: translateX(0);
+      }
+
+      .liax-article-toc-toggle {
+        position: fixed;
+        inset-block-start: 132px;
+        inset-inline-end: 0;
+        z-index: 2147483001;
+        display: flex;
+        width: 34px;
+        height: 72px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #c7c2b9;
+        border-right: 0;
+        border-radius: 8px 0 0 8px;
+        background: #faf9f5;
+        color: #3f3a33;
+        box-shadow: 0 10px 24px rgb(20 20 19 / 10%);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0;
+        writing-mode: vertical-rl;
+      }
+
+      .liax-reading-scrollbar {
+        inset-inline-end: 6px;
+        width: 8px;
+        opacity: 0.42;
       }
     }
 
@@ -813,6 +902,117 @@ export function renderLanguageSwitchScript(): string {
     return normalized || "section-" + (index + 1);
   }
 
+  function setupReadingScrollbar() {
+    if (document.querySelector(".liax-reading-scrollbar")) {
+      return;
+    }
+    const scrollbar = document.createElement("div");
+    const track = document.createElement("span");
+    const thumb = document.createElement("span");
+    scrollbar.className = "liax-reading-scrollbar";
+    track.className = "liax-reading-scrollbar__track";
+    thumb.className = "liax-reading-scrollbar__thumb";
+    scrollbar.setAttribute("aria-label", "Reading progress");
+    scrollbar.setAttribute("role", "scrollbar");
+    scrollbar.append(track, thumb);
+    document.body.append(scrollbar);
+
+    function metrics() {
+      const root = document.documentElement;
+      const height = Math.max(root.scrollHeight, document.body.scrollHeight);
+      const viewport = window.innerHeight;
+      const max = Math.max(1, height - viewport);
+      const rect = scrollbar.getBoundingClientRect();
+      const thumbHeight = Math.max(34, Math.min(rect.height, rect.height * (viewport / Math.max(height, 1))));
+      const travel = Math.max(1, rect.height - thumbHeight);
+
+      return { max, rect, thumbHeight, travel };
+    }
+
+    function update() {
+      const current = metrics();
+      const progress = Math.min(1, Math.max(0, window.scrollY / current.max));
+      thumb.style.height = current.thumbHeight + "px";
+      thumb.style.transform = "translate(-50%, " + (progress * current.travel) + "px)";
+    }
+
+    function scrollFromPointer(clientY) {
+      const current = metrics();
+      const value = Math.min(1, Math.max(0, (clientY - current.rect.top - current.thumbHeight / 2) / current.travel));
+      window.scrollTo({ top: current.max * value, behavior: "auto" });
+    }
+
+    let isDragging = false;
+    scrollbar.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      isDragging = true;
+      scrollbar.setPointerCapture?.(event.pointerId);
+      scrollFromPointer(event.clientY);
+    });
+    scrollbar.addEventListener("pointermove", (event) => {
+      if (!isDragging) {
+        return;
+      }
+      event.preventDefault();
+      scrollFromPointer(event.clientY);
+    });
+    const stopDragging = () => {
+      isDragging = false;
+    };
+    scrollbar.addEventListener("pointerup", stopDragging);
+    scrollbar.addEventListener("pointercancel", stopDragging);
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    update();
+  }
+
+  function setupMobileArticleToc(toc) {
+    if (!toc) {
+      return;
+    }
+    let toggle = document.querySelector(".liax-article-toc-toggle");
+    if (!toggle) {
+      toggle = document.createElement("button");
+      toggle.className = "liax-article-toc-toggle";
+      toggle.type = "button";
+      toggle.textContent = document.documentElement.lang.toLowerCase().startsWith("zh") ? "目录" : "Contents";
+      document.body.append(toggle);
+    }
+
+    if (toggle.dataset.liaxReady !== "true") {
+      toggle.dataset.liaxReady = "true";
+      toggle.addEventListener("click", (event) => {
+        event.stopPropagation();
+        document.body.classList.toggle("liax-toc-open");
+      });
+    }
+
+    if (toc.dataset.liaxCloseReady !== "true") {
+      toc.dataset.liaxCloseReady = "true";
+      toc.querySelectorAll("a").forEach((link) => {
+        link.addEventListener("click", () => {
+          document.body.classList.remove("liax-toc-open");
+        });
+      });
+    }
+
+    if (document.body.dataset.liaxTocOutsideReady !== "true") {
+      document.body.dataset.liaxTocOutsideReady = "true";
+      document.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target || target.closest(".liax-article-toc") || target.closest(".liax-article-toc-toggle")) {
+          return;
+        }
+        document.body.classList.remove("liax-toc-open");
+      });
+      window.addEventListener("resize", () => {
+        if (!window.matchMedia("(max-width: 720px)").matches) {
+          document.body.classList.remove("liax-toc-open");
+        }
+      });
+    }
+  }
+
   function enhanceArticlePage() {
     const body = document.querySelector(".liax-article-body");
     if (!body) {
@@ -847,13 +1047,15 @@ export function renderLanguageSwitchScript(): string {
         list.append(item);
       });
       nav.append(title, list);
-      const header = document.querySelector(".liax-article-header");
-      if (header?.parentNode) {
-        header.insertAdjacentElement("afterend", nav);
-      } else {
-        body.insertAdjacentElement("beforebegin", nav);
-      }
+      document.body.append(nav);
     }
+
+    const articleToc = document.querySelector(".liax-article-toc");
+    if (articleToc && articleToc.parentElement !== document.body) {
+      document.body.append(articleToc);
+    }
+    setupMobileArticleToc(articleToc);
+    setupReadingScrollbar();
 
     body.querySelectorAll("pre").forEach((pre) => {
       if (pre.querySelector(".liax-code-copy")) {

@@ -199,6 +199,9 @@ describe("public section page rendering", () => {
     assert.match(patched, /\.liax-article-body h2,[\s\S]*?scroll-margin-top: 96px;/);
     assert.match(patched, /function liaxHighlightCodeElement\(code\)/);
     assert.match(patched, /liaxHighlightCodeElement\(code\);/);
+    assert.match(patched, /function liaxSetupReadingScrollbar\(\)/);
+    assert.match(patched, /className = "liax-article-toc-toggle"/);
+    assert.match(patched, /document\.body\.append\(nav\);/);
   });
 
   it("keeps only one language switch in patched article headers", () => {
@@ -347,7 +350,7 @@ describe("public section page rendering", () => {
 
     assert.match(patched, /<h1>旧模板长文章标题<\/h1>/);
     assert.match(patched, /href="\/zh\/posts">返回文章列表<\/a>/);
-    assert.match(patched, /<time datetime="2026-05-10">2026-05-10<\/time>/);
+    assert.match(patched, /<span>发布时间<\/span><time datetime="2026-05-10">2026-05-10<\/time>/);
     assert.match(patched, /<span>7 阅读<\/span>/);
     assert.match(patched, /<p class="liax-article-audience"><span>可见范围<\/span><strong>SVIP 及以上<\/strong><\/p>/);
     assert.match(patched, /class="liax-article-tags" aria-label="文章标签"/);
@@ -357,6 +360,38 @@ describe("public section page rendering", () => {
     assert.match(patched, /<span>下一篇<\/span><strong>下一篇文章<\/strong>/);
     assert.match(patched, /<footer class="liax-article-footer">[\s\S]*class="liax-article-neighbor-nav"/);
     assert.ok(patched.indexOf('class="liax-article-neighbor-nav"') > patched.indexOf('</article>'));
+  });
+
+  it("formats article published dates with the public site calendar day", () => {
+    const patched = patchPublishedArticleHtml(
+      `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <link rel="icon" href="/favicon.svg">
+  <style></style>
+</head>
+<body>
+  <main class="liax-article-card">
+    <header class="liax-article-header"><h1>北京时间零点发布</h1></header>
+    <article class="liax-article-body"><p>正文</p></article>
+  </main>
+</body>
+</html>`,
+      {},
+      null,
+      {
+        allowedRoles: [],
+        locale: "zh-CN",
+        newerArticle: null,
+        olderArticle: null,
+        prefix: "zh",
+        publishedAt: new Date("2026-05-09T16:00:00.000Z"),
+        tags: [],
+        visitCount: 0
+      }
+    );
+
+    assert.match(patched, /<span>发布时间<\/span><time datetime="2026-05-10">2026-05-10<\/time>/);
   });
 
   it("moves legacy neighbor navigation to the end of the article", () => {

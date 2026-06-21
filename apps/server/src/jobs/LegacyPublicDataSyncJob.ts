@@ -28,6 +28,11 @@ type LegacyArticleVisibilityRow = RowDataPacket & {
   visibility: string | null;
 };
 
+type LegacyArticlePublishedAtRow = RowDataPacket & {
+  articleSlug: string;
+  publishedAt: Date;
+};
+
 type LegacyMomentRow = RowDataPacket & {
   content: string;
   images: string | null;
@@ -55,8 +60,10 @@ export type LegacyPublicDataSyncOptions = {
 export type LegacyPublicDataSyncResult = {
   applied: boolean;
   articleTagLinksInserted: number;
+  articlePublishedAtUpdated: number;
   articleVisibilitiesUpdated: number;
   legacyArticleTagLinks: number;
+  legacyArticlePublishedAt: number;
   legacyArticleVisibilities: number;
   legacyMoments: number;
   legacyTags: number;
@@ -162,14 +169,19 @@ export class LegacyPublicDataSyncJob {
     options.onProgress?.("reading legacy article visibility");
     const legacyArticleVisibilities = await this.listLegacyArticleVisibilities();
 
+    options.onProgress?.("reading legacy article published dates");
+    const legacyArticlePublishedDates = await this.listLegacyArticlePublishedDates();
+
     options.onProgress?.("reading legacy moments");
     const legacyMoments = await this.listLegacyMoments();
 
     const baseResult: LegacyPublicDataSyncResult = {
       applied: false,
       articleTagLinksInserted: 0,
+      articlePublishedAtUpdated: 0,
       articleVisibilitiesUpdated: 0,
       legacyArticleTagLinks: legacyArticleTags.length,
+      legacyArticlePublishedAt: legacyArticlePublishedDates.length,
       legacyArticleVisibilities: legacyArticleVisibilities.length,
       legacyMoments: legacyMoments.length,
       legacyTags: legacyTags.length,
@@ -258,6 +270,24 @@ export class LegacyPublicDataSyncJob {
         baseResult.articleVisibilitiesUpdated += result.affectedRows;
       }
 
+      options.onProgress?.("updating target article published dates");
+      for (const articlePublishedAt of legacyArticlePublishedDates) {
+        const articleId = articleIdBySlug.get(articlePublishedAt.articleSlug);
+
+        if (!articleId) {
+          continue;
+        }
+
+        const [result] = await this.targetDatabase.execute<ResultSetHeader>(
+          `UPDATE article_translations
+           SET published_at = ?
+           WHERE article_id = ?
+             AND published_version_id IS NOT NULL`,
+          [articlePublishedAt.publishedAt, articleId]
+        );
+        baseResult.articlePublishedAtUpdated += result.affectedRows;
+      }
+
       if (canInsertPublicData) {
         options.onProgress?.("inserting target moments");
         for (const moment of legacyMoments) {
@@ -343,6 +373,14 @@ export class LegacyPublicDataSyncJob {
   private async listLegacyArticleVisibilities(): Promise<LegacyArticleVisibilityRow[]> {
     const [rows] = await this.legacyDatabase.query<LegacyArticleVisibilityRow[]>(
       "SELECT slug AS articleSlug, visibility FROM Article WHERE deletedAt IS NULL ORDER BY slug ASC, id ASC"
+    );
+
+    return rows;
+  }
+
+  private async listLegacyArticlePublishedDates(): Promise<LegacyArticlePublishedAtRow[]> {
+    const [rows] = await this.legacyDatabase.query<LegacyArticlePublishedAtRow[]>(
+      "SELECT slug AS articleSlug, createdAt AS publishedAt FROM Article WHERE deletedAt IS NULL ORDER BY slug ASC, id ASC"
     );
 
     return rows;

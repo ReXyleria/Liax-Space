@@ -23,7 +23,19 @@ function createLegacyDatabase(): LegacySyncConstructorArgs[0] {
         return [
           [
             { articleSlug: "first-post", visibility: "LOGIN_REQUIRED" },
-            { articleSlug: "public-post", visibility: "PUBLIC" }
+            { articleSlug: "public-post", visibility: "PUBLIC" },
+            { articleSlug: "missing-post", visibility: "PUBLIC" }
+          ] as T,
+          []
+        ];
+      }
+
+      if (sql.includes("FROM Article") && sql.includes("createdAt AS publishedAt")) {
+        return [
+          [
+            { articleSlug: "first-post", publishedAt: new Date("2026-06-01T00:00:00.000Z") },
+            { articleSlug: "public-post", publishedAt: new Date("2026-06-02T00:00:00.000Z") },
+            { articleSlug: "missing-post", publishedAt: new Date("2026-06-03T00:00:00.000Z") }
           ] as T,
           []
         ];
@@ -107,6 +119,7 @@ describe("LegacyPublicDataSyncJob", () => {
     assert.equal(result.applied, false);
     assert.equal(result.legacyTags, 1);
     assert.equal(result.legacyArticleTagLinks, 1);
+    assert.equal(result.legacyArticlePublishedAt, 3);
     assert.equal(result.legacyMoments, 1);
     assert.equal(result.momentImages, 1);
     assert.equal(targetDatabase.transactionStarts, 0);
@@ -131,6 +144,10 @@ describe("LegacyPublicDataSyncJob", () => {
         }
 
         if (sql.includes("UPDATE article_translations SET allowed_roles_json")) {
+          return [{ affectedRows: 2, insertId: 0 } as T, []];
+        }
+
+        if (sql.includes("UPDATE article_translations") && sql.includes("published_at = ?")) {
           return [{ affectedRows: 2, insertId: 0 } as T, []];
         }
 
@@ -162,13 +179,24 @@ describe("LegacyPublicDataSyncJob", () => {
     assert.equal(targetDatabase.transactionStarts, 1);
     assert.equal(targetDatabase.commits, 1);
     assert.equal(result.applied, true);
-    assert.equal(result.legacyArticleVisibilities, 2);
+    assert.equal(result.legacyArticleVisibilities, 3);
+    assert.equal(result.legacyArticlePublishedAt, 3);
     assert.equal(result.articleVisibilitiesUpdated, 4);
-    assert.equal(result.skippedArticleVisibilities, 0);
+    assert.equal(result.articlePublishedAtUpdated, 4);
+    assert.equal(result.skippedArticleVisibilities, 1);
     assert.deepEqual(visibilityWrites.map((write) => write.params), [
       [JSON.stringify(["svip", "ssvip"]), 21],
       [JSON.stringify([]), 22]
     ]);
+    assert.deepEqual(
+      writes
+        .filter((write) => write.sql.includes("published_at = ?"))
+        .map((write) => write.params),
+      [
+        [new Date("2026-06-01T00:00:00.000Z"), 21],
+        [new Date("2026-06-02T00:00:00.000Z"), 22]
+      ]
+    );
   });
 
   it("updates article visibility while skipping duplicate public data when the target is not empty", async () => {
@@ -186,6 +214,10 @@ describe("LegacyPublicDataSyncJob", () => {
         writes.push({ params, sql });
 
         if (sql.includes("UPDATE article_translations SET allowed_roles_json")) {
+          return [{ affectedRows: 2, insertId: 0 } as T, []];
+        }
+
+        if (sql.includes("UPDATE article_translations") && sql.includes("published_at = ?")) {
           return [{ affectedRows: 2, insertId: 0 } as T, []];
         }
 
@@ -222,9 +254,12 @@ describe("LegacyPublicDataSyncJob", () => {
     assert.equal(result.skippedArticleTagLinks, 1);
     assert.equal(result.momentsInserted, 0);
     assert.equal(result.articleVisibilitiesUpdated, 4);
+    assert.equal(result.articlePublishedAtUpdated, 4);
     assert.deepEqual(writes.map((write) => write.params), [
       [JSON.stringify(["svip", "ssvip"]), 21],
-      [JSON.stringify([]), 22]
+      [JSON.stringify([]), 22],
+      [new Date("2026-06-01T00:00:00.000Z"), 21],
+      [new Date("2026-06-02T00:00:00.000Z"), 22]
     ]);
   });
 });
