@@ -13,6 +13,19 @@ type CreateSetupTokenOptions = {
   force?: boolean;
 };
 
+export type EnsureSetupTokenResult =
+  | {
+      status: "admin-exists";
+    }
+  | {
+      status: "created";
+      setupTokenPath: string;
+    }
+  | {
+      status: "exists";
+      setupTokenPath: string;
+    };
+
 async function fileExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath, constants.F_OK);
@@ -22,10 +35,12 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-export async function createSetupToken(options: CreateSetupTokenOptions = {}): Promise<string> {
-  const existingAdmin = await new UserService().findAdminUser();
+async function findExistingAdmin(): Promise<boolean> {
+  return (await new UserService().findAdminUser()) !== null;
+}
 
-  if (existingAdmin) {
+export async function createSetupToken(options: CreateSetupTokenOptions = {}): Promise<string> {
+  if (await findExistingAdmin()) {
     throw new Error("Admin user already exists. Refusing to create a new setup token.");
   }
 
@@ -46,6 +61,46 @@ export async function createSetupToken(options: CreateSetupTokenOptions = {}): P
   });
 
   return token;
+}
+
+export async function ensureSetupToken(): Promise<EnsureSetupTokenResult> {
+  if (await findExistingAdmin()) {
+    return { status: "admin-exists" };
+  }
+
+  await ensureDir(storagePaths.runtimeDir);
+
+  const setupTokenPath = getSetupTokenPath();
+
+  if (await fileExists(setupTokenPath)) {
+    return {
+      status: "exists",
+      setupTokenPath
+    };
+  }
+
+  try {
+    const token = generateRandomToken(32);
+    await writeFile(setupTokenPath, `${token}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return {
+        status: "exists",
+        setupTokenPath
+      };
+    }
+
+    throw error;
+  }
+
+  return {
+    status: "created",
+    setupTokenPath
+  };
 }
 
 function parseOptions(args: string[]): CreateSetupTokenOptions {

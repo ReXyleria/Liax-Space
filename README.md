@@ -1,193 +1,152 @@
-# Liax Space
+# Liax-Space
 
-## 项目目标
+## 项目介绍
 
-Liax Space 是一个支持 `zh-CN` / `en-US` 的双语言内容系统，用 Markdown 和附件作为源数据，将公开文章发布为可重建的静态 HTML。
+Liax-Space 是一个面向个人站点、独立博客和小型内容社区的双语言发布系统。它把公开阅读、内容管理、账号安全、附件管理、SEO、搜索、访问统计、备份恢复和静态 HTML 发布放在同一个可部署应用里，适合长期运行在自己的服务器上。
 
-## 核心功能
+系统以 Markdown 和附件作为源数据，支持 `zh-CN` / `en-US` 两套内容、`/zh` / `/en` 公开路由、按语言独立的标题、slug、SEO、摘要和正文。文章发布后会生成可重建的静态 HTML；上传文件通过 `attachment://id` 引用，便于迁移和恢复。
 
-- 中英文后台界面和中英文公开页面。
-- 管理员初始化、密码登录、TOTP、Passkey、角色权限。
-- Markdown 文章编辑、双语言标题、slug、SEO、summary 和 Markdown 内容。
-- 保存草稿、预览、发布为静态 HTML、回滚版本。
-- 附件上传和 `attachment://id` 引用。
-- 标签、分类、SEO、RSS、sitemap、搜索。
-- 审计日志、一致性检查、清理、备份恢复和 HTML 重建。
-- 语言切换圆形扩散动画，动画期间保留旧语言层和新语言 overlay。
+当前版本采用 Node.js、Express、MySQL、React 和 Vite。后台控制台由 React 构建后随 server 镜像一起提供，入口为 `/console`；公开页面、API、附件、渲染产物和运维任务由同一个 server 应用管理。
 
-## 技术栈
+## 同类项目对比优势
 
-- TypeScript
-- Node.js + Express
-- MySQL
-- React + Vite
-- Playwright
-- Markdown 渲染器
-- 本地文件存储
+- **双语言内容边界清楚**：中文和英文不是简单机翻字段，而是各自拥有标题、slug、SEO、摘要、正文和发布状态；公开页面不会在缺失内容时随意 fallback 到另一种语言。
+- **Markdown 长文更稳**：Markdown 是源数据，HTML 是派生产物；长文读取支持分块传输，可视化预览按块加载，避免大文档一次性塞满编辑器。
+- **权限展示更直观**：文章可以显示公开、SVIP 及以上、SSVIP 等可见范围，后台和公开页都能让读者或管理员知道内容面向谁。
+- **附件引用可迁移**：图片和文件通过附件库统一管理，正文使用 `attachment://id` 引用，发布和预览时再解析成公开地址，减少硬编码 URL 带来的迁移成本。
+- **后台操作集中**：文章、版本、发布、标签、分类、瞬间、留言、用户、角色、站点设置、邮件、备份和一致性检查都在 `/console` 工作台完成。
+- **公开站点更完整**：支持文章列表、标签、归档、瞬间、留言、RSS、sitemap、搜索、阅读数、语言切换和响应式布局。
+- **自托管维护边界清楚**：MySQL 保存结构化数据，`storage/uploads` 保存源附件，`storage/rendered` 保存可重建 HTML，`storage/backups` 保存备份，恢复后可以重新构建公开 HTML。
 
-## 本地启动
+## 安装教程
 
-先准备 `.env`，可以参考 `.env.example`。真实 `.env` 不提交 Git，默认只需要数据库账号和密码：
+### 1. 准备环境
 
-```text
+推荐使用 Docker Compose 部署。服务器需要能拉取镜像并对外开放应用端口，例如 `3000`。
+
+```bash
+mkdir -p /opt/liax-space
+cd /opt/liax-space
+```
+
+### 2. 创建 `.env`
+
+`.env` 只保存部署参数和数据库密码，不要提交到 Git。
+
+```dotenv
+APP_PORT=3000
+PUBLIC_BASE_URL=https://example.com
+DATABASE_NAME=liax_space
 DATABASE_USER=root
-DATABASE_PASSWORD=root
+DATABASE_PASSWORD=change_this_database_password
+APP_IMAGE=rexyleria/liax-space:latest
 ```
 
-JWT secret 和 password pepper 会自动生成到 `storage/runtime`。根目录提供统一脚本，首次拉取后先安装前后端依赖：
+如果你使用自己的镜像标签，把 `APP_IMAGE` 改成对应镜像即可。
 
-```text
-npm run install:all
-npm run check:env
-npm run migrate:latest
-npm run dev:server
-npm run dev:admin
+### 3. 创建 `docker-compose.yml`
+
+```yaml
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DATABASE_NAME:-liax_space}
+      MYSQL_ROOT_PASSWORD: ${DATABASE_PASSWORD:-root}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: ${APP_IMAGE:-rexyleria/liax-space:latest}
+    pull_policy: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      APP_HOST: 0.0.0.0
+      APP_PORT: 3000
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_NAME: ${DATABASE_NAME:-liax_space}
+      DATABASE_USER: ${DATABASE_USER:-root}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-root}
+      STORAGE_UPLOADS_DIR: /app/storage/uploads
+      STORAGE_RENDERED_DIR: /app/storage/rendered
+      STORAGE_RUNTIME_DIR: /app/storage/runtime
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - uploads:/app/storage/uploads
+      - rendered:/app/storage/rendered
+      - runtime:/app/storage/runtime
+      - backups:/app/storage/backups
+
+volumes:
+  mysql-data:
+  uploads:
+  rendered:
+  runtime:
+  backups:
 ```
 
-首次运行需要生成 setup token，然后通过初始化管理员流程创建 admin。构建完成后可以用正式命令生成 token 文件：
+### 4. 启动服务
 
-```text
-npm run create-setup-token
-```
-
-## 文档索引
-
-- [项目愿景](docs/00-project-vision.md)
-- [产品范围](docs/01-product-scope.md)
-- [用户流程](docs/02-user-journeys.md)
-- [设计系统](docs/03-design-system.md)
-- [国际化策略](docs/04-i18n-strategy.md)
-- [内容模型](docs/05-content-model.md)
-- [数据生命周期](docs/06-data-lifecycle.md)
-- [安全模型](docs/07-security-model.md)
-- [架构概览](docs/08-architecture-overview.md)
-- [文件地图](docs/09-file-map.md)
-- [API 契约](docs/10-api-contract.md)
-- [数据库设计](docs/11-database-design.md)
-- [测试策略](docs/12-test-strategy.md)
-- [Debug 策略](docs/13-debug-strategy.md)
-- [部署策略](docs/14-deployment-strategy.md)
-- [Docker Compose 新手部署页](docs/docker-compose-deployment-guide.md)
-- [最终验收清单](docs/final-acceptance-checklist.md)
-- [术语表](docs/99-glossary.md)
-- [ADR：Markdown 是源数据](decisions/ADR-0001-markdown-is-source.md)
-- [ADR：HTML 是派生产物](decisions/ADR-0002-html-is-derived-artifact.md)
-- [ADR：公开 URL 语言前缀](decisions/ADR-0003-locale-url-prefix.md)
-- [ADR：暖色极简设计系统](decisions/ADR-0004-warm-minimal-design-system.md)
-- [ADR：语言切换 overlay](decisions/ADR-0005-language-wipe-overlay.md)
-
-## 开发顺序
-
-1. 先维护文档、ADR 和验收清单。
-2. 再维护 shared 类型、设计 token 和基础 UI。
-3. 然后实现 server 基础设施、数据库、认证和权限。
-4. 继续实现内容模型、渲染、发布、公开访问和附件。
-5. 最后完善后台 UI、公开页面、测试、Debug、部署和备份恢复。
-
-每一步只完成当前目标，不提前实现后续功能。
-
-## 视觉规范摘要
-
-- 页面背景必须使用 `#faf9f5`。
-- 不使用纯白页面背景。
-- 不使用照片背景。
-- 不实现纸张图片背景。
-- 不实现鼠标纸张褶皱高亮。
-- 正文文字使用 `#141413`。
-- 主按钮使用暖黑底和米白字。
-- 品牌按钮使用陶土橙和米白字。
-- `#d97757` 只少量用于链接、强调、hover、focus 和 underline。
-
-## 双语言规则摘要
-
-- 支持 `zh-CN` 和 `en-US`。
-- 公开 URL 使用 `/zh` 和 `/en` 前缀。
-- 文章标题、slug、SEO、summary、Markdown 内容都是语言相关数据。
-- Markdown 是文章源数据。
-- 附件是源数据。
-- HTML 是可重建派生产物。
-- 公开文章不要自动 fallback 到另一种语言。
-
-## Debug 入口
-
-```text
-npm run check:env
-npm run check:consistency
-npm run check:design
-npm run rebuild-html -- --dry-run
-```
-
-语言切换动画可在后台使用 `?uiDebug=1` 检查，debug mode 才允许暴露 `window.__uiDebug.setLanguageWipeProgress(progress)`。
-
-## 测试命令
-
-```text
-npm run test
-npm run test:visual
-npm run check:acceptance
-npm run check:design
-npm run check:docker-context
-```
-
-## 部署入口
-
-新手优先按 [Docker Compose 新手部署页](docs/docker-compose-deployment-guide.md) 操作。它从 Docker 安装检查、`.env` 填写、容器启动、migration、初始化管理员、打开 `/console` 工作台到备份恢复逐步说明。
-
-部署前先运行：
-
-```text
-npm run check:env
-npm run migrate:latest
-npm run build
-```
-
-生产镜像会把后台构建产物打进 server 镜像，后台入口为 `/console`，API 仍为 `/admin/*`，公开站点仍使用 `/zh` 和 `/en`。
-
-Docker / Tencent 测试部署检查：
-
-```text
-npm run check:docker-context
-npm run check:acceptance
-npm run check:install
-docker compose config
+```bash
 docker compose pull
 docker compose up -d
+docker compose logs -f app
 ```
 
-当前 `docker-compose.yml` 的 app 服务默认使用 Docker Hub 测试镜像 `rexyleria/liax-space:test`，也可以通过 `APP_IMAGE=rexyleria/liax-space:test-<short-sha>` 固定到不可变测试镜像；不是 `:main`，也不是在服务器上重新 build。`pull_policy: always` 会在启动前拉取配置的镜像。本地 compose 的 `.env` 只放数据库账号密码和可选 `APP_IMAGE`；`.env.example` 只是本地占位示例，不进入 Git 或 Docker context。
+容器首次启动会自动运行数据库迁移；如果还没有管理员账号，会在运行时目录创建 setup token。
 
-`npm run check:docker-context` 会检查 Dockerfile、compose、两个发布 workflow、`.dockerignore`、部署文档和生产 dist 边界。运行镜像不应携带 `.env`、`.env.example`、测试文件、文档、旧日志、截图或开发脚本。
-
-`npm run check:acceptance` 会检查当前仓库是否保留了关键用户流程、视觉动画、后台设置、公开首页、Docker 发布和新手部署路径的直接验收证据。
-
-`npm run check:install` 生成安装链路报告。默认只做静态结构检查；部署机上可以运行 `npm run check:install -- --strict-docker`，要求 `docker compose config` 必须通过。
-
-Compose 容器启动后使用镜像内已编译入口运行运维命令：
+服务启动后访问：
 
 ```text
+http://服务器地址:3000
+http://服务器地址:3000/console
+```
+
+首次初始化管理员前，查看自动创建的 setup token：
+
+```bash
+docker compose exec app cat /app/storage/runtime/setup-token
+```
+
+然后打开 `/console`，按照初始化流程创建管理员账号。
+
+### 5. 常用维护命令
+
+```bash
 docker compose exec app node apps/server/dist/database/migrate.js latest
-docker compose exec app node apps/server/dist/setup/createSetupToken.js
 docker compose exec app node apps/server/dist/jobs/runBackup.js
+docker compose exec app node apps/server/dist/jobs/runRestore.js --backup-dir=storage/backups/{timestamp} --confirm-restore
 docker compose exec app node apps/server/dist/jobs/runRebuildHtml.js
 docker compose exec app node apps/server/dist/jobs/runCheckConsistency.js
 docker compose exec app node apps/server/dist/jobs/runCleanupRenderedHtml.js
 docker compose exec app node apps/server/dist/jobs/runCleanupUnusedAttachments.js
 ```
 
-`/console` 是每个登录用户的 Liax Space 工作台。管理员拥有更多权限，所以会看到更多菜单；普通用户仍有自己的工作台和个人设置入口。
+`storage/uploads` 是源附件，需要备份；`storage/rendered` 是可重建的 HTML 产物，恢复备份后可以通过 `runRebuildHtml.js` 重新生成。
 
-镜像发布：
+### 6. 常用排查命令
 
-- `.github/workflows/docker-publish.yml` 发布到 `ghcr.io/rexyleria/liax-space`。
-- `.github/workflows/dockerhub.yml` 发布到 `rexyleria/liax-space`。
-- GHCR 使用 `GITHUB_TOKEN`；Docker Hub 需要 `DOCKERHUB_USERNAME` 和 `DOCKERHUB_TOKEN`。
-
-备份和恢复入口：
-
-```text
-npm run backup
-npm run restore -- --backup-dir=storage/backups/{timestamp} --confirm-restore
-npm run rebuild-html
+```bash
+docker compose ps
+docker compose logs -f mysql
+docker compose logs -f app
+docker compose exec app node apps/server/dist/database/migrate.js latest
 ```
 
-`storage/uploads` 是源数据，需要备份。`storage/rendered` 是可重建 HTML 产物，恢复后需要运行 `rebuild-html`。
+数据库可用但页面提示缺表时，先运行迁移命令。文章页面缺少图片时，检查 `uploads` 卷是否仍然存在。公开页面没有更新时，重新运行 HTML 重建任务。
+
+## 联系方式
+
+- QQ：1091149319
+- 邮箱：Miyu@toliax.com

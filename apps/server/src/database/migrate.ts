@@ -1,10 +1,10 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import { closeDatabasePool, getDatabasePool } from "./connection.js";
 
-type MigrationCommand = "latest" | "rollback" | "seed";
+export type MigrationCommand = "latest" | "rollback" | "seed";
 
 type AppliedMigrationRow = RowDataPacket & {
   name: string;
@@ -156,8 +156,7 @@ async function runSeed(connection: PoolConnection): Promise<void> {
   }
 }
 
-async function main(): Promise<void> {
-  const command = readCommand();
+export async function runMigrations(command: MigrationCommand): Promise<void> {
   const connection = await getDatabasePool().getConnection();
 
   try {
@@ -174,11 +173,17 @@ async function main(): Promise<void> {
     await runSeed(connection);
   } finally {
     connection.release();
-    await closeDatabasePool();
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : "Migration failed.");
-  process.exitCode = 1;
-});
+async function main(): Promise<void> {
+  await runMigrations(readCommand());
+  await closeDatabasePool();
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : "Migration failed.");
+    process.exitCode = 1;
+  });
+}
