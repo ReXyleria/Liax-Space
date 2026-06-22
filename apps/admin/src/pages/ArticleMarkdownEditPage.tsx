@@ -61,6 +61,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const [isImportingMarkdown, setIsImportingMarkdown] = useState(false);
   const [importProgress, setImportProgress] = useState<number | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [translationProgress, setTranslationProgress] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const lastSavedContentRef = useRef("");
@@ -90,6 +91,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       setForcePlainEditor(false);
       setSelectedImportFile(null);
       setImportProgress(null);
+      setTranslationProgress(null);
       setIsImportingMarkdown(false);
       setMessage(null);
       setErrorMessage(null);
@@ -356,6 +358,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
 
   async function handleTranslateContent(): Promise<void> {
     setIsTranslating(true);
+    setTranslationProgress(0);
     setMessage(null);
     setErrorMessage(null);
 
@@ -377,6 +380,10 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
         },
         sourceLocale,
         targetLocale: locale
+      }, {
+        onJobUpdate: (job) => {
+          setTranslationProgress(job.progressPercent);
+        }
       });
 
       suppressNextAutoSaveRef.current = true;
@@ -388,6 +395,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       setErrorMessage(error instanceof Error ? error.message : t("article.translateFailed"));
     } finally {
       setIsTranslating(false);
+      setTranslationProgress(null);
     }
   }
 
@@ -515,6 +523,21 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                   >
                     {isSaving ? t("article.markdownSaving") : t("article.markdownSave")}
                   </button>
+                  {typeof translationProgress === "number" ? (
+                    <div className="admin-translation-progress">
+                      <small>{t("article.translateProgress").replace("{progress}", String(translationProgress))}</small>
+                      <div
+                        aria-label={t("article.translateProgress").replace("{progress}", String(translationProgress))}
+                        aria-valuemax={100}
+                        aria-valuemin={0}
+                        aria-valuenow={translationProgress}
+                        className="admin-translation-progress__bar"
+                        role="progressbar"
+                      >
+                        <span style={{ width: `${translationProgress}%` }} />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
                 {isAutoSaving ? <p className="admin-muted-text">{t("article.autoSaving")}</p> : null}

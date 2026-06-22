@@ -102,6 +102,7 @@ const portableSiteSettingKeys = [
   "ai.deepseekModel",
   "ai.model",
   "ai.provider",
+  "ai.taskConcurrency",
   "ai.translationTemperature",
   "smtp.encryption",
   "smtp.from",

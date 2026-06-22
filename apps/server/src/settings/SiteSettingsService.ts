@@ -252,6 +252,7 @@ const knownSettingValidators: Record<string, SiteSettingValidator> = {
   "ai.chunkConcurrency": (key, value) => assertIntegerRange(key, value, 1, 16),
   "ai.model": (key, value) => assertString(value, key, 160),
   "ai.provider": (key, value) => assertOneOf(value, key, aiProviders),
+  "ai.taskConcurrency": (key, value) => assertIntegerRange(key, value, 1, 8),
   "ai.translationTemperature": assertTemperature,
   "home.brandInfo": sanitizeStringValidator((key, value) => assertString(value, key, 240)),
   "home.contactItems": sanitizeStringValidator((key, value) => assertString(value, key, 2000)),

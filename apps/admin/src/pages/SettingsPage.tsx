@@ -30,6 +30,7 @@ type AiSettingsForm = {
   chunkConcurrency: string;
   model: string;
   temperature: string;
+  taskConcurrency: string;
 };
 
 type SmtpEncryption = "none" | "starttls" | "ssl_tls";
@@ -91,6 +92,7 @@ const defaultAiSettings: AiSettingsForm = {
   chunkConcurrency: "1",
   model: aiProviderDefaults.deepseek.model,
   provider: "deepseek",
+  taskConcurrency: "1",
   temperature: "0"
 };
 
@@ -326,6 +328,7 @@ export function SettingsPage(): ReactElement {
             ),
             chunkConcurrency: readSiteNumberString(siteSettingsResponse.settings, "ai.chunkConcurrency", defaultAiSettings.chunkConcurrency),
             provider,
+            taskConcurrency: readSiteNumberString(siteSettingsResponse.settings, "ai.taskConcurrency", defaultAiSettings.taskConcurrency),
             temperature: readSiteNumberString(siteSettingsResponse.settings, "ai.translationTemperature", defaultAiSettings.temperature)
           });
           setSmtpSettings({
@@ -452,6 +455,7 @@ export function SettingsPage(): ReactElement {
   async function handleSaveAiSettings(): Promise<void> {
     const temperature = Number(aiSettings.temperature);
     const chunkConcurrency = Number(aiSettings.chunkConcurrency);
+    const taskConcurrency = Number(aiSettings.taskConcurrency);
 
     if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
       setErrorMessage(t("settings.aiTemperatureInvalid"));
@@ -460,6 +464,11 @@ export function SettingsPage(): ReactElement {
 
     if (!Number.isInteger(chunkConcurrency) || chunkConcurrency < 1 || chunkConcurrency > 16) {
       setErrorMessage(t("settings.aiChunkConcurrencyInvalid"));
+      return;
+    }
+
+    if (!Number.isInteger(taskConcurrency) || taskConcurrency < 1 || taskConcurrency > 8) {
+      setErrorMessage(t("settings.aiTaskConcurrencyInvalid"));
       return;
     }
 
@@ -473,6 +482,7 @@ export function SettingsPage(): ReactElement {
         "ai.chunkConcurrency": chunkConcurrency,
         "ai.model": aiSettings.model.trim(),
         "ai.provider": aiSettings.provider,
+        "ai.taskConcurrency": taskConcurrency,
         "ai.translationTemperature": temperature
       };
 
@@ -491,6 +501,7 @@ export function SettingsPage(): ReactElement {
         chunkConcurrency: readSiteNumberString(response.settings, "ai.chunkConcurrency", defaultAiSettings.chunkConcurrency),
         model: readSiteString(response.settings, "ai.model", providerDefaults.model),
         provider,
+        taskConcurrency: readSiteNumberString(response.settings, "ai.taskConcurrency", defaultAiSettings.taskConcurrency),
         temperature: readSiteNumberString(response.settings, "ai.translationTemperature", defaultAiSettings.temperature)
       });
       setMessage(t("settings.aiSaved"));
@@ -933,6 +944,20 @@ function updateMailTemplate(templateId: number, patch: Partial<Pick<MailTemplate
                   value={aiSettings.chunkConcurrency}
                 />
                 <small>{t("settings.aiChunkConcurrencyHelp")}</small>
+              </label>
+              <label className="admin-form-field">
+                <span>{t("settings.aiTaskConcurrency")}</span>
+                <input
+                  disabled={isAiFormDisabled}
+                  inputMode="numeric"
+                  max="8"
+                  min="1"
+                  onChange={(event) => setAiSettings((current) => ({ ...current, taskConcurrency: event.target.value }))}
+                  step="1"
+                  type="number"
+                  value={aiSettings.taskConcurrency}
+                />
+                <small>{t("settings.aiTaskConcurrencyHelp")}</small>
               </label>
               <label className="admin-form-field admin-home-settings-grid__wide">
                 <span>{t("settings.aiApiKey")}</span>

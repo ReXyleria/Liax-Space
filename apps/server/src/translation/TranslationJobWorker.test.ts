@@ -16,6 +16,8 @@ function createJob(input: Partial<TranslationJob>): TranslationJob {
     input: {},
     kind: "translate",
     lockedAt: now,
+    progressCompleted: 0,
+    progressTotal: 1,
     result: null,
     startedAt: now,
     status: "running",
@@ -27,6 +29,7 @@ function createJob(input: Partial<TranslationJob>): TranslationJob {
 describe("TranslationJobWorker", () => {
   it("processes queued translation jobs through the translation service", async () => {
     const successes: unknown[] = [];
+    const progressUpdates: Array<{ completed: number; total: number }> = [];
     const worker = new TranslationJobWorker(
       {
         claimNextQueuedJob: async () => createJob({
@@ -41,24 +44,36 @@ describe("TranslationJobWorker", () => {
         },
         markSucceeded: async (_id, result) => {
           successes.push(result);
+        },
+        updateProgress: async (_id, progress) => {
+          progressUpdates.push(progress);
         }
       },
       {
         generateSeo: async () => {
           throw new Error("generateSeo should not be called.");
         },
-        translate: async () => ({
-          fields: { title: "Hello" },
-          model: "deepseek-chat",
-          provider: "deepseek",
-          sourceLocale: "zh-CN",
-          targetLocale: "en-US",
-          temperature: 1
-        })
+        translate: async (_input, options) => {
+          await options?.onProgress?.({ completedUnits: 0, totalUnits: 1 });
+          await options?.onProgress?.({ completedUnits: 1, totalUnits: 1 });
+
+          return {
+            fields: { title: "Hello" },
+            model: "deepseek-chat",
+            provider: "deepseek",
+            sourceLocale: "zh-CN",
+            targetLocale: "en-US",
+            temperature: 1
+          };
+        }
       }
     );
 
     assert.equal(await worker.processNext(), true);
+    assert.deepEqual(progressUpdates, [
+      { completed: 0, total: 1 },
+      { completed: 1, total: 1 }
+    ]);
     assert.deepEqual(successes, [
       {
         translation: {
@@ -83,7 +98,8 @@ describe("TranslationJobWorker", () => {
         },
         markSucceeded: async () => {
           throw new Error("markSucceeded should not be called.");
-        }
+        },
+        updateProgress: async () => {}
       },
       {
         generateSeo: async () => {
@@ -99,7 +115,7 @@ describe("TranslationJobWorker", () => {
     assert.deepEqual(failures, ["provider unavailable"]);
   });
 
-  it("processes multiple queued jobs up to the configured chunk concurrency", async () => {
+  it("processes multiple queued jobs up to the configured background task concurrency", async () => {
     const jobs = [
       createJob({ id: 1, input: { fields: { title: "一" }, sourceLocale: "zh-CN", targetLocale: "en-US" } }),
       createJob({ id: 2, input: { fields: { title: "二" }, sourceLocale: "zh-CN", targetLocale: "en-US" } }),
@@ -114,7 +130,8 @@ describe("TranslationJobWorker", () => {
         },
         markSucceeded: async (id) => {
           completedJobIds.push(id);
-        }
+        },
+        updateProgress: async () => {}
       },
       {
         generateSeo: async () => {

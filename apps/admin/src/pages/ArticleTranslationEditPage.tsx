@@ -129,6 +129,8 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [seoProgress, setSeoProgress] = useState<number | null>(null);
+  const [translationProgress, setTranslationProgress] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const activeForm = forms[activeLocale];
@@ -231,6 +233,7 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
     }
 
     setIsTranslating(true);
+    setTranslationProgress(0);
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -245,6 +248,10 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
         },
         sourceLocale,
         targetLocale: activeLocale
+      }, {
+        onJobUpdate: (job) => {
+          setTranslationProgress(job.progressPercent);
+        }
       });
       const translatedFields = response.translation.fields;
 
@@ -263,6 +270,7 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
       setErrorMessage(error instanceof Error ? error.message : t("article.translateFailed"));
     } finally {
       setIsTranslating(false);
+      setTranslationProgress(null);
     }
   }
 
@@ -274,6 +282,7 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
     }
 
     setIsGeneratingSeo(true);
+    setSeoProgress(0);
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -282,6 +291,10 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
         locale: activeLocale,
         summary: activeForm.summary,
         title: activeForm.title
+      }, {
+        onJobUpdate: (job) => {
+          setSeoProgress(job.progressPercent);
+        }
       });
       const generatedFields = response.seo.fields;
 
@@ -298,6 +311,7 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
       setErrorMessage(error instanceof Error ? error.message : t("article.seoGenerateFailed"));
     } finally {
       setIsGeneratingSeo(false);
+      setSeoProgress(null);
     }
   }
 
@@ -340,6 +354,21 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
                     ? t("article.translating")
                     : `${t("article.translateFrom")} ${sourceLocale}`}
                 </button>
+                {typeof translationProgress === "number" ? (
+                  <div className="admin-translation-progress">
+                    <small>{t("article.translateProgress").replace("{progress}", String(translationProgress))}</small>
+                    <div
+                      aria-label={t("article.translateProgress").replace("{progress}", String(translationProgress))}
+                      aria-valuemax={100}
+                      aria-valuemin={0}
+                      aria-valuenow={translationProgress}
+                      className="admin-translation-progress__bar"
+                      role="progressbar"
+                    >
+                      <span style={{ width: `${translationProgress}%` }} />
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <SeoFields
@@ -350,6 +379,21 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
                 onGenerateSeo={() => void handleGenerateSeo()}
                 value={activeForm}
               />
+              {typeof seoProgress === "number" ? (
+                <div className="admin-translation-progress">
+                  <small>{t("article.translateProgress").replace("{progress}", String(seoProgress))}</small>
+                  <div
+                    aria-label={t("article.translateProgress").replace("{progress}", String(seoProgress))}
+                    aria-valuemax={100}
+                    aria-valuemin={0}
+                    aria-valuenow={seoProgress}
+                    className="admin-translation-progress__bar"
+                    role="progressbar"
+                  >
+                    <span style={{ width: `${seoProgress}%` }} />
+                  </div>
+                </div>
+              ) : null}
 
               {activeTranslation?.publishedVersionId != null ? (
                 <label className="admin-form-field">

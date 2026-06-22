@@ -47,6 +47,24 @@ translationRoutes.post(
 );
 
 translationRoutes.get(
+  "/translation-jobs",
+  authRequired,
+  permissionRequired("article:update"),
+  asyncHandler(async (request, response) => {
+    if (request.query.status !== undefined && request.query.status !== "active") {
+      throw new AppError("Unsupported translation job status filter.", {
+        code: errorCodes.validationFailed,
+        statusCode: 400
+      });
+    }
+
+    response.status(200).json({
+      jobs: await translationJobService.listActiveJobs()
+    });
+  })
+);
+
+translationRoutes.get(
   "/translation-jobs/:id",
   authRequired,
   permissionRequired("article:update"),

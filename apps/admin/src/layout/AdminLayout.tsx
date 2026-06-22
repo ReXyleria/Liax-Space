@@ -4,6 +4,7 @@ import type { AdminPermission } from "../api/roleApi";
 import { hasAnyPermission } from "../auth/permissions";
 import { settingsApi } from "../api/settingsApi";
 import { LanguageSwitchButton } from "../effects/language-wipe/LanguageSwitchButton";
+import { TaskProgressDock } from "../components/TaskProgressDock";
 import { useVerifiedImageUrl } from "../hooks/useVerifiedImageUrl";
 import { readStoredLocale } from "../i18n/localeStorage";
 import { useT } from "../i18n/useT";
@@ -255,6 +256,7 @@ export function AdminLayout({ avatarUrl = null, children }: AdminLayoutProps): R
 
         <main className="admin-content">{children}</main>
       </div>
+      <TaskProgressDock enabled={authState.status === "authenticated" && hasAnyPermission(authState.user, ["article:update"])} />
     </div>
   );
 }

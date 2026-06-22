@@ -22,6 +22,15 @@ export type TranslateResult = {
   fields: TranslationFields;
 };
 
+export type TranslationProgressUpdate = {
+  completedUnits: number;
+  totalUnits: number;
+};
+
+export type TranslationRunOptions = {
+  onProgress?: (progress: TranslationProgressUpdate) => Promise<void> | void;
+};
+
 export type GenerateSeoInput = {
   contentExcerpt?: string;
   locale: ArticleLocale;
@@ -45,6 +54,7 @@ type AiProvider = "deepseek" | "openai" | "ollama";
 type AiProviderConfig = {
   apiKey: string | null;
   baseUrl: string;
+  chunkConcurrency: number;
   model: string;
   provider: AiProvider;
   temperature: number;
@@ -59,6 +69,9 @@ type ChatCompletionResponse = {
 };
 
 const supportedLocales: ArticleLocale[] = ["zh-CN", "en-US"];
+const defaultChunkConcurrency = 1;
+const maxChunkConcurrency = 16;
+const markdownTranslationChunkLength = 6_000;
 const providerDefaults: Record<AiProvider, { baseUrl: string; model: string; requiresApiKey: boolean }> = {
   deepseek: {
     baseUrl: "https://api.deepseek.com",
@@ -130,6 +143,16 @@ function readSettingString(value: unknown, fallback: string): string {
 
 function readSettingTemperature(value: unknown): number {
   return readTemperature(value, 0);
+}
+
+function readSettingInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const integer = typeof value === "string" ? Number(value.trim()) : value;
+
+  if (typeof integer !== "number" || !Number.isInteger(integer)) {
+    return fallback;
+  }
+
+  return Math.min(Math.max(integer, min), max);
 }
 
 function readProvider(value: unknown): AiProvider {
@@ -241,6 +264,26 @@ function buildPrompt(input: TranslateInput): string {
   });
 }
 
+function buildContentChunkPrompt(input: TranslateInput, content: string, index: number, total: number): string {
+  return JSON.stringify({
+    instructions: [
+      "Translate this Markdown segment as part of a longer bilingual CMS article.",
+      "Return valid JSON only with shape {\"fields\":{\"content\":\"...\"}}.",
+      "Preserve Markdown structure, code fences, inline code, math delimiters, links, image URLs, and front matter syntax.",
+      "Do not add explanations, markdown fences around the JSON, comments, or extra keys."
+    ],
+    sourceLocale: input.sourceLocale,
+    targetLocale: input.targetLocale,
+    segment: {
+      index,
+      total
+    },
+    fields: {
+      content
+    }
+  });
+}
+
 function buildSeoPrompt(input: GenerateSeoInput): string {
   return JSON.stringify({
     instructions: [
@@ -259,6 +302,84 @@ function buildSeoPrompt(input: GenerateSeoInput): string {
       title: input.title ?? ""
     }
   });
+}
+
+function isMarkdownFenceBoundary(line: string): boolean {
+  return /^\s*(```|~~~)/u.test(line);
+}
+
+function splitLongLine(line: string): string[] {
+  if (line.length <= markdownTranslationChunkLength) {
+    return [line];
+  }
+
+  const chunks: string[] = [];
+
+  for (let index = 0; index < line.length; index += markdownTranslationChunkLength) {
+    chunks.push(line.slice(index, index + markdownTranslationChunkLength));
+  }
+
+  return chunks;
+}
+
+function splitMarkdownContent(content: string): string[] {
+  if (content.length <= markdownTranslationChunkLength) {
+    return [content];
+  }
+
+  const chunks: string[] = [];
+  const lines = content.split(/(?<=\n)/u);
+  let currentChunk = "";
+  let isInsideFence = false;
+
+  for (const line of lines) {
+    if (!isInsideFence && !currentChunk && line.length > markdownTranslationChunkLength) {
+      chunks.push(...splitLongLine(line));
+      continue;
+    }
+
+    currentChunk += line;
+
+    if (isMarkdownFenceBoundary(line)) {
+      isInsideFence = !isInsideFence;
+    }
+
+    if (!isInsideFence && currentChunk.length >= markdownTranslationChunkLength) {
+      chunks.push(currentChunk);
+      currentChunk = "";
+    }
+  }
+
+  if (currentChunk || chunks.length === 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+}
+
+async function runWithConcurrency<T>(
+  totalItems: number,
+  concurrency: number,
+  runner: (index: number) => Promise<T>
+): Promise<T[]> {
+  const results = new Array<T>(totalItems);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(concurrency, 1), Math.max(totalItems, 1));
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    for (;;) {
+      const index = nextIndex;
+      nextIndex += 1;
+
+      if (index >= totalItems) {
+        return;
+      }
+
+      results[index] = await runner(index);
+    }
+  }));
+
+  return results;
 }
 
 function parseTranslatedFields(content: string, originalFields: TranslationFields): TranslationFields {
@@ -330,6 +451,12 @@ export class TranslationService {
     const defaults = providerDefaults[provider];
     const apiKey = readSettingString(settings["ai.apiKey"], "");
     const baseUrl = readBaseUrl(settings["ai.baseUrl"], defaults.baseUrl);
+    const chunkConcurrency = readSettingInteger(
+      settings["ai.chunkConcurrency"],
+      defaultChunkConcurrency,
+      defaultChunkConcurrency,
+      maxChunkConcurrency
+    );
     const model = readSettingString(settings["ai.model"], defaults.model);
     const temperature = readSettingTemperature(settings["ai.translationTemperature"]);
 
@@ -343,6 +470,7 @@ export class TranslationService {
 
     return {
       baseUrl,
+      chunkConcurrency,
       model,
       apiKey: apiKey || null,
       provider,
@@ -350,38 +478,41 @@ export class TranslationService {
     };
   }
 
-  async translate(input: unknown): Promise<TranslateResult> {
-    const config = await this.readAiProviderConfig();
-    const request = validateInput(input, config.temperature);
-
-    const response = await fetch(`${config.baseUrl}/chat/completions`, {
+  private async requestJsonContent(input: {
+    config: AiProviderConfig;
+    logLabel: string;
+    prompt: string;
+    systemMessage: string;
+    temperature: number;
+  }): Promise<string> {
+    const response = await fetch(`${input.config.baseUrl}/chat/completions`, {
       body: JSON.stringify({
         messages: [
           {
-            content: "You are a precise bilingual CMS translation engine. Return JSON only.",
+            content: input.systemMessage,
             role: "system"
           },
           {
-            content: buildPrompt(request),
+            content: input.prompt,
             role: "user"
           }
         ],
-        model: config.model,
+        model: input.config.model,
         response_format: { type: "json_object" },
-        temperature: request.temperature
+        temperature: input.temperature
       }),
       headers: {
-        ...buildAuthHeaders(config)
+        ...buildAuthHeaders(input.config)
       },
       method: "POST"
     });
 
     if (!response.ok) {
-      logger.warn("translation provider request failed", {
-        provider: config.provider,
+      logger.warn(`${input.logLabel} provider request failed`, {
+        provider: input.config.provider,
         status: response.status
       });
-      throw new AppError("AI translation request failed.", {
+      throw new AppError(`AI ${input.logLabel} request failed.`, {
         code: errorCodes.internalServerError,
         expose: true,
         statusCode: 502
@@ -392,15 +523,99 @@ export class TranslationService {
     const content = payload.choices?.[0]?.message?.content;
 
     if (!content) {
-      throw new AppError("AI translation response did not include content.", {
+      throw new AppError(`AI ${input.logLabel} response did not include content.`, {
         code: errorCodes.internalServerError,
         expose: true,
         statusCode: 502
       });
     }
 
+    return content;
+  }
+
+  private async translateFieldBatch(config: AiProviderConfig, request: TranslateInput & { temperature: number }): Promise<TranslationFields> {
+    const content = await this.requestJsonContent({
+      config,
+      logLabel: "translation",
+      prompt: buildPrompt(request),
+      systemMessage: "You are a precise bilingual CMS translation engine. Return JSON only.",
+      temperature: request.temperature
+    });
+
+    return parseTranslatedFields(content, request.fields);
+  }
+
+  private async translateContentChunk(
+    config: AiProviderConfig,
+    request: TranslateInput & { temperature: number },
+    contentChunk: string,
+    index: number,
+    total: number
+  ): Promise<string> {
+    const content = await this.requestJsonContent({
+      config,
+      logLabel: "translation",
+      prompt: buildContentChunkPrompt(request, contentChunk, index + 1, total),
+      systemMessage: "You are a precise bilingual Markdown translation engine. Return JSON only.",
+      temperature: request.temperature
+    });
+    const fields = parseTranslatedFields(content, { content: contentChunk });
+
+    return fields.content ?? "";
+  }
+
+  private async translateFields(
+    config: AiProviderConfig,
+    request: TranslateInput & { temperature: number },
+    options: TranslationRunOptions
+  ): Promise<TranslationFields> {
+    const contentValue = request.fields.content;
+    const nonContentFields = Object.fromEntries(
+      Object.entries(request.fields).filter(([key]) => key !== "content")
+    );
+    const contentChunks = typeof contentValue === "string" ? splitMarkdownContent(contentValue) : [];
+    const hasNonContentFields = Object.keys(nonContentFields).length > 0;
+    const totalUnits = contentChunks.length + (hasNonContentFields ? 1 : 0);
+    let completedUnits = 0;
+
+    await options.onProgress?.({ completedUnits, totalUnits });
+
+    const translatedFields: TranslationFields = {};
+
+    if (hasNonContentFields) {
+      Object.assign(translatedFields, await this.translateFieldBatch(config, {
+        ...request,
+        fields: nonContentFields
+      }));
+      completedUnits += 1;
+      await options.onProgress?.({ completedUnits, totalUnits });
+    }
+
+    if (contentChunks.length > 0) {
+      const translatedChunks = await runWithConcurrency(
+        contentChunks.length,
+        config.chunkConcurrency,
+        async (index) => {
+          const translatedChunk = await this.translateContentChunk(config, request, contentChunks[index], index, contentChunks.length);
+          completedUnits += 1;
+          await options.onProgress?.({ completedUnits, totalUnits });
+
+          return translatedChunk;
+        }
+      );
+
+      translatedFields.content = translatedChunks.join("");
+    }
+
+    return translatedFields;
+  }
+
+  async translate(input: unknown, options: TranslationRunOptions = {}): Promise<TranslateResult> {
+    const config = await this.readAiProviderConfig();
+    const request = validateInput(input, config.temperature);
+
     return {
-      fields: parseTranslatedFields(content, request.fields),
+      fields: await this.translateFields(config, request, options),
       model: config.model,
       provider: config.provider,
       sourceLocale: request.sourceLocale,
@@ -412,50 +627,13 @@ export class TranslationService {
   async generateSeo(input: unknown): Promise<GenerateSeoResult> {
     const config = await this.readAiProviderConfig();
     const request = validateSeoInput(input);
-    const response = await fetch(`${config.baseUrl}/chat/completions`, {
-      body: JSON.stringify({
-        messages: [
-          {
-            content: "You are a precise SEO metadata writer for a bilingual CMS. Return JSON only.",
-            role: "system"
-          },
-          {
-            content: buildSeoPrompt(request),
-            role: "user"
-          }
-        ],
-        model: config.model,
-        response_format: { type: "json_object" },
-        temperature: config.temperature
-      }),
-      headers: {
-        ...buildAuthHeaders(config)
-      },
-      method: "POST"
+    const content = await this.requestJsonContent({
+      config,
+      logLabel: "SEO generation",
+      prompt: buildSeoPrompt(request),
+      systemMessage: "You are a precise SEO metadata writer for a bilingual CMS. Return JSON only.",
+      temperature: config.temperature
     });
-
-    if (!response.ok) {
-      logger.warn("seo provider request failed", {
-        provider: config.provider,
-        status: response.status
-      });
-      throw new AppError("AI SEO generation request failed.", {
-        code: errorCodes.internalServerError,
-        expose: true,
-        statusCode: 502
-      });
-    }
-
-    const payload = await response.json() as ChatCompletionResponse;
-    const content = payload.choices?.[0]?.message?.content;
-
-    if (!content) {
-      throw new AppError("AI SEO generation response did not include content.", {
-        code: errorCodes.internalServerError,
-        expose: true,
-        statusCode: 502
-      });
-    }
 
     return {
       fields: parseSeoFields(content),

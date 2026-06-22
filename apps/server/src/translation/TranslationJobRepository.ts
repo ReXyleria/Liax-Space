@@ -15,6 +15,8 @@ export type TranslationJob = {
   result: TranslationJobResult | null;
   errorMessage: string | null;
   attempts: number;
+  progressCompleted: number;
+  progressTotal: number;
   lockedAt: Date | null;
   startedAt: Date | null;
   completedAt: Date | null;
@@ -30,6 +32,8 @@ type TranslationJobRow = RowDataPacket & {
   result_json: unknown;
   error_message: string | null;
   attempts: number;
+  progress_completed: number;
+  progress_total: number;
   locked_at: Date | null;
   started_at: Date | null;
   completed_at: Date | null;
@@ -45,6 +49,8 @@ const translationJobColumns = `
   result_json,
   error_message,
   attempts,
+  progress_completed,
+  progress_total,
   locked_at,
   started_at,
   completed_at,
@@ -74,6 +80,8 @@ function mapTranslationJobRow(row: TranslationJobRow): TranslationJob {
     input: parseJsonValue(row.input_json),
     kind: row.kind,
     lockedAt: row.locked_at,
+    progressCompleted: Number(row.progress_completed),
+    progressTotal: Number(row.progress_total),
     result: parseJsonValue(row.result_json) as TranslationJobResult | null,
     startedAt: row.started_at,
     status: row.status,
@@ -152,6 +160,7 @@ export class TranslationJobRepository {
        SET status = 'succeeded',
            result_json = ?,
            error_message = NULL,
+           progress_completed = progress_total,
            locked_at = NULL,
            completed_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
@@ -173,6 +182,35 @@ export class TranslationJobRepository {
        WHERE id = ?`,
       [errorMessage, id]
     );
+  }
+
+  async updateProgress(id: number, progress: { completed: number; total: number }): Promise<void> {
+    const total = Math.max(1, Math.floor(progress.total));
+    const completed = Math.min(total, Math.max(0, Math.floor(progress.completed)));
+    const pool = getDatabasePool();
+
+    await pool.execute(
+      `UPDATE translation_jobs
+       SET progress_total = ?,
+           progress_completed = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [total, completed, id]
+    );
+  }
+
+  async listActiveJobs(limit = 20): Promise<TranslationJob[]> {
+    const normalizedLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
+    const pool = getDatabasePool();
+    const [rows] = await pool.query<TranslationJobRow[]>(
+      `SELECT ${translationJobColumns}
+       FROM translation_jobs
+       WHERE status IN ('queued', 'running')
+       ORDER BY created_at ASC, id ASC
+       LIMIT ${normalizedLimit}`
+    );
+
+    return rows.map(mapTranslationJobRow);
   }
 
   private async selectNextQueuedJobForUpdate(connection: PoolConnection): Promise<TranslationJobRow | null> {

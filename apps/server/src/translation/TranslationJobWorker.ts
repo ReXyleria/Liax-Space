@@ -1,10 +1,10 @@
 import { AppError } from "../common/AppError.js";
 import { logger } from "../common/logger.js";
 import { SettingsRepository } from "../settings/SettingsRepository.js";
-import { TranslationService } from "./TranslationService.js";
+import { TranslationService, type TranslationRunOptions } from "./TranslationService.js";
 import { TranslationJobRepository, type TranslationJob } from "./TranslationJobRepository.js";
 
-type TranslationJobStore = Pick<TranslationJobRepository, "claimNextQueuedJob" | "markFailed" | "markSucceeded">;
+type TranslationJobStore = Pick<TranslationJobRepository, "claimNextQueuedJob" | "markFailed" | "markSucceeded" | "updateProgress">;
 type TranslationExecutor = Pick<TranslationService, "generateSeo" | "translate">;
 type TranslationSettingsStore = Pick<SettingsRepository, "getSiteSettings">;
 
@@ -14,8 +14,8 @@ export type TranslationWorkerOptions = {
 };
 
 const defaultPollIntervalMs = 2_000;
-const defaultChunkConcurrency = 1;
-const maxChunkConcurrency = 16;
+const defaultTaskConcurrency = 1;
+const maxTaskConcurrency = 8;
 
 function errorMessageFromUnknown(error: unknown): string {
   if (error instanceof AppError || error instanceof Error) {
@@ -44,14 +44,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-function readChunkConcurrencyValue(value: unknown): number {
+function readTaskConcurrencyValue(value: unknown): number {
   const concurrency = typeof value === "string" ? Number(value.trim()) : value;
 
   if (typeof concurrency !== "number" || !Number.isInteger(concurrency)) {
-    return defaultChunkConcurrency;
+    return defaultTaskConcurrency;
   }
 
-  return Math.min(Math.max(concurrency, defaultChunkConcurrency), maxChunkConcurrency);
+  return Math.min(Math.max(concurrency, defaultTaskConcurrency), maxTaskConcurrency);
 }
 
 export class TranslationJobWorker {
@@ -72,8 +72,8 @@ export class TranslationJobWorker {
     return true;
   }
 
-  async processAvailable(concurrency = defaultChunkConcurrency): Promise<number> {
-    const workerCount = readChunkConcurrencyValue(concurrency);
+  async processAvailable(concurrency = defaultTaskConcurrency): Promise<number> {
+    const workerCount = readTaskConcurrencyValue(concurrency);
     const results = await Promise.all(Array.from({ length: workerCount }, () => this.processNext()));
 
     return results.filter(Boolean).length;
@@ -86,7 +86,7 @@ export class TranslationJobWorker {
       let processedCount = 0;
 
       try {
-        processedCount = await this.processAvailable(await this.readChunkConcurrency());
+        processedCount = await this.processAvailable(await this.readTaskConcurrency());
       } catch (error) {
         logger.error("translation worker poll failed", {
           errorMessage: errorMessageFromUnknown(error)
@@ -99,20 +99,27 @@ export class TranslationJobWorker {
     }
   }
 
-  private async readChunkConcurrency(): Promise<number> {
+  private async readTaskConcurrency(): Promise<number> {
     const settings = await this.settingsRepository.getSiteSettings();
 
-    return readChunkConcurrencyValue(settings["ai.chunkConcurrency"]);
+    return readTaskConcurrencyValue(settings["ai.taskConcurrency"]);
   }
 
   private async processJob(job: TranslationJob): Promise<void> {
     try {
       if (job.kind === "translate") {
-        const translation = await this.translationService.translate(job.input);
+        const translationOptions: TranslationRunOptions = {
+          onProgress: (progress) => this.repository.updateProgress(job.id, {
+            completed: progress.completedUnits,
+            total: progress.totalUnits
+          })
+        };
+        const translation = await this.translationService.translate(job.input, translationOptions);
         await this.repository.markSucceeded(job.id, { translation });
         return;
       }
 
+      await this.repository.updateProgress(job.id, { completed: 0, total: 1 });
       const seo = await this.translationService.generateSeo(job.input);
       await this.repository.markSucceeded(job.id, { seo });
     } catch (error) {

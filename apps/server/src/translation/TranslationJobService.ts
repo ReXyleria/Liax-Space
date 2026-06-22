@@ -9,13 +9,28 @@ export type PublicTranslationJob = {
   result: TranslationJob["result"];
   errorMessage: string | null;
   attempts: number;
+  progressCompleted: number;
+  progressPercent: number;
+  progressTotal: number;
   startedAt: Date | null;
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
 
+function readProgressPercent(job: TranslationJob): number {
+  const total = Math.max(1, job.progressTotal);
+  const completed = job.status === "succeeded" ? total : Math.min(total, Math.max(0, job.progressCompleted));
+
+  return Math.round((completed / total) * 100);
+}
+
 function toPublicTranslationJob(job: TranslationJob): PublicTranslationJob {
+  const progressTotal = Math.max(1, job.progressTotal);
+  const progressCompleted = job.status === "succeeded"
+    ? progressTotal
+    : Math.min(progressTotal, Math.max(0, job.progressCompleted));
+
   return {
     attempts: job.attempts,
     completedAt: job.completedAt,
@@ -23,6 +38,9 @@ function toPublicTranslationJob(job: TranslationJob): PublicTranslationJob {
     errorMessage: job.errorMessage,
     id: job.id,
     kind: job.kind,
+    progressCompleted,
+    progressPercent: readProgressPercent(job),
+    progressTotal,
     result: job.result,
     startedAt: job.startedAt,
     status: job.status,
@@ -52,5 +70,9 @@ export class TranslationJobService {
     }
 
     return toPublicTranslationJob(job);
+  }
+
+  async listActiveJobs(): Promise<PublicTranslationJob[]> {
+    return (await this.repository.listActiveJobs()).map(toPublicTranslationJob);
   }
 }

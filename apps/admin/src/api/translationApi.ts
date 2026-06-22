@@ -42,15 +42,18 @@ export type GenerateSeoResponse = {
   };
 };
 
-type TranslationJobStatus = "queued" | "running" | "succeeded" | "failed";
+export type TranslationJobStatus = "queued" | "running" | "succeeded" | "failed";
 
-type TranslationJob<TResult> = {
+export type TranslationJob<TResult = unknown> = {
   id: number;
   kind: "translate" | "seo";
   status: TranslationJobStatus;
   result: TResult | null;
   errorMessage: string | null;
   attempts: number;
+  progressCompleted: number;
+  progressPercent: number;
+  progressTotal: number;
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -61,7 +64,15 @@ type TranslationJobResponse<TResult> = {
   job: TranslationJob<TResult>;
 };
 
+export type TranslationJobsResponse = {
+  jobs: Array<TranslationJob>;
+};
+
 type MaybeJobResponse<TResult> = TResult | TranslationJobResponse<TResult>;
+
+export type TranslationRequestOptions<TResult> = {
+  onJobUpdate?: (job: TranslationJob<TResult>) => void;
+};
 
 const translationJobPollIntervalMs = 1_500;
 const translationJobTimeoutMs = 30 * 60 * 1_000;
@@ -74,11 +85,16 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function pollTranslationJob<TResult>(initialJob: TranslationJob<TResult>): Promise<TResult> {
+async function pollTranslationJob<TResult>(
+  initialJob: TranslationJob<TResult>,
+  options: TranslationRequestOptions<TResult> = {}
+): Promise<TResult> {
   const deadline = Date.now() + translationJobTimeoutMs;
   let job = initialJob;
 
   for (;;) {
+    options.onJobUpdate?.(job);
+
     if (job.status === "succeeded") {
       if (!job.result) {
         throw new ApiError({
@@ -112,15 +128,21 @@ async function pollTranslationJob<TResult>(initialJob: TranslationJob<TResult>):
   }
 }
 
-async function resolveMaybeJob<TResult>(response: MaybeJobResponse<TResult>): Promise<TResult> {
-  return isJobResponse(response) ? pollTranslationJob(response.job) : response;
+async function resolveMaybeJob<TResult>(
+  response: MaybeJobResponse<TResult>,
+  options: TranslationRequestOptions<TResult> = {}
+): Promise<TResult> {
+  return isJobResponse(response) ? pollTranslationJob(response.job, options) : response;
 }
 
 export const translationApi = {
-  async generateSeo(input: GenerateSeoRequest): Promise<GenerateSeoResponse> {
-    return resolveMaybeJob(await httpClient.post<MaybeJobResponse<GenerateSeoResponse>>("/admin/seo/generate", input));
+  async generateSeo(input: GenerateSeoRequest, options: TranslationRequestOptions<GenerateSeoResponse> = {}): Promise<GenerateSeoResponse> {
+    return resolveMaybeJob(await httpClient.post<MaybeJobResponse<GenerateSeoResponse>>("/admin/seo/generate", input), options);
   },
-  async translate(input: TranslateRequest): Promise<TranslateResponse> {
-    return resolveMaybeJob(await httpClient.post<MaybeJobResponse<TranslateResponse>>("/admin/translate", input));
+  async listActiveJobs(): Promise<TranslationJobsResponse> {
+    return httpClient.get<TranslationJobsResponse>("/admin/translation-jobs?status=active");
+  },
+  async translate(input: TranslateRequest, options: TranslationRequestOptions<TranslateResponse> = {}): Promise<TranslateResponse> {
+    return resolveMaybeJob(await httpClient.post<MaybeJobResponse<TranslateResponse>>("/admin/translate", input), options);
   }
 };
