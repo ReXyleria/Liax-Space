@@ -217,6 +217,11 @@ async function installArticleWorkflowMocks(page: Page, state: WorkflowState): Pr
       return;
     }
 
+    if (path === "/admin/translation-jobs" && method === "GET") {
+      await fulfillJson(route, { jobs: [] });
+      return;
+    }
+
     if (path === "/admin/attachments" && method === "GET") {
       await fulfillJson(route, { attachments: [] });
       return;
@@ -466,6 +471,33 @@ function createWorkflowState(): WorkflowState {
   };
 }
 
+async function placeCaretAtEditorBlockEdge(page: Page, tagName: string, text: string, edge: "start" | "end"): Promise<void> {
+  const placed = await page.locator(".admin-visual-editor__surface").evaluate(
+    (editor, input) => {
+      const target = Array.from(editor.querySelectorAll(input.tagName)).find((element) => (element.textContent ?? "").trim() === input.text);
+
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+
+      (editor as HTMLElement).focus();
+
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      range.collapse(input.edge === "start");
+
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      return true;
+    },
+    { edge, tagName, text }
+  );
+
+  expect(placed).toBe(true);
+}
+
 test("admin article workflow keeps body, metadata, saving, and publishing as separate user actions", async ({ page }) => {
   const state = createWorkflowState();
 
@@ -610,6 +642,65 @@ test("admin article workflow keeps body, metadata, saving, and publishing as sep
   await page.locator(".admin-modal").getByRole("link", { name: "Edit content" }).click();
   await expect(page.locator(".admin-visual-editor__surface h1")).toHaveText("Imported heading");
   await expect(page.locator(".admin-visual-editor__surface")).toContainText("Body from imported Markdown.");
+  expect(state.unknownRequests).toEqual([]);
+});
+
+test("visual editor deletes fenced code blocks at text boundaries without absorbing text", async ({ page }) => {
+  const state = createWorkflowState();
+  const markdownWithCode = ["Before", "", "```ts", "const value = 1;", "```", "", "After"].join("\n");
+  const version = createVersion({ mdContent: markdownWithCode }, state);
+  const translation = createTranslation({
+    locale: "zh-CN",
+    seoDescription: "Code boundary regression",
+    seoTitle: "Code boundary article",
+    slug: "code-boundary-article",
+    title: "Code boundary article"
+  });
+
+  state.versions.unshift(version);
+  state.translations = [{ ...translation, currentVersionId: version.id }];
+
+  await loginAsAdmin(page);
+  await installArticleWorkflowMocks(page, state);
+
+  await page.goto("/#articles/42/zh-CN/content");
+  await expect(page.locator("main").getByRole("heading", { name: "Content editor #42 - zh-CN" })).toBeVisible();
+
+  const editor = page.locator(".admin-visual-editor__surface");
+  await expect(editor.locator("pre")).toHaveCount(1);
+  await expect(editor.locator("pre")).toContainText("const value = 1;");
+  await expect(editor).toContainText("After");
+
+  await placeCaretAtEditorBlockEdge(page, "p", "After", "start");
+  await page.keyboard.press("Backspace");
+  await expect(editor.locator("pre")).toHaveCount(0);
+  await expect(editor).toContainText("Before");
+  await expect(editor).toContainText("After");
+
+  await page.getByRole("button", { name: "Source" }).click();
+  const sourceEditor = page.locator(".admin-markdown-panel textarea");
+  await expect(sourceEditor).toHaveValue("Before\n\nAfter");
+
+  await sourceEditor.fill(markdownWithCode);
+  await page.getByRole("button", { name: "Visual" }).click();
+  await expect(editor.locator("pre")).toHaveCount(1);
+  await expect(editor.locator("pre")).toContainText("const value = 1;");
+
+  await placeCaretAtEditorBlockEdge(page, "p", "Before", "end");
+  await page.keyboard.press("Delete");
+  await expect(editor.locator("pre")).toHaveCount(0);
+  await expect(editor).toContainText("Before");
+  await expect(editor).toContainText("After");
+
+  state.saveRequests = [];
+  await page.keyboard.press("Control+S");
+  await expect(page.getByText("Content saved.")).toBeVisible();
+  expect(state.saveRequests).toEqual([
+    {
+      baseVersionId: version.id,
+      mdContent: "Before\n\nAfter"
+    }
+  ]);
   expect(state.unknownRequests).toEqual([]);
 });
 

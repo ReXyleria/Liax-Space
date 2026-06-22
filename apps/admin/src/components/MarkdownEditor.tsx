@@ -1334,21 +1334,25 @@ export function MarkdownEditor({
     syncMarkdownFromEditor();
   }
 
-  function placeCaretInElement(element: HTMLElement): void {
+  function placeCaretAtElementEdge(element: HTMLElement, edge: "start" | "end"): void {
     const selection = window.getSelection();
     const range = document.createRange();
 
     editorRef.current?.focus();
 
     if (element.childNodes.length === 1 && element.firstChild instanceof HTMLBRElement) {
-      range.setStart(element, 0);
+      range.setStart(element, edge === "start" ? 0 : element.childNodes.length);
     } else {
       range.selectNodeContents(element);
-      range.collapse(false);
+      range.collapse(edge === "start");
     }
 
     selection?.removeAllRanges();
     selection?.addRange(range);
+  }
+
+  function placeCaretInElement(element: HTMLElement): void {
+    placeCaretAtElementEdge(element, "end");
   }
 
   function ensureEmptyBlockPlaceholder(element: HTMLElement): void {
@@ -1667,7 +1671,91 @@ export function MarkdownEditor({
     return range.toString().length === 0;
   }
 
-  function shouldPreventCodeBoundaryMerge(event: KeyboardEvent<HTMLDivElement>): boolean {
+  function isCodeBlockElement(element: Element | null): element is HTMLPreElement {
+    return element instanceof HTMLPreElement || element?.tagName.toLowerCase() === "pre";
+  }
+
+  function editableSpacerElement(element: Element | null): HTMLElement | null {
+    return element instanceof HTMLElement && isEmptyEditableBlock(element) ? element : null;
+  }
+
+  function findPreviousCodeBoundary(block: HTMLElement): { codeBlock: HTMLPreElement; spacers: HTMLElement[] } | null {
+    const previousBlock = block.previousElementSibling;
+
+    if (isCodeBlockElement(previousBlock)) {
+      return { codeBlock: previousBlock, spacers: [] };
+    }
+
+    const spacer = editableSpacerElement(previousBlock);
+    const codeBlock = spacer?.previousElementSibling ?? null;
+
+    return spacer && isCodeBlockElement(codeBlock) ? { codeBlock, spacers: [spacer] } : null;
+  }
+
+  function findNextCodeBoundary(block: HTMLElement): { codeBlock: HTMLPreElement; spacers: HTMLElement[] } | null {
+    const nextBlock = block.nextElementSibling;
+
+    if (isCodeBlockElement(nextBlock)) {
+      const trailingSpacer = editableSpacerElement(nextBlock.nextElementSibling);
+
+      return {
+        codeBlock: nextBlock,
+        spacers: trailingSpacer ? [trailingSpacer] : []
+      };
+    }
+
+    const leadingSpacer = editableSpacerElement(nextBlock);
+    const codeBlock = leadingSpacer?.nextElementSibling ?? null;
+
+    if (!leadingSpacer || !isCodeBlockElement(codeBlock)) {
+      return null;
+    }
+
+    const trailingSpacer = editableSpacerElement(codeBlock.nextElementSibling);
+
+    return {
+      codeBlock,
+      spacers: trailingSpacer ? [leadingSpacer, trailingSpacer] : [leadingSpacer]
+    };
+  }
+
+  function removeCodeBoundaryBlock(
+    boundary: { codeBlock: HTMLPreElement; spacers: HTMLElement[] },
+    caretTarget: HTMLElement,
+    caretEdge: "start" | "end"
+  ): void {
+    const editor = editorRef.current;
+
+    if (!editor || !editor.contains(boundary.codeBlock)) {
+      return;
+    }
+
+    boundary.codeBlock.remove();
+
+    boundary.spacers.forEach((spacer) => {
+      if (editor.contains(spacer) && isEmptyEditableBlock(spacer)) {
+        spacer.remove();
+      }
+    });
+
+    if (editor.childElementCount === 0) {
+      focusBlankParagraphAtEnd();
+    } else if (editor.contains(caretTarget)) {
+      placeCaretAtElementEdge(caretTarget, caretEdge);
+    } else {
+      focusBlankParagraphAtEnd();
+    }
+
+    syncMarkdownFromEditor();
+    updateContextFromSelection();
+    updateSlashMenuFromSelection();
+  }
+
+  function handleCodeBoundaryDeletion(event: KeyboardEvent<HTMLDivElement>): boolean {
+    if (event.key !== "Backspace" && event.key !== "Delete") {
+      return false;
+    }
+
     const selection = window.getSelection();
 
     if (!selection || !selection.isCollapsed || selection.rangeCount === 0) {
@@ -1682,16 +1770,50 @@ export function MarkdownEditor({
     }
 
     if (event.key === "Backspace") {
-      const block = closestEditableBlock(anchorNode);
-      const previousBlock = block?.previousElementSibling;
+      const pre = anchorElement.closest("pre");
 
-      return Boolean(block && previousBlock?.tagName.toLowerCase() === "pre" && isSelectionAtStartOfElement(block));
+      if (isCodeBlockElement(pre) && isSelectionAtStartOfElement(pre)) {
+        const fallbackTarget = pre.previousElementSibling instanceof HTMLElement ? pre.previousElementSibling : null;
+        const trailingSpacer = editableSpacerElement(pre.nextElementSibling);
+        const nextTarget = trailingSpacer?.nextElementSibling instanceof HTMLElement
+          ? trailingSpacer.nextElementSibling
+          : pre.nextElementSibling instanceof HTMLElement
+            ? pre.nextElementSibling
+            : null;
+
+        event.preventDefault();
+        removeCodeBoundaryBlock({ codeBlock: pre, spacers: trailingSpacer ? [trailingSpacer] : [] }, fallbackTarget ?? nextTarget ?? pre, fallbackTarget ? "end" : "start");
+        return true;
+      }
+
+      const block = closestEditableBlock(anchorNode);
+      const boundary = block && isSelectionAtStartOfElement(block) ? findPreviousCodeBoundary(block) : null;
+
+      if (block && boundary) {
+        event.preventDefault();
+        removeCodeBoundaryBlock(boundary, block, "start");
+        return true;
+      }
+
+      return false;
     }
 
     if (event.key === "Delete") {
       const pre = anchorElement.closest("pre");
 
-      return Boolean(pre instanceof HTMLElement && pre.nextElementSibling && isSelectionAtEndOfElement(pre));
+      if (isCodeBlockElement(pre) && pre.nextElementSibling && isSelectionAtEndOfElement(pre)) {
+        event.preventDefault();
+        return true;
+      }
+
+      const block = closestEditableBlock(anchorNode);
+      const boundary = block && isSelectionAtEndOfElement(block) ? findNextCodeBoundary(block) : null;
+
+      if (block && boundary) {
+        event.preventDefault();
+        removeCodeBoundaryBlock(boundary, block, "end");
+        return true;
+      }
     }
 
     return false;
@@ -2028,8 +2150,7 @@ export function MarkdownEditor({
       return;
     }
 
-    if (shouldPreventCodeBoundaryMerge(event)) {
-      event.preventDefault();
+    if (handleCodeBoundaryDeletion(event)) {
       return;
     }
 
