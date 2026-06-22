@@ -686,19 +686,60 @@ test("visual editor deletes fenced code blocks at text boundaries without absorb
   await expect(editor.locator("pre")).toHaveCount(1);
   await expect(editor.locator("pre")).toContainText("const value = 1;");
 
+  await placeCaretAtEditorBlockEdge(page, "pre", "const value = 1;", "start");
+  await page.keyboard.press("Backspace");
+  await expect(editor.locator("pre")).toHaveCount(0);
+  await expect(editor).toContainText("Before");
+  await expect(editor).toContainText("After");
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("Before\n\nAfter");
+
+  await sourceEditor.fill(markdownWithCode);
+  await page.getByRole("button", { name: "Visual" }).click();
+  await expect(editor.locator("pre")).toHaveCount(1);
+  await expect(editor.locator("pre")).toContainText("const value = 1;");
+
+  await placeCaretAtEditorBlockEdge(page, "pre", "const value = 1;", "end");
+  await page.keyboard.press("Delete");
+  await expect(editor.locator("pre")).toHaveCount(1);
+  await expect(editor.locator("pre")).toHaveText("const value = 1;");
+  await expect(editor.locator("p").filter({ hasText: "After" })).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue(markdownWithCode);
+
+  await sourceEditor.fill(markdownWithCode);
+  await page.getByRole("button", { name: "Visual" }).click();
+  await expect(editor.locator("pre")).toHaveCount(1);
+  await expect(editor.locator("pre")).toContainText("const value = 1;");
+
   await placeCaretAtEditorBlockEdge(page, "p", "Before", "end");
   await page.keyboard.press("Delete");
   await expect(editor.locator("pre")).toHaveCount(0);
   await expect(editor).toContainText("Before");
   await expect(editor).toContainText("After");
 
+  await page.getByRole("button", { name: "Source" }).click();
+  await sourceEditor.fill("");
+  await page.getByRole("button", { name: "Visual" }).click();
+  await editor.click();
+  await page.keyboard.type("Intro");
+  await page.getByRole("button", { name: "Code", exact: true }).click();
+  await expect(editor.locator("pre")).toHaveCount(1);
+  await expect(editor.locator("pre")).toHaveText("code");
+  await page.keyboard.type("Tail");
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("Intro\n\n```\ncode\n```\n\nTail");
+
   state.saveRequests = [];
-  await page.keyboard.press("Control+S");
+  await page.getByRole("button", { name: "Save content" }).click();
   await expect(page.getByText("Content saved.")).toBeVisible();
   expect(state.saveRequests).toEqual([
     {
       baseVersionId: version.id,
-      mdContent: "Before\n\nAfter"
+      mdContent: "Intro\n\n```\ncode\n```\n\nTail"
     }
   ]);
   expect(state.unknownRequests).toEqual([]);

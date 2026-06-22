@@ -1355,6 +1355,12 @@ export function MarkdownEditor({
     placeCaretAtElementEdge(element, "end");
   }
 
+  function createTrailingEmptyParagraph(): HTMLParagraphElement {
+    const paragraph = document.createElement("p");
+    paragraph.append(document.createElement("br"));
+    return paragraph;
+  }
+
   function ensureEmptyBlockPlaceholder(element: HTMLElement): void {
     if ((element.textContent ?? "").replace(/\u00a0/g, " ").trim().length > 0) {
       return;
@@ -1372,6 +1378,44 @@ export function MarkdownEditor({
     }
 
     return block;
+  }
+
+  function closestVisualBlock(node: Node | null): HTMLElement | null {
+    const element = node instanceof Element ? node : node?.parentElement ?? null;
+    const block = element?.closest("p, h1, h2, h3, h4, h5, h6, blockquote, li, pre, div[data-md-block='table-scroll']");
+
+    if (!(block instanceof HTMLElement) || block === editorRef.current || !editorRef.current?.contains(block)) {
+      return null;
+    }
+
+    return block;
+  }
+
+  function insertVisualBlock(block: HTMLElement, trailingBlock: HTMLElement = createTrailingEmptyParagraph()): void {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+
+    if (editorControlsDisabled || !editor) {
+      return;
+    }
+
+    editor.focus();
+
+    const anchorNode = selection && selection.rangeCount > 0 && editor.contains(selection.anchorNode)
+      ? selection.anchorNode
+      : null;
+    const targetBlock = anchorNode ? closestVisualBlock(anchorNode) : editor.lastElementChild instanceof HTMLElement ? editor.lastElementChild : null;
+
+    if (targetBlock && isEmptyEditableBlock(targetBlock)) {
+      targetBlock.replaceWith(block, trailingBlock);
+    } else if (targetBlock) {
+      targetBlock.after(block, trailingBlock);
+    } else {
+      editor.append(block, trailingBlock);
+    }
+
+    placeCaretAtElementEdge(trailingBlock, "start");
+    syncMarkdownFromEditor();
   }
 
   function convertCurrentBlock(tagName: "h1" | "h2" | "h3" | "h4" | "p"): void {
@@ -2023,7 +2067,12 @@ export function MarkdownEditor({
       return;
     }
 
-    insertHtml("<pre><code>code</code></pre><p><br></p>");
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+    code.textContent = "code";
+    pre.append(code);
+
+    insertVisualBlock(pre);
   }
 
   function insertInlineCode(): void {
