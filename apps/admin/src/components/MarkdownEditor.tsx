@@ -1763,6 +1763,47 @@ export function MarkdownEditor({
     };
   }
 
+  function withCurrentSpacer(
+    boundary: { codeBlock: HTMLPreElement; spacers: HTMLElement[] },
+    block: HTMLElement
+  ): { codeBlock: HTMLPreElement; spacers: HTMLElement[] } {
+    if (!isEmptyEditableBlock(block)) {
+      return boundary;
+    }
+
+    return {
+      codeBlock: boundary.codeBlock,
+      spacers: Array.from(new Set([...boundary.spacers, block]))
+    };
+  }
+
+  function nearestSurvivingBoundaryTarget(
+    block: HTMLElement,
+    boundary: { codeBlock: HTMLPreElement; spacers: HTMLElement[] },
+    direction: "previous" | "next"
+  ): HTMLElement {
+    const removedElements = new Set<Element>([boundary.codeBlock, ...boundary.spacers]);
+    const firstDirection = direction === "next" ? "nextElementSibling" : "previousElementSibling";
+    const secondDirection = direction === "next" ? "previousElementSibling" : "nextElementSibling";
+    let candidate: Element | null = block[firstDirection];
+
+    while (candidate && removedElements.has(candidate)) {
+      candidate = candidate[firstDirection];
+    }
+
+    if (candidate instanceof HTMLElement) {
+      return candidate;
+    }
+
+    candidate = block[secondDirection];
+
+    while (candidate && removedElements.has(candidate)) {
+      candidate = candidate[secondDirection];
+    }
+
+    return candidate instanceof HTMLElement ? candidate : block;
+  }
+
   function removeCodeBoundaryBlock(
     boundary: { codeBlock: HTMLPreElement; spacers: HTMLElement[] },
     caretTarget: HTMLElement,
@@ -1834,8 +1875,11 @@ export function MarkdownEditor({
       const boundary = block && isSelectionAtStartOfElement(block) ? findPreviousCodeBoundary(block) : null;
 
       if (block && boundary) {
+        const nextBoundary = withCurrentSpacer(boundary, block);
+        const caretTarget = isEmptyEditableBlock(block) ? nearestSurvivingBoundaryTarget(block, nextBoundary, "next") : block;
+
         event.preventDefault();
-        removeCodeBoundaryBlock(boundary, block, "start");
+        removeCodeBoundaryBlock(nextBoundary, caretTarget, "start");
         return true;
       }
 
@@ -1854,8 +1898,11 @@ export function MarkdownEditor({
       const boundary = block && isSelectionAtEndOfElement(block) ? findNextCodeBoundary(block) : null;
 
       if (block && boundary) {
+        const nextBoundary = withCurrentSpacer(boundary, block);
+        const caretTarget = isEmptyEditableBlock(block) ? nearestSurvivingBoundaryTarget(block, nextBoundary, "previous") : block;
+
         event.preventDefault();
-        removeCodeBoundaryBlock(boundary, block, "end");
+        removeCodeBoundaryBlock(nextBoundary, caretTarget, "end");
         return true;
       }
     }

@@ -498,6 +498,35 @@ async function placeCaretAtEditorBlockEdge(page: Page, tagName: string, text: st
   expect(placed).toBe(true);
 }
 
+async function placeCaretAtEmptyEditorParagraph(page: Page, index: number, edge: "start" | "end"): Promise<void> {
+  const placed = await page.locator(".admin-visual-editor__surface").evaluate(
+    (editor, input) => {
+      const target = Array.from(editor.querySelectorAll("p"))
+        .filter((element) => (element.textContent ?? "").replace(/\u00a0/g, " ").trim().length === 0)
+        .at(input.index);
+
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+
+      (editor as HTMLElement).focus();
+
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      range.collapse(input.edge === "start");
+
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      return true;
+    },
+    { edge, index }
+  );
+
+  expect(placed).toBe(true);
+}
+
 test("admin article workflow keeps body, metadata, saving, and publishing as separate user actions", async ({ page }) => {
   const state = createWorkflowState();
 
@@ -681,6 +710,26 @@ test("visual editor deletes fenced code blocks at text boundaries without absorb
   const sourceEditor = page.locator(".admin-markdown-panel textarea");
   await expect(sourceEditor).toHaveValue("Before\n\nAfter");
 
+  await sourceEditor.fill(["Before", "", "```ts", "const value = 1;", "```", "", "<br>", "", "After"].join("\n"));
+  await page.getByRole("button", { name: "Visual" }).click();
+  await expect(editor.locator("pre")).toHaveCount(1);
+  await placeCaretAtEmptyEditorParagraph(page, 0, "start");
+  await page.keyboard.press("Backspace");
+  await expect(editor.locator("pre")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("Before\n\nAfter");
+
+  await sourceEditor.fill(["Before", "", "<br>", "", "```ts", "const value = 1;", "```", "", "After"].join("\n"));
+  await page.getByRole("button", { name: "Visual" }).click();
+  await expect(editor.locator("pre")).toHaveCount(1);
+  await placeCaretAtEmptyEditorParagraph(page, 0, "start");
+  await page.keyboard.press("Delete");
+  await expect(editor.locator("pre")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("Before\n\nAfter");
+
   await sourceEditor.fill(markdownWithCode);
   await page.getByRole("button", { name: "Visual" }).click();
   await expect(editor.locator("pre")).toHaveCount(1);
@@ -733,13 +782,25 @@ test("visual editor deletes fenced code blocks at text boundaries without absorb
   await page.getByRole("button", { name: "Source" }).click();
   await expect(sourceEditor).toHaveValue("Intro\n\n```\ncode\n```\n\nTail");
 
+  await sourceEditor.fill("");
+  await page.getByRole("button", { name: "Visual" }).click();
+  await editor.click();
+  await page.keyboard.type("/code");
+  await page.keyboard.press("Enter");
+  await expect(editor.locator("pre")).toHaveCount(1);
+  await expect(editor.locator("pre")).toHaveText("code");
+  await page.keyboard.type("Slash tail");
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("```\ncode\n```\n\nSlash tail");
+
   state.saveRequests = [];
   await page.getByRole("button", { name: "Save content" }).click();
   await expect(page.getByText("Content saved.")).toBeVisible();
   expect(state.saveRequests).toEqual([
     {
       baseVersionId: version.id,
-      mdContent: "Intro\n\n```\ncode\n```\n\nTail"
+      mdContent: "```\ncode\n```\n\nSlash tail"
     }
   ]);
   expect(state.unknownRequests).toEqual([]);
