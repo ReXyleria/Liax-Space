@@ -44,6 +44,14 @@ export type GenerateSeoResponse = {
 
 export type TranslationJobStatus = "queued" | "running" | "succeeded" | "failed";
 
+export type TranslationJobProgressItem = {
+  id: string;
+  index: number;
+  progressPercent: number;
+  status: TranslationJobStatus;
+  total: number;
+};
+
 export type TranslationJob<TResult = unknown> = {
   id: number;
   kind: "translate" | "seo";
@@ -52,6 +60,7 @@ export type TranslationJob<TResult = unknown> = {
   errorMessage: string | null;
   attempts: number;
   progressCompleted: number;
+  progressItems: TranslationJobProgressItem[];
   progressPercent: number;
   progressTotal: number;
   startedAt: string | null;

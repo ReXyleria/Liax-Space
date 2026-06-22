@@ -119,6 +119,13 @@ function translationPublishState(translation: ArticleTranslation | null): "publi
   return translation?.publishedVersionId != null ? "published" : "unpublished";
 }
 
+function formatLocalized(template: string, values: Record<string, string | number>): string {
+  return Object.entries(values).reduce(
+    (currentText, [key, value]) => currentText.replace(`{${key}}`, String(value)),
+    template
+  );
+}
+
 export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEditPageProps): ReactElement {
   const t = useT();
   const [activeLocale, setActiveLocale] = useState<ArticleLocale>("zh-CN");
@@ -137,6 +144,10 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
   const activeTranslation = existingTranslations[activeLocale];
   const sourceLocale = oppositeLocale(activeLocale);
   const pageTitle = useMemo(() => `${t("article.metadataTitle")} #${articleId}`, [articleId, t]);
+  const translateDirectionLabel = useMemo(
+    () => formatLocalized(t("article.translateDirection"), { sourceLocale, targetLocale: activeLocale }),
+    [activeLocale, sourceLocale, t]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -351,8 +362,8 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
                   type="button"
                 >
                   {isTranslating
-                    ? t("article.translating")
-                    : `${t("article.translateFrom")} ${sourceLocale}`}
+                    ? formatLocalized(t("article.translatingDirection"), { sourceLocale, targetLocale: activeLocale })
+                    : translateDirectionLabel}
                 </button>
                 {typeof translationProgress === "number" ? (
                   <div className="admin-translation-progress">

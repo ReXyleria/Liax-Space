@@ -12,6 +12,7 @@ import "../jobs/CleanupUnusedAttachmentsJob.test.js";
 import "../jobs/LegacyPublicDataSyncJob.test.js";
 import "../settings/SiteSettingsService.test.js";
 import "../translation/TranslationService.test.js";
+import "../translation/TranslationJobService.test.js";
 import "../translation/TranslationJobWorker.test.js";
 import "../permissions/PermissionService.test.js";
 import "../users/UserService.test.js";

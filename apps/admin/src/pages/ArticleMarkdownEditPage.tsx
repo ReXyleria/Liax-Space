@@ -44,6 +44,13 @@ function formatBytes(value: number): string {
   return `${value} B`;
 }
 
+function formatLocalized(template: string, values: Record<string, string | number>): string {
+  return Object.entries(values).reduce(
+    (currentText, [key, value]) => currentText.replace(`{${key}}`, String(value)),
+    template
+  );
+}
+
 export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEditPageProps): ReactElement {
   const t = useT();
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -62,6 +69,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const [importProgress, setImportProgress] = useState<number | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationProgress, setTranslationProgress] = useState<number | null>(null);
+  const [translationStatusText, setTranslationStatusText] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const lastSavedContentRef = useRef("");
@@ -71,6 +79,10 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const suppressNextAutoSaveRef = useRef(false);
   const sourceLocale = oppositeLocale(locale);
   const pageTitle = useMemo(() => `${t("article.markdownTitle")} #${articleId} - ${locale}`, [articleId, locale, t]);
+  const translateDirectionLabel = useMemo(
+    () => formatLocalized(t("article.translateDirection"), { sourceLocale, targetLocale: locale }),
+    [locale, sourceLocale, t]
+  );
   const headings = useMemo(() => extractHeadingsFromMarkdown(mdContent), [mdContent]);
 
   function setHydratingContent(nextValue: boolean): void {
@@ -92,6 +104,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       setSelectedImportFile(null);
       setImportProgress(null);
       setTranslationProgress(null);
+      setTranslationStatusText(null);
       setIsImportingMarkdown(false);
       setMessage(null);
       setErrorMessage(null);
@@ -359,6 +372,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   async function handleTranslateContent(): Promise<void> {
     setIsTranslating(true);
     setTranslationProgress(0);
+    setTranslationStatusText(formatLocalized(t("article.translateLoadingSource"), { sourceLocale }));
     setMessage(null);
     setErrorMessage(null);
 
@@ -366,7 +380,15 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       const versionsResponse = await versionApi.listVersionSummaries(articleId, sourceLocale);
       const latestSourceVersion = versionsResponse.versions[0] ?? null;
       const latestSourceMarkdown = latestSourceVersion
-        ? await versionApi.getVersionMarkdown(articleId, sourceLocale, latestSourceVersion.id)
+        ? await versionApi.getVersionMarkdown(articleId, sourceLocale, latestSourceVersion.id, {
+            onProgress: ({ loadedLength, totalLength }) => {
+              const progress = totalLength > 0
+                ? Math.min(20, Math.round((loadedLength / totalLength) * 20))
+                : 0;
+
+              setTranslationProgress(progress);
+            }
+          })
         : "";
 
       if (!latestSourceVersion || !latestSourceMarkdown.trim()) {
@@ -374,6 +396,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
         return;
       }
 
+      setTranslationStatusText(formatLocalized(t("article.translatingDirection"), { sourceLocale, targetLocale: locale }));
       const response = await translationApi.translate({
         fields: {
           content: latestSourceMarkdown
@@ -386,9 +409,17 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
         }
       });
 
-      suppressNextAutoSaveRef.current = true;
-      mdContentRef.current = response.translation.fields.content ?? "";
-      setMdContent(response.translation.fields.content ?? "");
+      const translatedContent = response.translation.fields.content ?? "";
+      const nextAttachmentPreviewUrls = await loadAttachmentPreviewUrlsForMarkdown(
+        translatedContent,
+        attachmentApi.listAttachments
+      ).catch(() => ({}));
+
+      suppressNextAutoSaveRef.current = false;
+      setForcePlainEditor(translatedContent.length >= largeMarkdownDocumentThreshold);
+      setAttachmentPreviewUrls(nextAttachmentPreviewUrls);
+      mdContentRef.current = translatedContent;
+      setMdContent(translatedContent);
       bumpEditorDocumentRevision();
       setMessage(t("article.translateReady"));
     } catch (error) {
@@ -396,6 +427,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
     } finally {
       setIsTranslating(false);
       setTranslationProgress(null);
+      setTranslationStatusText(null);
     }
   }
 
@@ -513,7 +545,9 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                     onClick={() => void handleTranslateContent()}
                     type="button"
                   >
-                    {isTranslating ? t("article.translating") : `${t("article.translateFrom")} ${sourceLocale}`}
+                    {isTranslating
+                      ? formatLocalized(t("article.translatingDirection"), { sourceLocale, targetLocale: locale })
+                      : translateDirectionLabel}
                   </button>
                   <button
                     className="liax-button liax-button--primary"
@@ -525,7 +559,11 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                   </button>
                   {typeof translationProgress === "number" ? (
                     <div className="admin-translation-progress">
-                      <small>{t("article.translateProgress").replace("{progress}", String(translationProgress))}</small>
+                      <small>
+                        {translationStatusText
+                          ? `${translationStatusText} · ${t("article.translateProgress").replace("{progress}", String(translationProgress))}`
+                          : t("article.translateProgress").replace("{progress}", String(translationProgress))}
+                      </small>
                       <div
                         aria-label={t("article.translateProgress").replace("{progress}", String(translationProgress))}
                         aria-valuemax={100}
