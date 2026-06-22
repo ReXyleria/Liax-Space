@@ -47,6 +47,12 @@ type LegacySiteSettingRow = RowDataPacket & {
   value_json: unknown;
 };
 
+type LegacySettingRow = RowDataPacket & {
+  key: string;
+  type: string | null;
+  value: unknown;
+};
+
 type TableExistsRow = RowDataPacket & {
   count: number;
 };
@@ -106,6 +112,21 @@ const portableSiteSettingKeys = [
   "smtp.user"
 ] as const;
 
+const legacySettingKeyMap: Record<string, (typeof portableSiteSettingKeys)[number]> = {
+  "smtp.encryption": "smtp.encryption",
+  "smtp.from": "smtp.from",
+  "smtp.fromName": "smtp.fromName",
+  "smtp.host": "smtp.host",
+  "smtp.notificationsEnabled": "smtp.notificationsEnabled",
+  "smtp.pass": "smtp.pass",
+  "smtp.port": "smtp.port",
+  "smtp.user": "smtp.user",
+  "translation.apiKey": "ai.apiKey",
+  "translation.baseUrl": "ai.baseUrl",
+  "translation.model": "ai.model",
+  "translation.provider": "ai.provider"
+};
+
 function parseJsonValue(value: unknown): unknown {
   if (typeof value !== "string") {
     return value;
@@ -116,6 +137,87 @@ function parseJsonValue(value: unknown): unknown {
   } catch {
     return value;
   }
+}
+
+function readBooleanValue(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+  }
+
+  return false;
+}
+
+function readNumberValue(value: unknown): unknown {
+  const numberValue = typeof value === "string" ? Number(value.trim()) : value;
+  return typeof numberValue === "number" && Number.isFinite(numberValue) ? numberValue : value;
+}
+
+function normalizeLegacyProvider(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "openai" || normalized === "ollama" || normalized === "deepseek") {
+    return normalized;
+  }
+
+  return normalized;
+}
+
+function normalizeLegacySmtpEncryption(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/[\s/-]+/gu, "_");
+
+  if (normalized === "ssl_tls" || normalized === "ssltls") {
+    return "ssl_tls";
+  }
+
+  if (normalized === "starttls" || normalized === "start_tls" || normalized === "tls") {
+    return "starttls";
+  }
+
+  if (normalized === "none" || normalized === "off" || normalized === "false") {
+    return "none";
+  }
+
+  return normalized;
+}
+
+function normalizeLegacySettingValue(key: string, type: string | null, value: unknown): unknown {
+  const parsedValue = parseJsonValue(value);
+  const normalizedType = typeof type === "string" ? type.trim().toUpperCase() : "";
+
+  if (key === "ai.provider") {
+    return normalizeLegacyProvider(parsedValue);
+  }
+
+  if (key === "smtp.encryption") {
+    return normalizeLegacySmtpEncryption(parsedValue);
+  }
+
+  if (key === "smtp.notificationsEnabled" || normalizedType === "BOOLEAN") {
+    return readBooleanValue(parsedValue);
+  }
+
+  if (key === "smtp.port" || key === "ai.translationTemperature" || normalizedType === "NUMBER") {
+    return readNumberValue(parsedValue);
+  }
+
+  return typeof parsedValue === "string" ? parsedValue.trim() : parsedValue;
 }
 
 export function normalizeLegacyImages(value: unknown): string[] {
@@ -452,14 +554,33 @@ export class LegacyPublicDataSyncJob {
   }
 
   private async listLegacyPortableSiteSettings(): Promise<LegacySiteSettingRow[]> {
+    const settings = new Map<string, unknown>();
+    const siteSettings = await this.listLegacySiteSettingsTablePortableSettings();
+    const settingRows = await this.listLegacySettingTablePortableSettings();
+
+    for (const setting of [...siteSettings, ...settingRows]) {
+      settings.set(setting.key, setting.value_json);
+    }
+
+    return [...settings.entries()]
+      .map(([key, value_json]) => ({ key, value_json }) as LegacySiteSettingRow)
+      .sort((left, right) => left.key.localeCompare(right.key));
+  }
+
+  private async legacyTableExists(tableName: string): Promise<boolean> {
     const [tableRows] = await this.legacyDatabase.query<TableExistsRow[]>(
       `SELECT COUNT(*) AS count
        FROM INFORMATION_SCHEMA.TABLES
        WHERE TABLE_SCHEMA = DATABASE()
-         AND TABLE_NAME = 'site_settings'`
+         AND TABLE_NAME = ?`,
+      [tableName]
     );
 
-    if (Number(tableRows[0]?.count ?? 0) === 0) {
+    return Number(tableRows[0]?.count ?? 0) > 0;
+  }
+
+  private async listLegacySiteSettingsTablePortableSettings(): Promise<LegacySiteSettingRow[]> {
+    if (!(await this.legacyTableExists("site_settings"))) {
       return [];
     }
 
@@ -473,5 +594,29 @@ export class LegacyPublicDataSyncJob {
     );
 
     return rows;
+  }
+
+  private async listLegacySettingTablePortableSettings(): Promise<LegacySiteSettingRow[]> {
+    if (!(await this.legacyTableExists("Setting"))) {
+      return [];
+    }
+
+    const legacySettingKeys = Object.keys(legacySettingKeyMap);
+    const placeholders = legacySettingKeys.map(() => "?").join(", ");
+    const [rows] = await this.legacyDatabase.query<LegacySettingRow[]>(
+      `SELECT \`key\`, \`type\`, \`value\`
+       FROM Setting
+       WHERE \`key\` IN (${placeholders})
+       ORDER BY \`key\` ASC`,
+      legacySettingKeys
+    );
+
+    return rows.map((row) => {
+      const targetKey = legacySettingKeyMap[row.key];
+      return {
+        key: targetKey,
+        value_json: normalizeLegacySettingValue(targetKey, row.type, row.value)
+      } as LegacySiteSettingRow;
+    });
   }
 }

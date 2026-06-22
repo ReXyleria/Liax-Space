@@ -11,6 +11,7 @@ import "../dashboard/DashboardService.test.js";
 import "../jobs/CleanupUnusedAttachmentsJob.test.js";
 import "../jobs/LegacyPublicDataSyncJob.test.js";
 import "../settings/SiteSettingsService.test.js";
+import "../translation/TranslationJobWorker.test.js";
 import "../permissions/PermissionService.test.js";
 import "../users/UserService.test.js";
 import "../tags/TagService.test.js";

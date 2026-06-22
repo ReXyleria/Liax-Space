@@ -5,12 +5,14 @@ import { LegacyPublicDataSyncJob, mapLegacyArticleAllowedRoles, mapLegacyMomentS
 
 type LegacySyncConstructorArgs = ConstructorParameters<typeof LegacyPublicDataSyncJob>;
 
-function createLegacyDatabase(): LegacySyncConstructorArgs[0] {
+function createLegacyDatabase(
+  options: { settingTableRows?: Array<{ key: string; type: string; value: unknown }>; siteSettingsTable?: boolean } = {}
+): LegacySyncConstructorArgs[0] {
   return {
     execute: async <T>(): Promise<[T, unknown]> => {
       throw new Error("Legacy sync must not write to the legacy database.");
     },
-    query: async <T>(sql: string): Promise<[T, unknown]> => {
+    query: async <T>(sql: string, params?: unknown): Promise<[T, unknown]> => {
       if (sql.includes("FROM Tag")) {
         return [[{ id: "tag-1", name: "AI", slug: "ai", createdAt: new Date("2026-06-10T00:00:00.000Z") }] as T, []];
       }
@@ -58,7 +60,19 @@ function createLegacyDatabase(): LegacySyncConstructorArgs[0] {
       }
 
       if (sql.includes("INFORMATION_SCHEMA.TABLES")) {
-        return [[{ count: 1 }] as T, []];
+        const tableName = Array.isArray(params) ? params[0] : null;
+        return [
+          [
+            {
+              count:
+                (tableName === "site_settings" && options.siteSettingsTable !== false) ||
+                (tableName === "Setting" && options.settingTableRows)
+                  ? 1
+                  : 0
+            }
+          ] as T,
+          []
+        ];
       }
 
       if (sql.includes("FROM site_settings")) {
@@ -71,6 +85,10 @@ function createLegacyDatabase(): LegacySyncConstructorArgs[0] {
           ] as T,
           []
         ];
+      }
+
+      if (sql.includes("FROM Setting")) {
+        return [((options.settingTableRows ?? []) as T), []];
       }
 
       throw new Error(`Unexpected legacy query: ${sql}`);
@@ -298,11 +316,94 @@ describe("LegacyPublicDataSyncJob", () => {
         .filter((write) => write.sql.includes("INSERT INTO site_settings"))
         .map((write) => write.params),
       [
-        ["ai.provider", JSON.stringify("deepseek")],
         ["ai.apiKey", JSON.stringify("legacy-ai-secret")],
+        ["ai.provider", JSON.stringify("deepseek")],
         ["smtp.host", JSON.stringify("smtp.example.test")],
         ["smtp.pass", JSON.stringify("legacy-smtp-secret")]
       ]
     );
+  });
+
+  it("maps old Setting translation and SMTP keys to target portable settings", async () => {
+    const writes: Array<{ params: unknown; sql: string }> = [];
+    const targetDatabase: LegacySyncConstructorArgs[1] & { commits: number; transactionStarts: number } = {
+      commits: 0,
+      transactionStarts: 0,
+      beginTransaction: async function beginTransaction(): Promise<void> {
+        this.transactionStarts += 1;
+      },
+      commit: async function commit(): Promise<void> {
+        this.commits += 1;
+      },
+      execute: async <T>(sql: string, params?: unknown): Promise<[T, unknown]> => {
+        writes.push({ params, sql });
+
+        if (sql.includes("UPDATE article_translations SET allowed_roles_json")) {
+          return [{ affectedRows: 2, insertId: 0 } as T, []];
+        }
+
+        if (sql.includes("UPDATE article_translations") && sql.includes("published_at = ?")) {
+          return [{ affectedRows: 2, insertId: 0 } as T, []];
+        }
+
+        if (sql.includes("INSERT INTO site_settings")) {
+          return [{ affectedRows: 1, insertId: 0 } as T, []];
+        }
+
+        throw new Error(`Unexpected target write for Setting migration: ${sql}`);
+      },
+      query: async <T>(sql: string): Promise<[T, unknown]> => {
+        if (sql.includes("SELECT (SELECT COUNT(*) FROM tags)")) {
+          return [[{ moments: 1, tags: 1 }] as T, []];
+        }
+
+        if (sql.includes("SELECT article_id, slug FROM article_translations")) {
+          return [
+            [
+              { article_id: 21, slug: "first-post" },
+              { article_id: 22, slug: "public-post" }
+            ] as T,
+            []
+          ];
+        }
+
+        throw new Error(`Unexpected target query: ${sql}`);
+      },
+      rollback: async (): Promise<void> => {}
+    };
+
+    const result = await new LegacyPublicDataSyncJob(
+      createLegacyDatabase({
+        siteSettingsTable: false,
+        settingTableRows: [
+          { key: "translation.apiKey", type: "PASSWORD", value: "legacy-ai-secret" },
+          { key: "translation.baseUrl", type: "TEXT", value: "https://api.deepseek.com" },
+          { key: "translation.model", type: "TEXT", value: "deepseek-chat" },
+          { key: "translation.provider", type: "TEXT", value: "DeepSeek" },
+          { key: "smtp.encryption", type: "TEXT", value: "STARTTLS" },
+          { key: "smtp.notificationsEnabled", type: "BOOLEAN", value: "true" },
+          { key: "smtp.pass", type: "PASSWORD", value: "legacy-smtp-secret" },
+          { key: "smtp.port", type: "NUMBER", value: "587" }
+        ]
+      }),
+      targetDatabase
+    ).run({ apply: true });
+
+    const settingWrites = writes
+      .filter((write) => write.sql.includes("INSERT INTO site_settings"))
+      .map((write) => write.params);
+
+    assert.equal(result.legacyPortableSiteSettings, 8);
+    assert.equal(result.siteSettingsUpserted, 8);
+    assert.deepEqual(settingWrites, [
+      ["ai.apiKey", JSON.stringify("legacy-ai-secret")],
+      ["ai.baseUrl", JSON.stringify("https://api.deepseek.com")],
+      ["ai.model", JSON.stringify("deepseek-chat")],
+      ["ai.provider", JSON.stringify("deepseek")],
+      ["smtp.encryption", JSON.stringify("starttls")],
+      ["smtp.notificationsEnabled", JSON.stringify(true)],
+      ["smtp.pass", JSON.stringify("legacy-smtp-secret")],
+      ["smtp.port", JSON.stringify(587)]
+    ]);
   });
 });

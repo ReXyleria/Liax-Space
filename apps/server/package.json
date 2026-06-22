@@ -24,6 +24,7 @@
     "rebuild-html:prod": "node dist/jobs/runRebuildHtml.js",
     "check-consistency:prod": "node dist/jobs/runCheckConsistency.js",
     "sync-legacy-public-data:prod": "node dist/jobs/runSyncLegacyPublicData.js",
+    "translation-worker:prod": "node dist/jobs/runTranslationWorker.js",
     "cleanup-rendered-html:prod": "node dist/jobs/runCleanupRenderedHtml.js",
     "cleanup-unused-attachments:prod": "node dist/jobs/runCleanupUnusedAttachments.js",
     "start": "node dist/server.js"

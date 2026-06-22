@@ -31,8 +31,36 @@ services:
       STORAGE_RENDERED_DIR: /app/storage/rendered
       STORAGE_RUNTIME_DIR: /app/storage/runtime
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      BACKGROUND_WORKER_MODE: external
     ports:
       - "${APP_PORT:-3000}:3000"
+    volumes:
+      - uploads:/app/storage/uploads
+      - rendered:/app/storage/rendered
+      - runtime:/app/storage/runtime
+      - backups:/app/storage/backups
+
+  worker:
+    image: ${APP_IMAGE:-rexyleria/liax-space:test}
+    pull_policy: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: ["node", "apps/server/dist/jobs/runTranslationWorker.js"]
+    environment:
+      APP_ENV: production
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_NAME: ${DATABASE_NAME:-liax_space}
+      DATABASE_USER: ${DATABASE_USER:-root}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-root}
+      STORAGE_UPLOADS_DIR: /app/storage/uploads
+      STORAGE_RENDERED_DIR: /app/storage/rendered
+      STORAGE_RUNTIME_DIR: /app/storage/runtime
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      BACKGROUND_WORKER_MODE: external
+      BACKGROUND_WORKER_ROLE: worker
+      TRANSLATION_WORKER_POLL_INTERVAL_MS: ${TRANSLATION_WORKER_POLL_INTERVAL_MS:-2000}
     volumes:
       - uploads:/app/storage/uploads
       - rendered:/app/storage/rendered
