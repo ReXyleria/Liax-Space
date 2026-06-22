@@ -1334,6 +1334,41 @@ export function MarkdownEditor({
     syncMarkdownFromEditor();
   }
 
+  function insertInlineCodeNode(): void {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+
+    if (editorControlsDisabled || !editor || !selection || selection.rangeCount === 0) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+
+    if (!editor.contains(range.commonAncestorContainer)) {
+      editor.focus();
+      return;
+    }
+
+    const selectedText = selection.toString();
+    const fragment = document.createDocumentFragment();
+    const code = document.createElement("code");
+    const trailingSpace = document.createElement("span");
+    const trailingText = document.createTextNode("\u00a0");
+
+    code.textContent = selectedText || "code";
+    trailingSpace.append(trailingText);
+    fragment.append(code, trailingSpace);
+    range.deleteContents();
+    range.insertNode(fragment);
+
+    const nextRange = document.createRange();
+    nextRange.setStart(trailingText, trailingText.length);
+    nextRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(nextRange);
+    syncMarkdownFromEditor();
+  }
+
   function placeCaretAtElementEdge(element: HTMLElement, edge: "start" | "end"): void {
     const selection = window.getSelection();
     const range = document.createRange();
@@ -2128,7 +2163,7 @@ export function MarkdownEditor({
       return;
     }
 
-    insertHtml("<code>code</code> ");
+    insertInlineCodeNode();
   }
 
   function insertMath(): void {
@@ -2159,7 +2194,9 @@ export function MarkdownEditor({
       return;
     }
 
-    insertHtml("<blockquote>Quote</blockquote><p><br></p>");
+    const blockquote = document.createElement("blockquote");
+    blockquote.textContent = "Quote";
+    insertVisualBlock(blockquote);
   }
 
   function applySlashMenuOption(option: SlashMenuOption): void {

@@ -794,6 +794,27 @@ test("visual editor deletes fenced code blocks at text boundaries without absorb
   await page.getByRole("button", { name: "Source" }).click();
   await expect(sourceEditor).toHaveValue("```\ncode\n```\n\nSlash tail");
 
+  await sourceEditor.fill("");
+  await page.getByRole("button", { name: "Visual" }).click();
+  await editor.click();
+  await page.keyboard.type("A");
+  await page.getByRole("button", { name: "Inline code", exact: true }).click();
+  await page.keyboard.type("B");
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("A`code` B");
+
+  await sourceEditor.fill("");
+  await page.getByRole("button", { name: "Visual" }).click();
+  await editor.click();
+  await page.keyboard.type("/quote");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Tail");
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("> Quote\n\nTail");
+  await sourceEditor.fill("```\ncode\n```\n\nSlash tail");
+
   state.saveRequests = [];
   await page.getByRole("button", { name: "Save content" }).click();
   await expect(page.getByText("Content saved.")).toBeVisible();
