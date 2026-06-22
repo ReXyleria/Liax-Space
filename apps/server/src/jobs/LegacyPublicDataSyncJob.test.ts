@@ -378,6 +378,7 @@ describe("LegacyPublicDataSyncJob", () => {
         settingTableRows: [
           { key: "translation.apiKey", type: "PASSWORD", value: "legacy-ai-secret" },
           { key: "translation.baseUrl", type: "TEXT", value: "https://api.deepseek.com" },
+          { key: "translation.chunkConcurrency", type: "NUMBER", value: "4" },
           { key: "translation.model", type: "TEXT", value: "deepseek-chat" },
           { key: "translation.provider", type: "TEXT", value: "DeepSeek" },
           { key: "smtp.encryption", type: "TEXT", value: "STARTTLS" },
@@ -393,11 +394,12 @@ describe("LegacyPublicDataSyncJob", () => {
       .filter((write) => write.sql.includes("INSERT INTO site_settings"))
       .map((write) => write.params);
 
-    assert.equal(result.legacyPortableSiteSettings, 8);
-    assert.equal(result.siteSettingsUpserted, 8);
+    assert.equal(result.legacyPortableSiteSettings, 9);
+    assert.equal(result.siteSettingsUpserted, 9);
     assert.deepEqual(settingWrites, [
       ["ai.apiKey", JSON.stringify("legacy-ai-secret")],
       ["ai.baseUrl", JSON.stringify("https://api.deepseek.com")],
+      ["ai.chunkConcurrency", JSON.stringify(4)],
       ["ai.model", JSON.stringify("deepseek-chat")],
       ["ai.provider", JSON.stringify("deepseek")],
       ["smtp.encryption", JSON.stringify("starttls")],

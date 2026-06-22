@@ -98,4 +98,41 @@ describe("TranslationJobWorker", () => {
     assert.equal(await worker.processNext(), true);
     assert.deepEqual(failures, ["provider unavailable"]);
   });
+
+  it("processes multiple queued jobs up to the configured chunk concurrency", async () => {
+    const jobs = [
+      createJob({ id: 1, input: { fields: { title: "一" }, sourceLocale: "zh-CN", targetLocale: "en-US" } }),
+      createJob({ id: 2, input: { fields: { title: "二" }, sourceLocale: "zh-CN", targetLocale: "en-US" } }),
+      createJob({ id: 3, input: { fields: { title: "三" }, sourceLocale: "zh-CN", targetLocale: "en-US" } })
+    ];
+    const completedJobIds: number[] = [];
+    const worker = new TranslationJobWorker(
+      {
+        claimNextQueuedJob: async () => jobs.shift() ?? null,
+        markFailed: async () => {
+          throw new Error("markFailed should not be called.");
+        },
+        markSucceeded: async (id) => {
+          completedJobIds.push(id);
+        }
+      },
+      {
+        generateSeo: async () => {
+          throw new Error("generateSeo should not be called.");
+        },
+        translate: async (input) => ({
+          fields: (input as { fields: Record<string, string> }).fields,
+          model: "deepseek-chat",
+          provider: "deepseek",
+          sourceLocale: "zh-CN",
+          targetLocale: "en-US",
+          temperature: 0
+        })
+      }
+    );
+
+    assert.equal(await worker.processAvailable(2), 2);
+    assert.deepEqual(completedJobIds.sort(), [1, 2]);
+    assert.equal(jobs.length, 1);
+  });
 });

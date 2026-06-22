@@ -1,10 +1,12 @@
 import { AppError } from "../common/AppError.js";
 import { logger } from "../common/logger.js";
+import { SettingsRepository } from "../settings/SettingsRepository.js";
 import { TranslationService } from "./TranslationService.js";
 import { TranslationJobRepository, type TranslationJob } from "./TranslationJobRepository.js";
 
 type TranslationJobStore = Pick<TranslationJobRepository, "claimNextQueuedJob" | "markFailed" | "markSucceeded">;
 type TranslationExecutor = Pick<TranslationService, "generateSeo" | "translate">;
+type TranslationSettingsStore = Pick<SettingsRepository, "getSiteSettings">;
 
 export type TranslationWorkerOptions = {
   pollIntervalMs?: number;
@@ -12,6 +14,8 @@ export type TranslationWorkerOptions = {
 };
 
 const defaultPollIntervalMs = 2_000;
+const defaultChunkConcurrency = 1;
+const maxChunkConcurrency = 16;
 
 function errorMessageFromUnknown(error: unknown): string {
   if (error instanceof AppError || error instanceof Error) {
@@ -40,10 +44,21 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+function readChunkConcurrencyValue(value: unknown): number {
+  const concurrency = typeof value === "string" ? Number(value.trim()) : value;
+
+  if (typeof concurrency !== "number" || !Number.isInteger(concurrency)) {
+    return defaultChunkConcurrency;
+  }
+
+  return Math.min(Math.max(concurrency, defaultChunkConcurrency), maxChunkConcurrency);
+}
+
 export class TranslationJobWorker {
   constructor(
     private readonly repository: TranslationJobStore = new TranslationJobRepository(),
-    private readonly translationService: TranslationExecutor = new TranslationService()
+    private readonly translationService: TranslationExecutor = new TranslationService(),
+    private readonly settingsRepository: TranslationSettingsStore = new SettingsRepository()
   ) {}
 
   async processNext(): Promise<boolean> {
@@ -57,24 +72,37 @@ export class TranslationJobWorker {
     return true;
   }
 
+  async processAvailable(concurrency = defaultChunkConcurrency): Promise<number> {
+    const workerCount = readChunkConcurrencyValue(concurrency);
+    const results = await Promise.all(Array.from({ length: workerCount }, () => this.processNext()));
+
+    return results.filter(Boolean).length;
+  }
+
   async runForever(options: TranslationWorkerOptions = {}): Promise<void> {
     const pollIntervalMs = options.pollIntervalMs ?? defaultPollIntervalMs;
 
     while (!options.signal?.aborted) {
-      let processed = false;
+      let processedCount = 0;
 
       try {
-        processed = await this.processNext();
+        processedCount = await this.processAvailable(await this.readChunkConcurrency());
       } catch (error) {
         logger.error("translation worker poll failed", {
           errorMessage: errorMessageFromUnknown(error)
         });
       }
 
-      if (!processed) {
+      if (processedCount === 0) {
         await sleep(pollIntervalMs, options.signal);
       }
     }
+  }
+
+  private async readChunkConcurrency(): Promise<number> {
+    const settings = await this.settingsRepository.getSiteSettings();
+
+    return readChunkConcurrencyValue(settings["ai.chunkConcurrency"]);
   }
 
   private async processJob(job: TranslationJob): Promise<void> {

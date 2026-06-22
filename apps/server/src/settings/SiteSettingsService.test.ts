@@ -106,6 +106,7 @@ describe("SiteSettingsService", () => {
 
     await service.updateSiteSettings({
       "ai.baseUrl": "https://api.deepseek.com/",
+      "ai.chunkConcurrency": "3",
       "ai.model": " deepseek-chat ",
       "ai.provider": "deepseek",
       "ai.translationTemperature": "0.7",
@@ -131,6 +132,7 @@ describe("SiteSettingsService", () => {
     });
 
     assert.equal(repository.settings["ai.baseUrl"], "https://api.deepseek.com");
+    assert.equal(repository.settings["ai.chunkConcurrency"], 3);
     assert.equal(repository.settings["ai.model"], "deepseek-chat");
     assert.equal(repository.settings["ai.translationTemperature"], 0.7);
     assert.equal(repository.settings["home.brandInfo"], "");
@@ -234,6 +236,16 @@ describe("SiteSettingsService", () => {
     await assert.rejects(
       () => service.updateSiteSettings({ "ai.translationTemperature": 2.5 }),
       /ai\.translationTemperature must be a number from 0 to 2/u
+    );
+  });
+
+  it("rejects invalid AI chunk concurrency settings", async () => {
+    const repository = new MemorySettingsRepository();
+    const service = new SiteSettingsService(repository as never);
+
+    await assert.rejects(
+      () => service.updateSiteSettings({ "ai.chunkConcurrency": 0 }),
+      /ai\.chunkConcurrency must be an integer from 1 to 16/u
     );
   });
 

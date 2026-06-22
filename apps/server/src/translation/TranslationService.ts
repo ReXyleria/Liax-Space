@@ -129,7 +129,7 @@ function readSettingString(value: unknown, fallback: string): string {
 }
 
 function readSettingTemperature(value: unknown): number {
-  return readTemperature(value, 1);
+  return readTemperature(value, 0);
 }
 
 function readProvider(value: unknown): AiProvider {

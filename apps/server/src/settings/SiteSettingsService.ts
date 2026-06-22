@@ -132,6 +132,16 @@ function assertPort(key: string, value: unknown): number {
   return port;
 }
 
+function assertIntegerRange(key: string, value: unknown, min: number, max: number): number {
+  const integer = typeof value === "string" ? Number(value.trim()) : value;
+
+  if (typeof integer !== "number" || !Number.isInteger(integer) || integer < min || integer > max) {
+    validationError(`${key} must be an integer from ${min} to ${max}.`);
+  }
+
+  return integer;
+}
+
 function assertOneOf<T extends readonly string[]>(value: unknown, key: string, allowedValues: T): T[number] {
   if (typeof value !== "string" || !allowedValues.includes(value as T[number])) {
     validationError(`${key} must be one of: ${allowedValues.join(", ")}.`);
@@ -239,6 +249,7 @@ const knownSettingValidators: Record<string, SiteSettingValidator> = {
   "ai.apiKey": (key, value) => assertString(value, key, 4000),
   "ai.apiKeyConfigured": () => validationError("ai.apiKeyConfigured is read-only."),
   "ai.baseUrl": assertHttpUrl,
+  "ai.chunkConcurrency": (key, value) => assertIntegerRange(key, value, 1, 16),
   "ai.model": (key, value) => assertString(value, key, 160),
   "ai.provider": (key, value) => assertOneOf(value, key, aiProviders),
   "ai.translationTemperature": assertTemperature,

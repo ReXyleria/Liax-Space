@@ -97,6 +97,7 @@ export type LegacyPublicDataSyncResult = {
 const portableSiteSettingKeys = [
   "ai.apiKey",
   "ai.baseUrl",
+  "ai.chunkConcurrency",
   "ai.deepseekBaseUrl",
   "ai.deepseekModel",
   "ai.model",
@@ -123,6 +124,7 @@ const legacySettingKeyMap: Record<string, (typeof portableSiteSettingKeys)[numbe
   "smtp.user": "smtp.user",
   "translation.apiKey": "ai.apiKey",
   "translation.baseUrl": "ai.baseUrl",
+  "translation.chunkConcurrency": "ai.chunkConcurrency",
   "translation.model": "ai.model",
   "translation.provider": "ai.provider"
 };
