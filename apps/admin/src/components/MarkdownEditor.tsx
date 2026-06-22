@@ -6,6 +6,7 @@ import {
   type ClipboardEvent,
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactElement
 } from "react";
 
@@ -14,8 +15,10 @@ import { useT } from "../i18n/useT";
 export type MarkdownEditorProps = {
   attachmentPreviewUrls?: Record<string, string>;
   disabled?: boolean;
+  documentRevision?: number | string;
   forcePlainTextMode?: boolean;
   onDraftChange?: (value: string) => void;
+  onSaveShortcut?: () => void | Promise<void>;
   onUploadImage?: (file: File) => Promise<{ markdown: string; previewUrl: string }>;
   value: string;
   onChange: (value: string) => void;
@@ -35,7 +38,7 @@ type SelectedTableContext = {
   toolbarWidth: number;
 };
 
-type SlashMenuItemId = "image" | "heading1" | "heading2" | "heading3" | "heading4" | "table" | "code" | "quote" | "math";
+type SlashMenuItemId = "image" | "heading1" | "heading2" | "heading3" | "heading4" | "table" | "code" | "inlineCode" | "quote" | "math";
 
 type SlashMenuState = {
   activeIndex: number;
@@ -56,6 +59,7 @@ export type SlashMenuOption = {
 export const largeMarkdownDocumentThreshold = 512 * 1024;
 export const incrementalVisualPreviewInitialLength = 256 * 1024;
 export const incrementalVisualPreviewChunkLength = 256 * 1024;
+const maxEditorHistoryEntries = 120;
 
 export function shouldUsePlainMarkdownEditor(markdown: string): boolean {
   return markdown.length >= largeMarkdownDocumentThreshold;
@@ -157,6 +161,12 @@ export function buildSlashMenuOptions(t: ReturnType<typeof useT>, hasImageUpload
       id: "code",
       keywords: ["code", "pre", "代码"],
       label: t("article.slashCode")
+    },
+    {
+      description: t("article.slashInlineCodeDescription"),
+      id: "inlineCode",
+      keywords: ["inline code", "code", "行内代码"],
+      label: t("article.slashInlineCode")
     },
     {
       description: t("article.slashQuoteDescription"),
@@ -272,7 +282,13 @@ export function extractHeadingsFromMarkdown(markdown: string): EditorHeading[] {
 }
 
 function inlineMarkdownToHtml(value: string, options: MarkdownRenderOptions = {}): string {
-  return escapeHtml(value)
+  const escapedMarkers: string[] = [];
+  const protectedValue = escapeHtml(value).replace(/\\([`$])/g, (_match, marker: string) => {
+    const index = escapedMarkers.push(marker) - 1;
+    return `\u0000ESCAPED_INLINE_${index}\u0000`;
+  });
+
+  return protectedValue
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
@@ -290,7 +306,8 @@ function inlineMarkdownToHtml(value: string, options: MarkdownRenderOptions = {}
 
       return `<span class="admin-attachment-chip" data-md-image-alt="${altText}" data-md-image-source="${sourceUrl}">Image unavailable: ${altText || sourceUrl}</span>`;
     })
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\u0000ESCAPED_INLINE_(\d+)\u0000/g, (_match, index: string) => escapedMarkers[Number(index)] ?? "");
 }
 
 export function markdownToHtml(markdown: string, options: MarkdownRenderOptions = {}): string {
@@ -408,7 +425,15 @@ export function markdownToHtml(markdown: string, options: MarkdownRenderOptions 
         index += 1;
       }
 
-      blocks.push(`<table><thead>${renderMergedTableRows([headerCells], "th")}</thead><tbody>${renderMergedTableRows(bodyRows, "td")}</tbody></table>`);
+      blocks.push(
+        `<div class="admin-table-scroll" data-md-block="table-scroll"><table><thead>${renderMergedTableRows([headerCells], "th")}</thead><tbody>${renderMergedTableRows(bodyRows, "td")}</tbody></table></div>`
+      );
+      continue;
+    }
+
+    if (line.trim().toLowerCase() === "<br>") {
+      blocks.push("<p><br></p>");
+      index += 1;
       continue;
     }
 
@@ -509,7 +534,7 @@ export function markdownToHtml(markdown: string, options: MarkdownRenderOptions 
 
   const lastBlock = blocks[blocks.length - 1] ?? "";
 
-  if (/^<(pre|table)\b/.test(lastBlock)) {
+  if (/^<(pre|table)\b/.test(lastBlock) || /^<div\b[^>]*data-md-block="table-scroll"/.test(lastBlock)) {
     blocks.push("<p><br></p>");
   }
 
@@ -520,9 +545,13 @@ function normalizeText(value: string | null): string {
   return (value ?? "").replace(/\u00a0/g, " ").trim();
 }
 
+function escapeTextNodeMarkdown(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$");
+}
+
 function inlineNodeToMarkdown(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) {
-    return node.textContent ?? "";
+    return escapeTextNodeMarkdown(node.textContent ?? "");
   }
 
   if (!(node instanceof HTMLElement)) {
@@ -573,12 +602,32 @@ function inlineNodeToMarkdown(node: Node): string {
   return content;
 }
 
+function isEmptyEditableBlock(node: HTMLElement): boolean {
+  const tagName = node.tagName.toLowerCase();
+
+  if (tagName !== "p" && tagName !== "div") {
+    return false;
+  }
+
+  const text = (node.textContent ?? "").replace(/\u00a0/g, " ").trim();
+
+  return text.length === 0 && Array.from(node.childNodes).every((child) => {
+    return child.nodeType === Node.TEXT_NODE
+      ? (child.textContent ?? "").replace(/\u00a0/g, " ").trim().length === 0
+      : child instanceof HTMLBRElement;
+  });
+}
+
 function blockNodeToMarkdown(node: Node): string {
   if (!(node instanceof HTMLElement)) {
-    return normalizeText(node.textContent);
+    return normalizeText(escapeTextNodeMarkdown(node.textContent ?? ""));
   }
 
   const tagName = node.tagName.toLowerCase();
+
+  if (isEmptyEditableBlock(node)) {
+    return "<br>";
+  }
 
   if (node.getAttribute("data-md-block") === "toc") {
     return "[[toc]]";
@@ -587,6 +636,12 @@ function blockNodeToMarkdown(node: Node): string {
   if (node.getAttribute("data-md-block") === "warning") {
     const warningContent = normalizeText(inlineNodeToMarkdown(node));
     return warningContent ? `::: warning\n${warningContent}\n:::` : "::: warning\n:::";
+  }
+
+  if (node.getAttribute("data-md-block") === "table-scroll") {
+    const table = node.querySelector("table");
+
+    return table ? blockNodeToMarkdown(table) : "";
   }
 
   if (/^h[1-6]$/.test(tagName)) {
@@ -696,9 +751,11 @@ function htmlToMarkdown(root: HTMLElement): string {
 export function MarkdownEditor({
   attachmentPreviewUrls = {},
   disabled = false,
+  documentRevision = "default",
   forcePlainTextMode = false,
   onChange,
   onDraftChange,
+  onSaveShortcut,
   onUploadImage,
   value
 }: MarkdownEditorProps): ReactElement {
@@ -712,6 +769,13 @@ export function MarkdownEditor({
   const lastPreviewKeyRef = useRef<string | null>(null);
   const lastVisualRenderLengthRef = useRef<number | null>(null);
   const visualPreviewDocumentKeyRef = useRef<string | null>(null);
+  const lastVisualDocumentRevisionRef = useRef<string | null>(null);
+  const isVisualEditingRef = useRef(false);
+  const historyRef = useRef<{ current: string; future: string[]; past: string[] }>({
+    current: value,
+    future: [],
+    past: []
+  });
   const selectedMathRef = useRef<HTMLElement | null>(null);
   const selectedTableCellRef = useRef<HTMLTableCellElement | null>(null);
   const syncFrameRef = useRef<number | null>(null);
@@ -754,6 +818,16 @@ export function MarkdownEditor({
     .join("\u0001");
 
   useEffect(() => {
+    if (value !== lastMarkdownRef.current && value !== historyRef.current.current) {
+      historyRef.current = {
+        current: value,
+        future: [],
+        past: []
+      };
+    }
+  }, [value]);
+
+  useEffect(() => {
     const nextDocumentKey = value.slice(0, 512);
 
     if (visualPreviewDocumentKeyRef.current === nextDocumentKey) {
@@ -785,15 +859,41 @@ export function MarkdownEditor({
       return;
     }
 
+    const documentRevisionKey = String(documentRevision);
+    const editorNeedsInitialRender = editor.childNodes.length === 0;
+
     if (isSourceMode) {
       editor.innerHTML = "";
       lastMarkdownRef.current = value;
       lastPreviewKeyRef.current = attachmentPreviewKey;
       lastVisualRenderLengthRef.current = null;
+      lastVisualDocumentRevisionRef.current = documentRevisionKey;
+      return;
+    }
+
+    const documentRevisionChanged = lastVisualDocumentRevisionRef.current !== documentRevisionKey;
+    const editorHasFocus = isVisualEditingRef.current && (document.activeElement === editor || editor.contains(document.activeElement));
+
+    if (
+      !isLargeVisualPreview &&
+      !editorNeedsInitialRender &&
+      !documentRevisionChanged &&
+      value === lastMarkdownRef.current &&
+      attachmentPreviewKey === lastPreviewKeyRef.current
+    ) {
+      lastVisualRenderLengthRef.current = visualPreview.renderedLength;
+      return;
+    }
+
+    if (!isLargeVisualPreview && !editorNeedsInitialRender && !documentRevisionChanged && editorHasFocus) {
+      lastPreviewKeyRef.current = attachmentPreviewKey;
+      lastVisualRenderLengthRef.current = visualPreview.renderedLength;
       return;
     }
 
     if (
+      !editorNeedsInitialRender &&
+      !documentRevisionChanged &&
       value === lastMarkdownRef.current &&
       attachmentPreviewKey === lastPreviewKeyRef.current &&
       visualPreview.renderedLength === lastVisualRenderLengthRef.current
@@ -805,7 +905,8 @@ export function MarkdownEditor({
     lastMarkdownRef.current = value;
     lastPreviewKeyRef.current = attachmentPreviewKey;
     lastVisualRenderLengthRef.current = visualPreview.renderedLength;
-  }, [attachmentPreviewKey, attachmentPreviewUrls, isSourceMode, value, visualMarkdown, visualPreview.renderedLength]);
+    lastVisualDocumentRevisionRef.current = documentRevisionKey;
+  }, [attachmentPreviewKey, attachmentPreviewUrls, documentRevision, isLargeVisualPreview, isSourceMode, value, visualMarkdown, visualPreview.renderedLength]);
 
   useEffect(() => {
     const textarea = sourceTextareaRef.current;
@@ -863,7 +964,86 @@ export function MarkdownEditor({
     };
   }, [selectedTableContext !== null]);
 
-  function syncMarkdownFromEditor(): void {
+  function recordMarkdownHistory(nextMarkdown: string): void {
+    const history = historyRef.current;
+
+    if (nextMarkdown === history.current) {
+      return;
+    }
+
+    history.past.push(history.current);
+
+    if (history.past.length > maxEditorHistoryEntries) {
+      history.past.shift();
+    }
+
+    history.current = nextMarkdown;
+    history.future = [];
+  }
+
+  function restoreMarkdownFromHistory(nextMarkdown: string): void {
+    if (syncFrameRef.current !== null) {
+      window.cancelAnimationFrame(syncFrameRef.current);
+      syncFrameRef.current = null;
+    }
+
+    if (sourceSyncTimerRef.current !== null) {
+      window.clearTimeout(sourceSyncTimerRef.current);
+      sourceSyncTimerRef.current = null;
+    }
+
+    lastMarkdownRef.current = nextMarkdown;
+    onDraftChange?.(nextMarkdown);
+
+    if (isSourceMode) {
+      const textarea = sourceTextareaRef.current;
+
+      if (textarea) {
+        textarea.value = nextMarkdown;
+        updateSourceSelection(nextMarkdown.length);
+      }
+    } else if (editorRef.current) {
+      editorRef.current.innerHTML = markdownToHtml(nextMarkdown, { attachmentPreviewUrls });
+      editorRef.current.focus();
+    }
+
+    onChange(nextMarkdown);
+  }
+
+  function undoMarkdownHistory(): boolean {
+    const history = historyRef.current;
+    const previousMarkdown = history.past.pop();
+
+    if (previousMarkdown === undefined) {
+      return false;
+    }
+
+    history.future.unshift(history.current);
+    history.current = previousMarkdown;
+    restoreMarkdownFromHistory(previousMarkdown);
+    return true;
+  }
+
+  function redoMarkdownHistory(): boolean {
+    const history = historyRef.current;
+    const nextMarkdown = history.future.shift();
+
+    if (nextMarkdown === undefined) {
+      return false;
+    }
+
+    history.past.push(history.current);
+
+    if (history.past.length > maxEditorHistoryEntries) {
+      history.past.shift();
+    }
+
+    history.current = nextMarkdown;
+    restoreMarkdownFromHistory(nextMarkdown);
+    return true;
+  }
+
+  function syncMarkdownFromEditor(options: { recordHistory?: boolean } = {}): void {
     if (syncFrameRef.current !== null) {
       window.cancelAnimationFrame(syncFrameRef.current);
       syncFrameRef.current = null;
@@ -881,6 +1061,10 @@ export function MarkdownEditor({
     if (isSourceMode) {
       const nextMarkdown = sourceTextareaRef.current?.value ?? value;
       lastMarkdownRef.current = nextMarkdown;
+      if (options.recordHistory !== false) {
+        recordMarkdownHistory(nextMarkdown);
+      }
+      onDraftChange?.(nextMarkdown);
       onChange(nextMarkdown);
       return;
     }
@@ -893,11 +1077,18 @@ export function MarkdownEditor({
 
     const nextMarkdown = htmlToMarkdown(editor);
     lastMarkdownRef.current = nextMarkdown;
+    if (options.recordHistory !== false) {
+      recordMarkdownHistory(nextMarkdown);
+    }
+    onDraftChange?.(nextMarkdown);
     onChange(nextMarkdown);
   }
 
-  function syncSourceMarkdown(nextMarkdown: string, options: { defer?: boolean } = {}): void {
+  function syncSourceMarkdown(nextMarkdown: string, options: { defer?: boolean; recordHistory?: boolean } = {}): void {
     lastMarkdownRef.current = nextMarkdown;
+    if (options.recordHistory !== false) {
+      recordMarkdownHistory(nextMarkdown);
+    }
     onDraftChange?.(nextMarkdown);
 
     if (sourceSyncTimerRef.current !== null) {
@@ -918,6 +1109,51 @@ export function MarkdownEditor({
 
   function handleSourceInput(nextMarkdown: string): void {
     syncSourceMarkdown(nextMarkdown, { defer: true });
+  }
+
+  function isSaveShortcut(event: Pick<KeyboardEvent<HTMLElement>, "ctrlKey" | "key" | "metaKey">): boolean {
+    return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s";
+  }
+
+  function handleHistoryShortcut(event: Pick<KeyboardEvent<HTMLElement>, "ctrlKey" | "key" | "metaKey" | "shiftKey">): boolean {
+    if (!event.ctrlKey && !event.metaKey) {
+      return false;
+    }
+
+    const key = event.key.toLowerCase();
+
+    if (key === "z") {
+      return event.shiftKey ? redoMarkdownHistory() : undoMarkdownHistory();
+    }
+
+    if (key === "y") {
+      return redoMarkdownHistory();
+    }
+
+    return false;
+  }
+
+  function handleSaveShortcut(event: KeyboardEvent<HTMLElement>): boolean {
+    if (!isSaveShortcut(event)) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    syncMarkdownFromEditor({ recordHistory: false });
+    void onSaveShortcut?.();
+    return true;
+  }
+
+  function handleSourceKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (handleSaveShortcut(event)) {
+      return;
+    }
+
+    if (handleHistoryShortcut(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   }
 
   function focusSourceEditor(): void {
@@ -1054,6 +1290,137 @@ export function MarkdownEditor({
     editorRef.current?.focus();
     document.execCommand("insertHTML", false, html);
     syncMarkdownFromEditor();
+  }
+
+  function insertPlainText(text: string): void {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+
+    if (editorControlsDisabled || !editor || !selection || selection.rangeCount === 0) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+
+    if (!editor.contains(range.commonAncestorContainer)) {
+      editor.focus();
+      return;
+    }
+
+    range.deleteContents();
+
+    const fragment = document.createDocumentFragment();
+    const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+
+    lines.forEach((line, index) => {
+      if (index > 0) {
+        fragment.append(document.createElement("br"));
+      }
+
+      if (line.length > 0) {
+        fragment.append(document.createTextNode(line));
+      }
+    });
+
+    const trailingMarker = document.createTextNode("");
+    fragment.append(trailingMarker);
+    range.insertNode(fragment);
+
+    const nextRange = document.createRange();
+    nextRange.setStart(trailingMarker, 0);
+    nextRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(nextRange);
+    syncMarkdownFromEditor();
+  }
+
+  function placeCaretInElement(element: HTMLElement): void {
+    const selection = window.getSelection();
+    const range = document.createRange();
+
+    editorRef.current?.focus();
+
+    if (element.childNodes.length === 1 && element.firstChild instanceof HTMLBRElement) {
+      range.setStart(element, 0);
+    } else {
+      range.selectNodeContents(element);
+      range.collapse(false);
+    }
+
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+
+  function ensureEmptyBlockPlaceholder(element: HTMLElement): void {
+    if ((element.textContent ?? "").replace(/\u00a0/g, " ").trim().length > 0) {
+      return;
+    }
+
+    element.replaceChildren(document.createElement("br"));
+  }
+
+  function closestEditableTextBlock(node: Node | null): HTMLElement | null {
+    const element = node instanceof Element ? node : node?.parentElement ?? null;
+    const block = element?.closest("p, h1, h2, h3, h4, h5, h6, blockquote, li");
+
+    if (!(block instanceof HTMLElement) || !editorRef.current?.contains(block)) {
+      return null;
+    }
+
+    return block;
+  }
+
+  function convertCurrentBlock(tagName: "h1" | "h2" | "h3" | "h4" | "p"): void {
+    if (editorControlsDisabled) {
+      return;
+    }
+
+    const selection = window.getSelection();
+    const block = selection?.rangeCount ? closestEditableTextBlock(selection.anchorNode) : null;
+
+    if (!block) {
+      insertHtml(`<${tagName}><br></${tagName}>`);
+      return;
+    }
+
+    if (block.tagName.toLowerCase() === tagName) {
+      ensureEmptyBlockPlaceholder(block);
+      placeCaretInElement(block);
+      syncMarkdownFromEditor();
+      return;
+    }
+
+    const nextBlock = document.createElement(tagName);
+
+    while (block.firstChild) {
+      nextBlock.append(block.firstChild);
+    }
+
+    ensureEmptyBlockPlaceholder(nextBlock);
+    block.replaceWith(nextBlock);
+    placeCaretInElement(nextBlock);
+    syncMarkdownFromEditor();
+  }
+
+  function focusBlankParagraphAtEnd(): void {
+    const editor = editorRef.current;
+
+    if (!editor || editorControlsDisabled) {
+      return;
+    }
+
+    const lastElement = editor.lastElementChild;
+    const target = lastElement instanceof HTMLParagraphElement && isEmptyEditableBlock(lastElement)
+      ? lastElement
+      : document.createElement("p");
+
+    if (!target.parentElement) {
+      target.append(document.createElement("br"));
+      editor.append(target);
+    }
+
+    ensureEmptyBlockPlaceholder(target);
+    placeCaretInElement(target);
   }
 
   function saveCurrentInsertRange(): void {
@@ -1261,6 +1628,75 @@ export function MarkdownEditor({
     updateContextFromTarget(anchorElement);
   }
 
+  function closestEditableBlock(node: Node | null): HTMLElement | null {
+    const element = node instanceof Element ? node : node?.parentElement ?? null;
+    const block = element?.closest("p, h1, h2, h3, h4, h5, h6, blockquote, li, div");
+
+    if (!(block instanceof HTMLElement) || block === editorRef.current || !editorRef.current?.contains(block)) {
+      return null;
+    }
+
+    return block;
+  }
+
+  function isSelectionAtStartOfElement(element: HTMLElement): boolean {
+    const selection = window.getSelection();
+
+    if (!selection || selection.rangeCount === 0) {
+      return false;
+    }
+
+    const range = selection.getRangeAt(0).cloneRange();
+    range.selectNodeContents(element);
+    range.setEnd(selection.anchorNode ?? element, selection.anchorOffset);
+
+    return range.toString().length === 0;
+  }
+
+  function isSelectionAtEndOfElement(element: HTMLElement): boolean {
+    const selection = window.getSelection();
+
+    if (!selection || selection.rangeCount === 0) {
+      return false;
+    }
+
+    const range = selection.getRangeAt(0).cloneRange();
+    range.selectNodeContents(element);
+    range.setStart(selection.anchorNode ?? element, selection.anchorOffset);
+
+    return range.toString().length === 0;
+  }
+
+  function shouldPreventCodeBoundaryMerge(event: KeyboardEvent<HTMLDivElement>): boolean {
+    const selection = window.getSelection();
+
+    if (!selection || !selection.isCollapsed || selection.rangeCount === 0) {
+      return false;
+    }
+
+    const anchorNode = selection.anchorNode;
+    const anchorElement = anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement ?? null;
+
+    if (!anchorNode || !anchorElement || !editorRef.current?.contains(anchorNode)) {
+      return false;
+    }
+
+    if (event.key === "Backspace") {
+      const block = closestEditableBlock(anchorNode);
+      const previousBlock = block?.previousElementSibling;
+
+      return Boolean(block && previousBlock?.tagName.toLowerCase() === "pre" && isSelectionAtStartOfElement(block));
+    }
+
+    if (event.key === "Delete") {
+      const pre = anchorElement.closest("pre");
+
+      return Boolean(pre instanceof HTMLElement && pre.nextElementSibling && isSelectionAtEndOfElement(pre));
+    }
+
+    return false;
+  }
+
   function handleEditorClick(target: EventTarget | null): void {
     if (isLargeVisualPreview) {
       return;
@@ -1268,6 +1704,18 @@ export function MarkdownEditor({
 
     updateContextFromTarget(target);
     updateSlashMenuFromSelection();
+  }
+
+  function handleEditorMouseDown(event: ReactMouseEvent<HTMLDivElement>): void {
+    if (isLargeVisualPreview || editorControlsDisabled || event.target !== event.currentTarget) {
+      return;
+    }
+
+    event.preventDefault();
+    focusBlankParagraphAtEnd();
+    setSlashMenu(null);
+    clearTableContext();
+    selectMathNode(null);
   }
 
   function selectedTableDetails(): { cell: HTMLTableCellElement; row: HTMLTableRowElement; table: HTMLTableElement } | null {
@@ -1397,17 +1845,33 @@ export function MarkdownEditor({
   }
 
   function insertSourceHeading(level: 1 | 2 | 3 | 4): void {
-    applySourceSelectionTransform((selection) => {
-      const prefix = `\n\n${"#".repeat(level)} `;
-      const content = selection || "Heading";
-      const suffix = "\n\n";
+    const textarea = sourceTextareaRef.current;
 
-      return {
-        cursorStart: prefix.length,
-        cursorEnd: prefix.length + content.length,
-        text: `${prefix}${content}${suffix}`
-      };
-    });
+    if (!textarea || disabled) {
+      return;
+    }
+
+    const marker = `${"#".repeat(level)} `;
+    const currentMarkdown = textarea.value;
+    const selectionStart = textarea.selectionStart;
+    const selectionEnd = textarea.selectionEnd;
+    const hasSelection = selectionStart !== selectionEnd;
+    const replaceStart = hasSelection
+      ? selectionStart
+      : currentMarkdown.lastIndexOf("\n", Math.max(0, selectionStart - 1)) + 1;
+    const nextLineBreak = currentMarkdown.indexOf("\n", selectionEnd);
+    const replaceEnd = hasSelection
+      ? selectionEnd
+      : nextLineBreak === -1 ? currentMarkdown.length : nextLineBreak;
+    const selectedText = currentMarkdown.slice(replaceStart, replaceEnd);
+    const content = selectedText.replace(/^\s{0,3}#{1,6}\s+/, "");
+    const replacement = `${marker}${content}`;
+    const nextMarkdown = `${currentMarkdown.slice(0, replaceStart)}${replacement}${currentMarkdown.slice(replaceEnd)}`;
+    const contentStart = replaceStart + marker.length;
+
+    textarea.value = nextMarkdown;
+    syncSourceMarkdown(nextMarkdown, { defer: true });
+    updateSourceSelection(contentStart, hasSelection ? contentStart + content.length : contentStart);
   }
 
   function insertTable(): void {
@@ -1417,7 +1881,7 @@ export function MarkdownEditor({
     }
 
     insertHtml(
-      "<table><thead><tr><th>Title</th><th>Title</th><th>Value</th></tr></thead><tbody><tr><td>Same</td><td>Same</td><td>Other</td></tr><tr><td>A</td><td>B</td><td>B</td></tr></tbody></table><p><br></p>"
+      '<div class="admin-table-scroll" data-md-block="table-scroll"><table><thead><tr><th>Title</th><th>Title</th><th>Value</th></tr></thead><tbody><tr><td>Same</td><td>Same</td><td>Other</td></tr><tr><td>A</td><td>B</td><td>B</td></tr></tbody></table></div><p><br></p>'
     );
   }
 
@@ -1440,6 +1904,15 @@ export function MarkdownEditor({
     insertHtml("<pre><code>code</code></pre><p><br></p>");
   }
 
+  function insertInlineCode(): void {
+    if (isSourceMode) {
+      wrapSourceSelection("`", "`", "code");
+      return;
+    }
+
+    insertHtml("<code>code</code> ");
+  }
+
   function insertMath(): void {
     if (isSourceMode) {
       wrapSourceSelection("$", "$", "E=mc^2");
@@ -1455,7 +1928,11 @@ export function MarkdownEditor({
       return;
     }
 
-    insertHtml(`<h${level}>Heading</h${level}><p><br></p>`);
+    convertCurrentBlock(`h${level}` as "h1" | "h2" | "h3" | "h4");
+  }
+
+  function convertCurrentBlockToHeading(level: 1 | 2 | 3 | 4): void {
+    convertCurrentBlock(`h${level}` as "h1" | "h2" | "h3" | "h4");
   }
 
   function insertQuoteBlock(): void {
@@ -1482,17 +1959,19 @@ export function MarkdownEditor({
     }
 
     if (option.id === "heading1") {
-      insertHeadingBlock(1);
+      convertCurrentBlockToHeading(1);
     } else if (option.id === "heading2") {
-      insertHeadingBlock(2);
+      convertCurrentBlockToHeading(2);
     } else if (option.id === "heading3") {
-      insertHeadingBlock(3);
+      convertCurrentBlockToHeading(3);
     } else if (option.id === "heading4") {
-      insertHeadingBlock(4);
+      convertCurrentBlockToHeading(4);
     } else if (option.id === "table") {
       insertTable();
     } else if (option.id === "code") {
       insertCodeBlock();
+    } else if (option.id === "inlineCode") {
+      insertInlineCode();
     } else if (option.id === "quote") {
       insertQuoteBlock();
     } else if (option.id === "math") {
@@ -1521,8 +2000,36 @@ export function MarkdownEditor({
     updateSlashMenuFromSelection();
   }
 
+  function keepEditorSelectionOnToolbarMouseDown(event: ReactMouseEvent<HTMLButtonElement>): void {
+    event.preventDefault();
+  }
+
+  function handleEditorFocus(): void {
+    isVisualEditingRef.current = true;
+  }
+
+  function handleEditorBlur(): void {
+    isVisualEditingRef.current = false;
+    syncMarkdownFromEditor();
+  }
+
   function handleEditorKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
     if (isLargeVisualPreview) {
+      return;
+    }
+
+    if (handleSaveShortcut(event)) {
+      return;
+    }
+
+    if (handleHistoryShortcut(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if (shouldPreventCodeBoundaryMerge(event)) {
+      event.preventDefault();
       return;
     }
 
@@ -1624,8 +2131,7 @@ export function MarkdownEditor({
 
     event.preventDefault();
     const text = event.clipboardData.getData("text/plain");
-    document.execCommand("insertText", false, text);
-    syncMarkdownFromEditor();
+    insertPlainText(text);
   }
 
   return (
@@ -1652,20 +2158,54 @@ export function MarkdownEditor({
           </button>
         </div>
         {isLargeDocument ? <span className="admin-visual-editor__status">{t("article.editorLargeDocumentMode")}</span> : null}
-        <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? focusSourceEditor() : runCommand("formatBlock", "p")} type="button">
+        <button
+          disabled={editorControlsDisabled}
+          onClick={() => isSourceMode ? focusSourceEditor() : convertCurrentBlock("p")}
+          onMouseDown={keepEditorSelectionOnToolbarMouseDown}
+          type="button"
+        >
           {t("article.editorParagraph")}
         </button>
-        <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? insertSourceHeading(2) : runCommand("formatBlock", "h2")} type="button">
+        <button
+          disabled={editorControlsDisabled}
+          onClick={() => insertHeadingBlock(1)}
+          onMouseDown={keepEditorSelectionOnToolbarMouseDown}
+          type="button"
+        >
+          H1
+        </button>
+        <button
+          disabled={editorControlsDisabled}
+          onClick={() => insertHeadingBlock(2)}
+          onMouseDown={keepEditorSelectionOnToolbarMouseDown}
+          type="button"
+        >
           H2
         </button>
-        <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? insertSourceHeading(3) : runCommand("formatBlock", "h3")} type="button">
+        <button
+          disabled={editorControlsDisabled}
+          onClick={() => insertHeadingBlock(3)}
+          onMouseDown={keepEditorSelectionOnToolbarMouseDown}
+          type="button"
+        >
           H3
+        </button>
+        <button
+          disabled={editorControlsDisabled}
+          onClick={() => insertHeadingBlock(4)}
+          onMouseDown={keepEditorSelectionOnToolbarMouseDown}
+          type="button"
+        >
+          H4
         </button>
         <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? wrapSourceSelection("**", "**", "bold text") : runCommand("bold")} type="button">
           B
         </button>
         <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? wrapSourceSelection("*", "*", "emphasis") : runCommand("italic")} type="button">
           I
+        </button>
+        <button disabled={editorControlsDisabled} onClick={insertInlineCode} type="button">
+          {t("article.editorInlineCode")}
         </button>
         <button disabled={editorControlsDisabled} onClick={() => isSourceMode ? prefixSourceLines("- ", "List item") : runCommand("insertUnorderedList")} type="button">
           {t("article.editorList")}
@@ -1776,8 +2316,9 @@ export function MarkdownEditor({
           className="admin-visual-editor__source"
           defaultValue={value}
           disabled={disabled}
-          onBlur={syncMarkdownFromEditor}
+          onBlur={() => syncMarkdownFromEditor()}
           onInput={(event) => handleSourceInput(event.currentTarget.value)}
+          onKeyDown={handleSourceKeyDown}
           ref={sourceTextareaRef}
           spellCheck
         />
@@ -1786,11 +2327,13 @@ export function MarkdownEditor({
           className="admin-visual-editor__surface"
           aria-readonly={isLargeVisualPreview ? true : undefined}
           contentEditable={!editorControlsDisabled}
-          onBlur={isLargeVisualPreview ? undefined : syncMarkdownFromEditor}
+          onBlur={isLargeVisualPreview ? undefined : handleEditorBlur}
           onClick={(event) => handleEditorClick(event.target)}
+          onFocus={handleEditorFocus}
           onInput={handleEditorInput}
           onKeyDown={handleEditorKeyDown}
           onKeyUp={updateContextFromSelection}
+          onMouseDown={handleEditorMouseDown}
           onPaste={handlePaste}
           ref={editorRef}
           role={isLargeVisualPreview ? "document" : "textbox"}

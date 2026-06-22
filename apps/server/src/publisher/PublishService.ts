@@ -23,6 +23,15 @@ export type PublishArticleResult = {
   htmlPath: string;
 };
 
+export type UnpublishArticleInput = {
+  articleId: unknown;
+  locale: unknown;
+};
+
+export type UnpublishArticleResult = {
+  translation: ArticleTranslation;
+};
+
 function validationError(message: string): AppError {
   return new AppError(message, {
     code: errorCodes.validationFailed,
@@ -141,6 +150,35 @@ export class PublishService {
       await this.markRenderFailed(versionId);
       throw error;
     }
+  }
+
+  async unpublishArticle(input: UnpublishArticleInput): Promise<UnpublishArticleResult> {
+    const articleId = parsePositiveInteger(input.articleId, "articleId");
+    const locale = parseLocale(input.locale);
+    const translation = await this.requireTranslation(articleId, locale);
+
+    if (translation.publishedVersionId === null && translation.currentHtmlPath === null && translation.publishedAt === null) {
+      return { translation };
+    }
+
+    const unpublishedTranslation = await this.translationRepository.updatePublishedVersion({
+      allowedRoles: translation.allowedRoles,
+      articleId,
+      currentHtmlPath: null,
+      locale,
+      publishedAt: null,
+      publishedVersionId: null
+    });
+
+    if (!unpublishedTranslation) {
+      throw notFoundError("Unpublished article state could not be loaded.");
+    }
+
+    await this.refreshPublishedSiblingHtml(articleId, locale);
+
+    return {
+      translation: unpublishedTranslation
+    };
   }
 
   private async requireVersion(articleId: number, locale: ArticleLocale, versionId: number): Promise<ArticleVersion> {

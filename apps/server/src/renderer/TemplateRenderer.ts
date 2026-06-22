@@ -1083,6 +1083,16 @@ export function renderLanguageSwitchScript(): string {
       return;
     }
 
+    Array.from(body.querySelectorAll("table")).forEach((table) => {
+      if (table.parentElement && table.parentElement.classList.contains("liax-table-scroll")) {
+        return;
+      }
+      const wrapper = document.createElement("div");
+      wrapper.className = "liax-table-scroll";
+      table.before(wrapper);
+      wrapper.append(table);
+    });
+
     const headings = Array.from(body.querySelectorAll("h2, h3, h4"));
     if (headings.length > 0 && !document.querySelector(".liax-article-toc")) {
       const usedIds = new Set();
@@ -1800,6 +1810,8 @@ export class TemplateRenderer {
       width: min(980px, 100%);
       max-width: 100%;
       margin: 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     .liax-article-body img,
@@ -1988,6 +2000,24 @@ export class TemplateRenderer {
       background: var(--color-surface-muted);
       margin: 24px 0;
       padding: 12px 18px;
+    }
+
+    .liax-table-scroll {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      margin: 24px 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior-inline: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .liax-table-scroll table {
+      width: max-content;
+      min-width: 100%;
+      max-width: none;
+      margin: 0;
     }
 
     table {

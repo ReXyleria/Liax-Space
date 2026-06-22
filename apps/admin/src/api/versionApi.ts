@@ -59,6 +59,10 @@ export type PublishVersionResponse = {
   htmlPath: string;
 };
 
+export type UnpublishVersionResponse = {
+  translation: ArticleTranslation;
+};
+
 export type PublishVersionRequest = {
   allowedRoles?: string[];
   publishedAt?: string | null;
@@ -269,6 +273,9 @@ export const versionApi = {
     }
 
     return httpClient.post<PublishVersionResponse>(`/admin/articles/${articleId}/${locale}/publish`, body);
+  },
+  unpublishVersion(articleId: number, locale: ArticleLocale): Promise<UnpublishVersionResponse> {
+    return httpClient.post<UnpublishVersionResponse>(`/admin/articles/${articleId}/${locale}/unpublish`, {});
   },
   rollbackVersion(articleId: number, locale: ArticleLocale, targetVersionId: number): Promise<RollbackVersionResponse> {
     return httpClient.post<RollbackVersionResponse>(`/admin/articles/${articleId}/${locale}/rollback`, {

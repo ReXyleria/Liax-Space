@@ -79,3 +79,29 @@ publisherRoutes.post(
     }
   })
 );
+
+publisherRoutes.post(
+  "/articles/:articleId/:locale/unpublish",
+  authRequired,
+  permissionRequired("article:publish"),
+  asyncHandler(async (request, response) => {
+    const userId = requireAuthUserId(request);
+    const result = await publishService.unpublishArticle({
+      articleId: request.params.articleId,
+      locale: request.params.locale
+    });
+
+    await auditLogService.recordFromRequest({
+      action: "article.unpublished",
+      entityId: result.translation.articleId,
+      entityType: "article",
+      metadata: {
+        locale: result.translation.locale
+      },
+      request,
+      userId
+    });
+
+    response.status(200).json(result);
+  })
+);

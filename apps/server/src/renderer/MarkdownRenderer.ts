@@ -268,7 +268,7 @@ function renderTable(lines: string[], startIndex: number): { html: string; nextI
   }
 
   return {
-    html: `<table>\n<thead><tr>${renderTableCells(headerCells, "th")}</tr></thead>\n<tbody>\n${bodyRows.join("\n")}\n</tbody>\n</table>`,
+    html: `<div class="liax-table-scroll"><table>\n<thead><tr>${renderTableCells(headerCells, "th")}</tr></thead>\n<tbody>\n${bodyRows.join("\n")}\n</tbody>\n</table></div>`,
     nextIndex: index
   };
 }

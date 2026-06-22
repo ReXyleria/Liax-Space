@@ -42,6 +42,15 @@ type LegacyMomentRow = RowDataPacket & {
   deletedAt: Date | null;
 };
 
+type LegacySiteSettingRow = RowDataPacket & {
+  key: string;
+  value_json: unknown;
+};
+
+type TableExistsRow = RowDataPacket & {
+  count: number;
+};
+
 type ExistingTargetCountsRow = RowDataPacket & {
   moments: number;
   tags: number;
@@ -66,16 +75,48 @@ export type LegacyPublicDataSyncResult = {
   legacyArticlePublishedAt: number;
   legacyArticleVisibilities: number;
   legacyMoments: number;
+  legacyPortableSiteSettings: number;
   legacyTags: number;
   momentImages: number;
   momentsInserted: number;
   skippedArticleTagLinks: number;
   skippedArticleVisibilities: number;
+  siteSettingsUpserted: number;
   tagTranslationsInserted: number;
   tagsInserted: number;
   targetMomentsBefore: number;
   targetTagsBefore: number;
 };
+
+const portableSiteSettingKeys = [
+  "ai.apiKey",
+  "ai.baseUrl",
+  "ai.deepseekBaseUrl",
+  "ai.deepseekModel",
+  "ai.model",
+  "ai.provider",
+  "ai.translationTemperature",
+  "smtp.encryption",
+  "smtp.from",
+  "smtp.fromName",
+  "smtp.host",
+  "smtp.notificationsEnabled",
+  "smtp.pass",
+  "smtp.port",
+  "smtp.user"
+] as const;
+
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
 
 export function normalizeLegacyImages(value: unknown): string[] {
   if (!value) {
@@ -175,6 +216,9 @@ export class LegacyPublicDataSyncJob {
     options.onProgress?.("reading legacy moments");
     const legacyMoments = await this.listLegacyMoments();
 
+    options.onProgress?.("reading legacy portable site settings");
+    const legacyPortableSiteSettings = await this.listLegacyPortableSiteSettings();
+
     const baseResult: LegacyPublicDataSyncResult = {
       applied: false,
       articleTagLinksInserted: 0,
@@ -184,11 +228,13 @@ export class LegacyPublicDataSyncJob {
       legacyArticlePublishedAt: legacyArticlePublishedDates.length,
       legacyArticleVisibilities: legacyArticleVisibilities.length,
       legacyMoments: legacyMoments.length,
+      legacyPortableSiteSettings: legacyPortableSiteSettings.length,
       legacyTags: legacyTags.length,
       momentImages: legacyMoments.reduce((count, moment) => count + normalizeLegacyImages(moment.images).length, 0),
       momentsInserted: 0,
       skippedArticleTagLinks: 0,
       skippedArticleVisibilities: 0,
+      siteSettingsUpserted: 0,
       tagTranslationsInserted: 0,
       tagsInserted: 0,
       targetMomentsBefore: targetCounts.moments,
@@ -311,6 +357,17 @@ export class LegacyPublicDataSyncJob {
         }
       }
 
+      options.onProgress?.("upserting target SMTP and AI settings");
+      for (const setting of legacyPortableSiteSettings) {
+        const [result] = await this.targetDatabase.execute<ResultSetHeader>(
+          `INSERT INTO site_settings (\`key\`, value_json)
+           VALUES (?, ?)
+           ON DUPLICATE KEY UPDATE value_json = VALUES(value_json), updated_at = CURRENT_TIMESTAMP`,
+          [setting.key, JSON.stringify(parseJsonValue(setting.value_json))]
+        );
+        baseResult.siteSettingsUpserted += result.affectedRows > 0 ? 1 : 0;
+      }
+
       await this.targetDatabase.commit();
       baseResult.applied = true;
       options.onProgress?.("target transaction committed");
@@ -389,6 +446,30 @@ export class LegacyPublicDataSyncJob {
   private async listLegacyMoments(): Promise<LegacyMomentRow[]> {
     const [rows] = await this.legacyDatabase.query<LegacyMomentRow[]>(
       "SELECT content, CAST(images AS CHAR) AS images, visibility, createdAt, updatedAt, deletedAt FROM Moment ORDER BY createdAt ASC, id ASC"
+    );
+
+    return rows;
+  }
+
+  private async listLegacyPortableSiteSettings(): Promise<LegacySiteSettingRow[]> {
+    const [tableRows] = await this.legacyDatabase.query<TableExistsRow[]>(
+      `SELECT COUNT(*) AS count
+       FROM INFORMATION_SCHEMA.TABLES
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'site_settings'`
+    );
+
+    if (Number(tableRows[0]?.count ?? 0) === 0) {
+      return [];
+    }
+
+    const placeholders = portableSiteSettingKeys.map(() => "?").join(", ");
+    const [rows] = await this.legacyDatabase.query<LegacySiteSettingRow[]>(
+      `SELECT \`key\`, value_json
+       FROM site_settings
+       WHERE \`key\` IN (${placeholders})
+       ORDER BY \`key\` ASC`,
+      [...portableSiteSettingKeys]
     );
 
     return rows;

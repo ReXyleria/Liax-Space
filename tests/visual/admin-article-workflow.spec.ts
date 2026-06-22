@@ -250,12 +250,48 @@ async function installArticleWorkflowMocks(page: Page, state: WorkflowState): Pr
       return;
     }
 
+    if (path === "/admin/articles/42" && method === "PATCH") {
+      const input = JSON.parse(route.request().postData() ?? "{}") as { coverAttachmentId?: number | null; status?: string };
+      const current = articleDetail(state) as { article: Record<string, unknown> };
+
+      await fulfillJson(route, {
+        article: {
+          ...current.article,
+          coverAttachmentId: input.coverAttachmentId ?? current.article.coverAttachmentId,
+          status: input.status ?? current.article.status,
+          updatedAt: now
+        }
+      });
+      return;
+    }
+
     if (path === "/admin/articles/42/translations" && method === "POST") {
       const input = JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>;
       const translation = createTranslation(input);
       state.metadataRequests.push(input);
       state.translations = [translation, ...state.translations.filter((item) => item.locale !== translation.locale)];
       await fulfillJson(route, { translation });
+      return;
+    }
+
+    if (path === "/admin/articles/42/translations/zh-CN" && method === "PATCH") {
+      const input = JSON.parse(route.request().postData() ?? "{}") as Partial<ArticleTranslation>;
+      const translation = state.translations.find((item) => item.locale === "zh-CN");
+
+      if (!translation) {
+        await fulfillJson(route, { error: { message: "Translation not found." } }, 404);
+        return;
+      }
+
+      const nextTranslation = {
+        ...translation,
+        allowedRoles: input.allowedRoles ?? translation.allowedRoles,
+        publishedAt: input.publishedAt === undefined ? translation.publishedAt : input.publishedAt,
+        updatedAt: now
+      };
+
+      state.translations = state.translations.map((item) => item.locale === "zh-CN" ? nextTranslation : item);
+      await fulfillJson(route, { translation: nextTranslation });
       return;
     }
 
@@ -384,6 +420,27 @@ async function installArticleWorkflowMocks(page: Page, state: WorkflowState): Pr
       return;
     }
 
+    if (path === "/admin/articles/42/zh-CN/unpublish" && method === "POST") {
+      const translation = state.translations.find((item) => item.locale === "zh-CN");
+
+      if (!translation) {
+        await fulfillJson(route, { error: { message: "Translation not found." } }, 404);
+        return;
+      }
+
+      const nextTranslation = {
+        ...translation,
+        currentHtmlPath: null,
+        publishedAt: null,
+        publishedVersionId: null,
+        updatedAt: now
+      };
+
+      state.translations = state.translations.map((item) => item.locale === "zh-CN" ? nextTranslation : item);
+      await fulfillJson(route, { translation: nextTranslation });
+      return;
+    }
+
     state.unknownRequests.push(`${method} ${route.request().url()}`);
     await fulfillJson(route, { error: { message: `Unexpected workflow request: ${path}` } }, 500);
   });
@@ -436,17 +493,89 @@ test("admin article workflow keeps body, metadata, saving, and publishing as sep
   await expect(page.locator(".admin-markdown-panel textarea")).toHaveCount(0);
 
   const editor = page.locator(".admin-visual-editor__surface");
-  await editor.fill("# Visual heading\n\nBody from the visual editor.");
+  await editor.click();
+  let incrementalText = "";
+  for (const character of ["a", "b", "c"]) {
+    incrementalText += character;
+    await page.keyboard.type(character);
+    await expect(editor).toHaveText(incrementalText);
+    await expect.poll(async () => editor.evaluate((element) => {
+      const selection = window.getSelection();
+
+      return {
+        anchorOffset: selection?.anchorOffset ?? null,
+        anchorText: selection?.anchorNode?.textContent ?? "",
+        text: element.textContent ?? ""
+      };
+    })).toEqual({ anchorOffset: incrementalText.length, anchorText: incrementalText, text: incrementalText });
+  }
+
+  await page.keyboard.press("Control+A");
+  await page.keyboard.press("Backspace");
+  await page.getByRole("button", { name: "H2" }).click();
+  await expect(editor.locator("h2")).toHaveCount(1);
+  await expect(editor.locator("h2")).not.toContainText("Heading");
+  await page.keyboard.type("Toolbar title");
+  await expect(editor.locator("h2")).toHaveText("Toolbar title");
+
+  await page.getByRole("button", { name: "Source" }).click();
+  const sourceEditor = page.locator(".admin-markdown-panel textarea");
+  await expect(sourceEditor).toBeVisible();
+  await sourceEditor.fill("");
+  await page.getByRole("button", { name: "H3" }).click();
+  await expect(sourceEditor).toHaveValue("### ");
+  await expect.poll(async () => sourceEditor.evaluate((element) => (element as HTMLTextAreaElement).selectionStart)).toBe(4);
+  await page.keyboard.type("Source title");
+  await expect(sourceEditor).toHaveValue("### Source title");
+  await expect(sourceEditor).not.toHaveValue(/Heading/);
+  await page.getByRole("button", { name: "Visual" }).click();
+  await expect(editor.locator("h3")).toHaveText("Source title");
+
+  await editor.click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.type("/h2");
+  await page.getByRole("option", { name: /Heading 2/ }).click();
+  await expect(editor.locator("h2")).toHaveCount(1);
+  await expect(editor.locator("h2")).not.toContainText("Heading");
+  await page.keyboard.type("Mouse heading");
+  await expect(editor.locator("h2")).toHaveText("Mouse heading");
+
+  await page.keyboard.press("Control+A");
+  await page.keyboard.press("Backspace");
+  state.saveRequests = [];
+  await page.keyboard.type("/h1");
+  await page.keyboard.press("Enter");
+  await expect(editor.locator("h1")).toHaveCount(1);
+  await expect(editor.locator("h1")).not.toContainText("Heading");
+  await page.keyboard.type("Direct title");
+  await expect(editor.locator("h1")).toHaveText("Direct title");
+  await editor.click({ position: { x: 24, y: 500 } });
+  await page.keyboard.type("Body from the visual editor.");
+  await page.keyboard.type("``after $ $$");
   await page.waitForTimeout(100);
-  await page.getByRole("button", { name: "Save content" }).click();
+  await expect(editor).toContainText("Body from the visual editor.``after $ $$");
+  await expect.poll(async () => editor.evaluate(() => {
+    const selection = window.getSelection();
+
+    return {
+      anchorOffset: selection?.anchorOffset ?? null,
+      anchorText: selection?.anchorNode?.textContent ?? ""
+    };
+  })).toEqual({
+    anchorOffset: "Body from the visual editor.``after $ $$".length,
+    anchorText: "Body from the visual editor.``after $ $$"
+  });
+  await page.keyboard.press("Control+S");
   await expect(page.getByText("Content saved.")).toBeVisible();
 
   expect(state.saveRequests).toEqual([
     {
       baseVersionId: null,
-      mdContent: "# Visual heading\n\nBody from the visual editor."
+      mdContent: "# Direct title\n\nBody from the visual editor.\\`\\`after \\$ \\$\\$"
     }
   ]);
+  expect(state.publishRequests).toEqual([]);
   expect(state.translations.find((translation) => translation.locale === "zh-CN")?.publishedVersionId).toBeNull();
 
   await expect(page.locator(".admin-markdown-import--editor")).toBeVisible();
@@ -465,17 +594,20 @@ test("admin article workflow keeps body, metadata, saving, and publishing as sep
 
   await page.getByRole("link", { name: "Versions" }).click();
   await expect(page.locator("main").getByRole("heading", { name: "Version management #42 - zh-CN" })).toBeVisible();
-  await expect(page.locator(".admin-version-summary")).toContainText("Current version ID");
-  await expect(page.locator(".admin-version-summary")).toContainText("9002");
-  await expect(page.locator(".admin-version-summary")).toContainText("Published version ID");
-  await expect(page.locator(".admin-version-summary")).toContainText("No version");
+  await expect(page.locator(".admin-version-summary")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Publish current version" })).toHaveCount(0);
 
+  await page.goto("/#articles");
+  await page.getByRole("button", { name: "Configure" }).click();
+  const configModal = page.locator(".admin-modal");
+  await expect(configModal.getByText("Publish settings")).toBeVisible();
+  await expect(configModal.getByText("Unpublished", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Publish current version" }).click();
   await expect(page.getByText("Published the current language version.")).toBeVisible();
-  expect(state.publishRequests).toEqual([{ versionId: 9002 }]);
+  expect(state.publishRequests).toEqual([{ allowedRoles: [], versionId: 9002 }]);
   expect(state.translations.find((translation) => translation.locale === "zh-CN")?.publishedVersionId).toBe(9002);
 
-  await page.getByRole("link", { name: "Back to content editor" }).click();
+  await page.locator(".admin-modal").getByRole("link", { name: "Edit content" }).click();
   await expect(page.locator(".admin-visual-editor__surface h1")).toHaveText("Imported heading");
   await expect(page.locator(".admin-visual-editor__surface")).toContainText("Body from imported Markdown.");
   expect(state.unknownRequests).toEqual([]);

@@ -856,6 +856,25 @@ function moveArticleNeighborNavAfterBody(html: string): string {
       </footer>`);
 }
 
+function wrapStandaloneArticleTables(html: string): string {
+  return html.replace(
+    /(<article class="liax-article-body"[^>]*>)([\s\S]*?)(<\/article>)/gu,
+    (_match: string, openTag: string, bodyHtml: string, closeTag: string) => {
+      const wrappedBody = bodyHtml.replace(/<table\b[\s\S]*?<\/table>/giu, (tableHtml: string, offset: number) => {
+        const precedingHtml = bodyHtml.slice(Math.max(0, offset - 96), offset);
+
+        if (/class=["']liax-table-scroll["'][^>]*>\s*$/iu.test(precedingHtml)) {
+          return tableHtml;
+        }
+
+        return `<div class="liax-table-scroll">${tableHtml}</div>`;
+      });
+
+      return `${openTag}${wrappedBody}${closeTag}`;
+    }
+  );
+}
+
 function removeDuplicateHeaderLanguageSwitches(html: string): string {
   return html.replace(/(<header class="liax-public-header"[^>]*>)([\s\S]*?)(<\/header>)/u, (_match, openTag: string, headerBody: string, closeTag: string) => {
     let hasLanguageSwitch = false;
@@ -970,6 +989,7 @@ export function patchPublishedArticleHtml(
   }
 
   patched = moveArticleNeighborNavAfterBody(patched);
+  patched = wrapStandaloneArticleTables(patched);
 
   if (headInjection) {
     patched = patched.replace("</head>", `${headInjection}</head>`);
@@ -1030,6 +1050,10 @@ export function patchPublishedArticleHtml(
     .liax-article-footer {
       width: min(980px, 100%);
     }
+    .liax-article-body {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
     .liax-article-header h1,
     .liax-article-body h1,
     .liax-article-body h2,
@@ -1087,10 +1111,25 @@ export function patchPublishedArticleHtml(
       font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
       padding: 0.1em 0.35em;
     }
-    .liax-article-body pre,
-    .liax-article-body table {
+    .liax-article-body pre {
       max-width: 100%;
       overflow-x: auto;
+    }
+    .liax-table-scroll {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 0 16px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior-inline: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+    .liax-table-scroll table {
+      width: max-content;
+      min-width: 100%;
+      max-width: none;
+      margin: 0;
     }
     .liax-article-body pre {
       position: relative;
@@ -1334,6 +1373,15 @@ document.querySelectorAll(".liax-public-header .liax-language-switch[data-langua
 });
 document.querySelectorAll(".liax-article-body img").forEach((image) => {
   image.addEventListener("error", () => image.remove(), { once: true });
+});
+document.querySelectorAll(".liax-article-body table").forEach((table) => {
+  if (table.parentElement && table.parentElement.classList.contains("liax-table-scroll")) {
+    return;
+  }
+  const wrapper = document.createElement("div");
+  wrapper.className = "liax-table-scroll";
+  table.before(wrapper);
+  wrapper.append(table);
 });
 function liaxArticleText(key) {
   const isZh = document.documentElement.lang.toLowerCase().startsWith("zh");

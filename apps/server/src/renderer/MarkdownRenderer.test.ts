@@ -122,7 +122,9 @@ describe("MarkdownRenderer", () => {
     assert.match(result.html, /\.liax-article-card\s*\{[\s\S]*?width: 100%;[\s\S]*?border: 0;[\s\S]*?background: transparent;/);
     assert.match(result.html, /\*,\s*\*::before,\s*\*::after\s*\{[\s\S]*?box-sizing: border-box;/);
     assert.match(result.html, /\.liax-article-card\s*\{[\s\S]*?max-width: 100vw;[\s\S]*?overflow-x: clip;/);
-    assert.match(result.html, /\.liax-article-body\s*\{[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;/);
+    assert.match(result.html, /\.liax-article-body\s*\{[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;[\s\S]*?overflow-x: auto;/);
+    assert.match(result.html, /\.liax-table-scroll\s*\{[\s\S]*?overflow-x: auto;[\s\S]*?-webkit-overflow-scrolling: touch;/);
+    assert.match(result.html, /\.liax-table-scroll table\s*\{[\s\S]*?width: max-content;[\s\S]*?max-width: none;/);
     assert.doesNotMatch(result.html, /translateY\(10px\)/);
     assert.match(result.html, /class="liax-button liax-language-icon-button"/);
     assert.doesNotMatch(result.html, /liax-button--brand liax-language-icon-button/);
@@ -191,6 +193,7 @@ describe("MarkdownRenderer", () => {
     assert.match(result.sanitizedBodyHtml, /<span class="liax-math">E=mc\^2<\/span>/);
     assert.match(result.sanitizedBodyHtml, /<a href="\/target">link<\/a>/);
     assert.match(result.sanitizedBodyHtml, /<img alt="Alt" src="\/uploads\/image\.png">/);
+    assert.match(result.sanitizedBodyHtml, /<div class="liax-table-scroll"><table>/);
     assert.match(result.sanitizedBodyHtml, /<th colspan="2">Name<\/th>/);
     assert.match(result.sanitizedBodyHtml, /<td colspan="2">Same<\/td>/);
     assert.match(result.sanitizedBodyHtml, /<td colspan="2">B<\/td>/);

@@ -584,6 +584,12 @@ canvas {
   border-color: #c96442;
 }
 
+.admin-status-badge[data-status="unpublished"] {
+  border-color: #d1cfc5;
+  background: #f5f4ed;
+  color: #6f6a5d;
+}
+
 .admin-status-badge[data-status="missing"] {
   background: #f5f4ed;
 }
@@ -1226,11 +1232,34 @@ canvas {
   white-space: pre;
 }
 
+.admin-table-scroll {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-table-scroll table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+}
+
 .admin-visual-editor__surface table {
   width: 100%;
   border-collapse: collapse;
-  margin: 0 0 14px;
+  margin: 0;
   min-width: 460px;
+}
+
+.admin-visual-editor__surface .admin-table-scroll table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
 }
 
 .admin-visual-editor__surface th,
@@ -2619,6 +2648,16 @@ canvas {
   margin-bottom: 0;
 }
 
+.admin-publish-config {
+  align-items: flex-start;
+}
+
+.admin-publish-config__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .admin-article-config-section--basic .admin-article-config-grid,
 .admin-article-config-section--basic .admin-cover-upload-panel {
   grid-template-columns: 1fr;
@@ -3559,6 +3598,12 @@ canvas {
   border-color: rgb(208 161 63 / 32%);
   background: #fff4d8;
   color: #704600;
+}
+
+.admin-status-badge[data-status="unpublished"] {
+  border-color: rgb(114 91 85 / 24%);
+  background: #f1ebe8;
+  color: #725b55;
 }
 
 .admin-status-badge[data-status="hidden"],

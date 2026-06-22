@@ -50,6 +50,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const [translation, setTranslation] = useState<ArticleTranslation | null>(null);
   const [baseVersionId, setBaseVersionId] = useState<number | null>(null);
   const [mdContent, setMdContent] = useState("");
+  const [editorDocumentRevision, setEditorDocumentRevision] = useState(0);
   const [attachmentPreviewUrls, setAttachmentPreviewUrls] = useState<Record<string, string>>({});
   const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,6 +75,10 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   function setHydratingContent(nextValue: boolean): void {
     isHydratingContentRef.current = nextValue;
     setIsHydratingContent(nextValue);
+  }
+
+  function bumpEditorDocumentRevision(): void {
+    setEditorDocumentRevision((currentRevision) => currentRevision + 1);
   }
 
   useEffect(() => {
@@ -139,6 +144,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
           setMdContent(nextMarkdown);
           mdContentRef.current = nextMarkdown;
           lastSavedContentRef.current = nextMarkdown;
+          bumpEditorDocumentRevision();
           setHydratingContent(false);
         }
       } catch (error) {
@@ -309,7 +315,9 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       setMdContent(importedMarkdown);
       mdContentRef.current = importedMarkdown;
       lastSavedContentRef.current = importedMarkdown;
+      bumpEditorDocumentRevision();
       setSelectedImportFile(null);
+
       setMessage(
         `${response.unchanged ? t("article.importUnchanged") : t("article.importSaved")} ${t("article.versionNo")} ${response.version.versionNo} · ${formatBytes(response.version.contentSizeBytes)}`
       );
@@ -374,6 +382,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       suppressNextAutoSaveRef.current = true;
       mdContentRef.current = response.translation.fields.content ?? "";
       setMdContent(response.translation.fields.content ?? "");
+      bumpEditorDocumentRevision();
       setMessage(t("article.translateReady"));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("article.translateFailed"));
@@ -477,6 +486,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                 <MarkdownEditor
                   attachmentPreviewUrls={attachmentPreviewUrls}
                   disabled={isSaving || isTranslating || isHydratingContent || isImportingMarkdown}
+                  documentRevision={editorDocumentRevision}
                   forcePlainTextMode={forcePlainEditor}
                   onChange={handleEditorChange}
                   onDraftChange={(value) => {
@@ -484,6 +494,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                     mdContentRef.current = value;
                   }}
                   onUploadImage={handlePasteImage}
+                  onSaveShortcut={() => void handleSave()}
                   value={mdContent}
                 />
 

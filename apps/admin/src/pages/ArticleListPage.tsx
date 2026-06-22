@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type MouseEvent, type R
 import { articleApi, type ArticleDetail, type ArticleLocale, type ArticleTranslation } from "../api/articleApi";
 import { attachmentApi, type Attachment } from "../api/attachmentApi";
 import { roleApi, type AdminRoleDefinition } from "../api/roleApi";
+import { versionApi } from "../api/versionApi";
 import { LocaleTabs } from "../components/LocaleTabs";
 import { AdminLayout } from "../layout/AdminLayout";
 import { hasAnyPermission } from "../auth/permissions";
@@ -12,7 +13,6 @@ import { authStore, type AuthState } from "../stores/authStore";
 import { dateTimeLocalToIso, toDateTimeLocalValue } from "../utils/dateTime";
 
 const articleLocales: ArticleLocale[] = ["zh-CN", "en-US"];
-const articleStatusOptions = ["draft", "active", "archived"] as const;
 const fallbackRoleOptions: AdminRoleDefinition[] = [
   {
     builtIn: true,
@@ -41,6 +41,7 @@ const fallbackRoleOptions: AdminRoleDefinition[] = [
 ];
 
 type TranslationStatus = "missing" | "metadata" | "draft" | "published";
+type ArticlePublishState = "published" | "unpublished";
 type ExistingTranslationState = Record<ArticleLocale, ArticleTranslation | null>;
 type PublishedAtState = Record<ArticleLocale, string>;
 type VisibilityState = Record<ArticleLocale, string[]>;
@@ -94,8 +95,48 @@ function preferredPublishedTranslation(translations: ArticleTranslation[]): Arti
   return translations.find((translation) => translation.publishedAt !== null) ?? preferredTranslation(translations);
 }
 
+function latestPublishedAtTimestamp(translations: ArticleTranslation[]): number {
+  const timestamps = translations
+    .map((translation) => translation.publishedAt ? new Date(translation.publishedAt).getTime() : Number.NaN)
+    .filter(Number.isFinite);
+
+  return timestamps.length > 0 ? Math.max(...timestamps) : 0;
+}
+
+function sortArticleDetailsByPublishedAt(articles: ArticleDetail[]): ArticleDetail[] {
+  return [...articles].sort((left, right) => {
+    const publishedDifference = latestPublishedAtTimestamp(right.translations) - latestPublishedAtTimestamp(left.translations);
+
+    if (publishedDifference !== 0) {
+      return publishedDifference;
+    }
+
+    const updatedDifference = new Date(right.article.updatedAt).getTime() - new Date(left.article.updatedAt).getTime();
+
+    if (updatedDifference !== 0) {
+      return updatedDifference;
+    }
+
+    return right.article.id - left.article.id;
+  });
+}
+
+function replaceArticleDetail(articles: ArticleDetail[], nextDetail: ArticleDetail): ArticleDetail[] {
+  return sortArticleDetailsByPublishedAt(articles.map((item) => (
+    item.article.id === nextDetail.article.id ? nextDetail : item
+  )));
+}
+
 function preferredEditLocale(translations: ArticleTranslation[]): ArticleLocale {
   return preferredTranslation(translations)?.locale ?? "zh-CN";
+}
+
+function articlePublishState(detail: ArticleDetail): ArticlePublishState {
+  return detail.translations.some((translation) => translation.publishedVersionId !== null) ? "published" : "unpublished";
+}
+
+function translationPublishState(translation: ArticleTranslation | null): ArticlePublishState {
+  return translation && translation.publishedVersionId !== null ? "published" : "unpublished";
 }
 
 function emptyExistingState(): ExistingTranslationState {
@@ -149,21 +190,24 @@ export function ArticleListPage(): ReactElement {
   const [existingTranslations, setExistingTranslations] = useState<ExistingTranslationState>(() => emptyExistingState());
   const [allowedRoles, setAllowedRoles] = useState<VisibilityState>(() => emptyVisibilityState());
   const [publishedAtByLocale, setPublishedAtByLocale] = useState<PublishedAtState>(() => emptyPublishedAtState());
-  const [status, setStatus] = useState("draft");
   const [coverAttachmentId, setCoverAttachmentId] = useState("");
   const [uploadedCoverAttachment, setUploadedCoverAttachment] = useState<Attachment | null>(null);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [isPublishingConfig, setIsPublishingConfig] = useState(false);
+  const [isUnpublishingConfig, setIsUnpublishingConfig] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isDeletingArticle, setIsDeletingArticle] = useState(false);
   const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(null);
   const [modalSuccessMessage, setModalSuccessMessage] = useState<string | null>(null);
   const formatterLocale = useMemo(() => navigator.language || "zh-CN", []);
   const activeTranslation = existingTranslations[activeLocale];
+  const activePublishState = translationPublishState(activeTranslation);
   const editingArticleTitle = editingArticle ? preferredTranslation(editingArticle.translations)?.title : null;
   const canCreateArticle = hasAnyPermission(authState.user, ["article:create"]);
   const canEditArticle = hasAnyPermission(authState.user, ["article:update"]);
+  const canPublishArticle = hasAnyPermission(authState.user, ["article:publish"]);
   const canDeleteArticle = hasAnyPermission(authState.user, ["article:delete"]);
-  const isConfigBusy = isSavingConfig || isUploadingCover || isDeletingArticle;
+  const isConfigBusy = isSavingConfig || isPublishingConfig || isUnpublishingConfig || isUploadingCover || isDeletingArticle;
 
   useEffect(() => authStore.subscribe(setAuthState), []);
 
@@ -206,7 +250,7 @@ export function ArticleListPage(): ReactElement {
             throw new Error(t("article.listLoadFailed"));
           }
 
-          setArticles(response.articles);
+          setArticles(sortArticleDetailsByPublishedAt(response.articles));
         }
       } catch (error) {
         if (isMounted) {
@@ -234,9 +278,10 @@ export function ArticleListPage(): ReactElement {
     setExistingTranslations(nextState.existingTranslations);
     setAllowedRoles(nextState.visibility);
     setPublishedAtByLocale(nextState.publishedAt);
-    setStatus(detail.article.status || "draft");
     setCoverAttachmentId(detail.article.coverAttachmentId === null ? "" : String(detail.article.coverAttachmentId));
     setUploadedCoverAttachment(null);
+    setIsPublishingConfig(false);
+    setIsUnpublishingConfig(false);
     setIsDeletingArticle(false);
     setModalErrorMessage(null);
     setModalSuccessMessage(null);
@@ -386,8 +431,7 @@ export function ArticleListPage(): ReactElement {
     try {
       const parsedCoverAttachmentId = parseCoverAttachmentId();
       const articleResponse = await articleApi.updateArticle(editingArticle.article.id, {
-        coverAttachmentId: parsedCoverAttachmentId,
-        status
+        coverAttachmentId: parsedCoverAttachmentId
       });
       const translationResponse = activeTranslation
         ? await articleApi.updateTranslation(editingArticle.article.id, activeLocale, {
@@ -408,20 +452,91 @@ export function ArticleListPage(): ReactElement {
       };
       const nextState = buildTranslationState(nextDetail);
 
-      setArticles((currentArticles) => currentArticles.map((item) => (
-        item.article.id === nextDetail.article.id ? nextDetail : item
-      )));
+      setArticles((currentArticles) => replaceArticleDetail(currentArticles, nextDetail));
       setEditingArticle(nextDetail);
       setExistingTranslations(nextState.existingTranslations);
       setAllowedRoles(nextState.visibility);
       setPublishedAtByLocale(nextState.publishedAt);
       setCoverAttachmentId(nextDetail.article.coverAttachmentId === null ? "" : String(nextDetail.article.coverAttachmentId));
-      setStatus(nextDetail.article.status);
       setModalSuccessMessage(t("article.configSaved"));
     } catch (error) {
       setModalErrorMessage(error instanceof Error ? error.message : t("article.configSaveFailed"));
     } finally {
       setIsSavingConfig(false);
+    }
+  }
+
+  function applyUpdatedTranslation(translation: ArticleTranslation, successMessage: string): void {
+    if (!editingArticle) {
+      return;
+    }
+
+    const nextTranslations = editingArticle.translations.some((item) => item.locale === translation.locale)
+      ? editingArticle.translations.map((item) => (item.locale === translation.locale ? translation : item))
+      : [...editingArticle.translations, translation];
+    const nextDetail = {
+      article: editingArticle.article,
+      translations: nextTranslations
+    };
+    const nextState = buildTranslationState(nextDetail);
+
+    setArticles((currentArticles) => replaceArticleDetail(currentArticles, nextDetail));
+    setEditingArticle(nextDetail);
+    setExistingTranslations(nextState.existingTranslations);
+    setAllowedRoles(nextState.visibility);
+    setPublishedAtByLocale(nextState.publishedAt);
+    setModalSuccessMessage(successMessage);
+  }
+
+  async function handlePublishActiveTranslation(): Promise<void> {
+    if (!editingArticle || !activeTranslation) {
+      setModalErrorMessage(t("article.markdownNeedsMetadata"));
+      setModalSuccessMessage(null);
+      return;
+    }
+
+    if (activeTranslation.currentVersionId === null) {
+      setModalErrorMessage(t("article.noCurrentVersion"));
+      setModalSuccessMessage(null);
+      return;
+    }
+
+    setIsPublishingConfig(true);
+    setModalErrorMessage(null);
+    setModalSuccessMessage(null);
+
+    try {
+      const response = await versionApi.publishVersion(editingArticle.article.id, activeLocale, activeTranslation.currentVersionId, {
+        allowedRoles: editableVisibleRoles(allowedRoles[activeLocale] ?? [])
+      });
+
+      applyUpdatedTranslation(response.translation, t("article.publishSuccess"));
+    } catch (error) {
+      setModalErrorMessage(error instanceof Error ? error.message : t("article.publishFailed"));
+    } finally {
+      setIsPublishingConfig(false);
+    }
+  }
+
+  async function handleUnpublishActiveTranslation(): Promise<void> {
+    if (!editingArticle || !activeTranslation) {
+      setModalErrorMessage(t("article.markdownNeedsMetadata"));
+      setModalSuccessMessage(null);
+      return;
+    }
+
+    setIsUnpublishingConfig(true);
+    setModalErrorMessage(null);
+    setModalSuccessMessage(null);
+
+    try {
+      const response = await versionApi.unpublishVersion(editingArticle.article.id, activeLocale);
+
+      applyUpdatedTranslation(response.translation, t("article.unpublishSuccess"));
+    } catch (error) {
+      setModalErrorMessage(error instanceof Error ? error.message : t("article.unpublishFailed"));
+    } finally {
+      setIsUnpublishingConfig(false);
     }
   }
 
@@ -496,6 +611,7 @@ export function ArticleListPage(): ReactElement {
               <tbody>
                 {articles.map((item) => {
                   const titleTranslation = preferredTranslation(item.translations);
+                  const itemPublishState = articlePublishState(item);
                   const displayTitle = titleTranslation?.title?.trim()
                     ? titleTranslation.title
                     : t("article.untitledDraft").replace("{id}", String(item.article.id));
@@ -510,7 +626,11 @@ export function ArticleListPage(): ReactElement {
                           : `${t("article.id")} ${item.article.id}`}
                       </small>
                     </td>
-                    <td className="admin-article-status-cell">{t(`article.status.${item.article.status}`)}</td>
+                    <td className="admin-article-status-cell">
+                      <span className="admin-status-badge" data-status={itemPublishState}>
+                        {t(`article.publishState.${itemPublishState}`)}
+                      </span>
+                    </td>
                     <td>
                       <div className="admin-translation-badges">
                         {articleLocales.map((locale) => {
@@ -591,7 +711,7 @@ export function ArticleListPage(): ReactElement {
             <div className="admin-modal__body">
               <div className="admin-article-config-summary">
                 <span>{t("article.id")} {editingArticle.article.id}</span>
-                <span>{t("article.status")}: {t(`article.status.${editingArticle.article.status}`)}</span>
+                <span>{t("article.status")}: {t(`article.publishState.${articlePublishState(editingArticle)}`)}</span>
                 <span>{activeLocale}: {t(`article.translation.${translationStatus(activeTranslation)}`)}</span>
                 <span>{t("article.visibilityColumn")}: {visibilityLabel(allowedRoles[activeLocale] ?? [])}</span>
               </div>
@@ -600,17 +720,31 @@ export function ArticleListPage(): ReactElement {
               <section className="admin-article-config-section admin-article-config-section--basic">
                 <h4>{t("article.basicConfig")}</h4>
                 <div className="admin-article-config-grid">
-                  <label className="admin-form-field">
-                    <span>{t("article.status")}</span>
-                    <select disabled={isConfigBusy} onChange={(event) => setStatus(event.target.value)} value={status}>
-                      {articleStatusOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {t(`article.status.${option}`)}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="admin-form-field admin-publish-config">
+                    <span>{t("article.publishConfigTitle")}</span>
+                    <span className="admin-status-badge" data-status={activePublishState}>
+                      {t(`article.publishState.${activePublishState}`)}
+                    </span>
                     <small>{t("article.statusHelp")}</small>
-                  </label>
+                    <div className="admin-publish-config__actions">
+                      <button
+                        className="liax-button liax-button--primary"
+                        disabled={isConfigBusy || !canPublishArticle || !activeTranslation || activeTranslation.currentVersionId === null}
+                        onClick={() => void handlePublishActiveTranslation()}
+                        type="button"
+                      >
+                        {isPublishingConfig ? t("article.publishing") : t("article.publishCurrent")}
+                      </button>
+                      <button
+                        className="liax-button"
+                        disabled={isConfigBusy || !canPublishArticle || !activeTranslation || activeTranslation.publishedVersionId === null}
+                        onClick={() => void handleUnpublishActiveTranslation()}
+                        type="button"
+                      >
+                        {isUnpublishingConfig ? t("article.unpublishing") : t("article.unpublishCurrent")}
+                      </button>
+                    </div>
+                  </div>
 
                   <label className="admin-form-field">
                     <span>{t("article.publishedAt")}</span>

@@ -115,6 +115,10 @@ function hasSeoGenerationSource(value: TranslationMetadataFormValue): boolean {
   return [value.title, value.summary].some((field) => field.trim().length > 0);
 }
 
+function translationPublishState(translation: ArticleTranslation | null): "published" | "unpublished" {
+  return translation?.publishedVersionId != null ? "published" : "unpublished";
+}
+
 export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEditPageProps): ReactElement {
   const t = useT();
   const [activeLocale, setActiveLocale] = useState<ArticleLocale>("zh-CN");
@@ -321,7 +325,7 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
           {!isLoading && articleDetail ? (
             <>
               <div className="admin-metadata-context">
-                <span>{t("article.status")}: {articleDetail.article.status}</span>
+                <span>{t("article.status")}: {t(`article.publishState.${translationPublishState(activeTranslation)}`)}</span>
                 <span>{t("article.translationStatus")}: {activeTranslation ? t("article.translation.metadata") : t("article.translation.missing")}</span>
               </div>
 

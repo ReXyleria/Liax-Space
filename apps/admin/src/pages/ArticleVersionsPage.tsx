@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState, type ReactElement } from "re
 import { articleApi, type ArticleLocale, type ArticleTranslation } from "../api/articleApi";
 import { type ArticleVersion, versionApi } from "../api/versionApi";
 import { largeMarkdownDocumentThreshold } from "../components/MarkdownEditor";
-import { PublishPanel } from "../components/PublishPanel";
 import { VisualContentView } from "../components/VisualContentView";
 import { VersionList } from "../components/VersionList";
 import { useT } from "../i18n/useT";
@@ -45,17 +44,13 @@ function formatBytes(value: number): string {
 
 export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPageProps): ReactElement {
   const t = useT();
-  const [translation, setTranslation] = useState<ArticleTranslation | null>(null);
   const [versions, setVersions] = useState<ArticleVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<ArticleVersion | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
-  const [isPublishing, setIsPublishing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const pageTitle = useMemo(() => `${t("article.versionsTitle")} #${articleId} - ${locale}`, [articleId, locale, t]);
-  const currentVersionId = translation?.currentVersionId ?? null;
-  const publishedVersionId = translation?.publishedVersionId ?? null;
 
   const loadVersions = useCallback(async () => {
     setIsLoading(true);
@@ -72,7 +67,6 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
       const preferredVersion =
         sortedVersions.find((version) => version.id === activeTranslation?.currentVersionId) ?? sortedVersions[0] ?? null;
 
-      setTranslation(activeTranslation);
       setVersions(sortedVersions);
       setSelectedVersion(preferredVersion);
     } catch (error) {
@@ -121,29 +115,6 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
     }
   }
 
-  async function handlePublish(): Promise<void> {
-    if (currentVersionId === null) {
-      setErrorMessage(t("article.noCurrentVersion"));
-      return;
-    }
-
-    setIsPublishing(true);
-    setMessage(null);
-    setErrorMessage(null);
-
-    try {
-      const response = await versionApi.publishVersion(articleId, locale, currentVersionId);
-      setTranslation(response.translation);
-      setSelectedVersion(response.version);
-      setVersions((currentVersions) => replaceVersion(currentVersions, response.version));
-      setMessage(t("article.publishSuccess"));
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : t("article.publishFailed"));
-    } finally {
-      setIsPublishing(false);
-    }
-  }
-
   async function handleRollback(version: ArticleVersion): Promise<void> {
     setIsBusy(true);
     setMessage(null);
@@ -153,9 +124,6 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
       const response = await versionApi.rollbackVersion(articleId, locale, version.id);
       setSelectedVersion(response.version);
       setVersions((currentVersions) => replaceVersion(currentVersions, response.version));
-      setTranslation((currentTranslation) => currentTranslation
-        ? { ...currentTranslation, currentVersionId: response.version.id }
-        : currentTranslation);
       setMessage(t("article.rollbackSuccess"));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("article.rollbackFailed"));
@@ -206,13 +174,6 @@ export function ArticleVersionsPage({ articleId, locale }: ArticleVersionsPagePr
       ) : (
         <section className="admin-version-workspace">
           <div className="admin-version-sidebar">
-            <PublishPanel
-              currentVersionId={currentVersionId}
-              isPublishing={isPublishing}
-              onPublish={() => void handlePublish()}
-              publishedVersionId={publishedVersionId}
-            />
-
             <VersionList
               isBusy={isBusy}
               onRollback={(version) => void handleRollback(version)}

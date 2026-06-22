@@ -182,7 +182,7 @@ describe("public section page rendering", () => {
     </header>
     <main class="liax-article-card">
       <header class="liax-article-header"><h1>旧模板长文章标题</h1></header>
-      <article class="liax-article-body"><p>averyveryveryverylongwordwithoutbreaks</p><pre><code>const answer = 42;</code></pre></article>
+      <article class="liax-article-body"><p>averyveryveryverylongwordwithoutbreaks</p><pre><code>const answer = 42;</code></pre><table><tbody><tr><td>wide table cell</td></tr></tbody></table></article>
     </main>
   </div>
 </body>
@@ -195,6 +195,9 @@ describe("public section page rendering", () => {
     assert.match(patched, /html,\s*body\s*\{[\s\S]*?overflow-x: hidden;/);
     assert.match(patched, /\.liax-public-header,\s*\.liax-article-card\s*\{[\s\S]*?max-width: 100vw;/);
     assert.match(patched, /\.liax-article-card\s*\{[\s\S]*?overflow-x: clip;/);
+    assert.match(patched, /<div class="liax-table-scroll"><table><tbody><tr><td>wide table cell<\/td><\/tr><\/tbody><\/table><\/div>/);
+    assert.match(patched, /\.liax-article-body\s*\{[\s\S]*?overflow-x: auto;[\s\S]*?-webkit-overflow-scrolling: touch;/);
+    assert.match(patched, /\.liax-table-scroll table\s*\{[\s\S]*?width: max-content;[\s\S]*?max-width: none;/);
     assert.match(patched, /\.liax-article-header h1,[\s\S]*?\.liax-article-body p,[\s\S]*?overflow-wrap: anywhere;/);
     assert.match(patched, /\.liax-article-body h2,[\s\S]*?scroll-margin-top: 96px;/);
     assert.match(patched, /function liaxHighlightCodeElement\(code\)/);

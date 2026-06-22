@@ -14,13 +14,13 @@ type ArticleRow = RowDataPacket & {
 };
 
 const articleColumns = [
-  "id",
-  "author_id",
-  "status",
-  "cover_attachment_id",
-  "created_at",
-  "updated_at",
-  "deleted_at"
+  "articles.id",
+  "articles.author_id",
+  "articles.status",
+  "articles.cover_attachment_id",
+  "articles.created_at",
+  "articles.updated_at",
+  "articles.deleted_at"
 ].join(", ");
 
 function mapArticleRow(row: ArticleRow): Article {
@@ -69,19 +69,28 @@ export class ArticleRepository {
     const params: Array<string | number> = [];
 
     if (input.status) {
-      where.push("status = ?");
+      where.push("articles.status = ?");
       params.push(input.status);
     }
 
     if (!input.includeDeleted) {
-      where.push("deleted_at IS NULL");
+      where.push("articles.deleted_at IS NULL");
     }
 
     const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
     const limit = Number.isInteger(input.limit) && input.limit && input.limit > 0 ? input.limit : 50;
     const offset = Number.isInteger(input.offset) && input.offset && input.offset > 0 ? input.offset : 0;
     const [rows] = await pool.execute<ArticleRow[]>(
-      `SELECT ${articleColumns} FROM articles ${whereClause} ORDER BY created_at DESC, id DESC LIMIT ${limit} OFFSET ${offset}`,
+      `SELECT ${articleColumns}, MAX(article_translations.published_at) AS sort_published_at
+       FROM articles
+       LEFT JOIN article_translations ON article_translations.article_id = articles.id
+       ${whereClause}
+       GROUP BY ${articleColumns}
+       ORDER BY sort_published_at IS NULL ASC,
+                sort_published_at DESC,
+                articles.updated_at DESC,
+                articles.id DESC
+       LIMIT ${limit} OFFSET ${offset}`,
       params
     );
 

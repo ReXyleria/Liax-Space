@@ -483,7 +483,7 @@ class MemoryTranslationRepository {
 
     translation.currentHtmlPath = input.currentHtmlPath;
     translation.allowedRoles = input.allowedRoles ?? translation.allowedRoles;
-    translation.publishedAt = input.publishedAt ?? null;
+    translation.publishedAt = input.publishedAt === undefined ? new Date() : input.publishedAt;
     translation.publishedVersionId = input.publishedVersionId;
     translation.updatedAt = new Date();
     return cloneTranslation(translation);
@@ -1025,6 +1025,53 @@ describe("admin article integration flow", () => {
     assert.equal(translationAfterFailure?.currentHtmlPath, oldHtmlRelativePath);
     assert.equal(failedVersion?.renderStatus, "failed");
     assert.equal(oldHtmlAfterFailure, oldHtml);
+  });
+
+  it("unpublishes a language without clearing the current draft or visibility", async () => {
+    const state = new TestState();
+    const services = await createServices(state);
+
+    await prepareSetupToken();
+    const admin = await services.setupService.initializeAdmin({
+      email: "admin@example.test",
+      password: "correct-password",
+      setupToken,
+      username: "admin"
+    });
+    const article = await services.articleService.createArticle(admin.id, {});
+    await services.articleService.createTranslation(article.id, {
+      allowedRoles: ["svip"],
+      locale: "zh-CN",
+      slug: "unpublish-me",
+      title: "取消发布"
+    });
+    const version = await services.versionService.saveVersion({
+      articleId: article.id,
+      baseVersionId: null,
+      createdBy: admin.id,
+      locale: "zh-CN",
+      mdContent: "# 已发布"
+    });
+
+    await state.translationRepository.updatePublishedVersion({
+      allowedRoles: ["svip"],
+      articleId: article.id,
+      currentHtmlPath: `zh-CN/articles/${article.id}/${version.version.id}/index.html`,
+      locale: "zh-CN",
+      publishedAt: new Date("2026-01-01T00:00:00.000Z"),
+      publishedVersionId: version.version.id
+    });
+
+    const result = await services.publishService.unpublishArticle({
+      articleId: article.id,
+      locale: "zh-CN"
+    });
+
+    assert.equal(result.translation.currentVersionId, version.version.id);
+    assert.equal(result.translation.publishedVersionId, null);
+    assert.equal(result.translation.currentHtmlPath, null);
+    assert.equal(result.translation.publishedAt, null);
+    assert.deepEqual(result.translation.allowedRoles, ["svip"]);
   });
 
   it("does not persist Administer in article visibility because admins always see everything", async () => {

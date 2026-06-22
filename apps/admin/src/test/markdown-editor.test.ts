@@ -75,8 +75,11 @@ describe("MarkdownEditor helpers", () => {
     assert.match(html, /<span class="admin-code-keyword">return<\/span> <span class="admin-code-number">42<\/span>;/);
   });
 
-  it("adds an editable paragraph after a trailing table", () => {
-    assert.match(markdownToHtml("| A | B |\n| --- | --- |\n| 1 | 2 |"), /<\/table><p><br><\/p>$/);
+  it("wraps tables in a horizontal scroll container and adds an editable paragraph after a trailing table", () => {
+    const html = markdownToHtml("| A | B |\n| --- | --- |\n| 1 | 2 |");
+
+    assert.match(html, /<div class="admin-table-scroll" data-md-block="table-scroll"><table>/);
+    assert.match(html, /<\/table><\/div><p><br><\/p>$/);
   });
 
   it("merges adjacent matching table cells horizontally", () => {
@@ -84,6 +87,18 @@ describe("MarkdownEditor helpers", () => {
       markdownToHtml("| A | B | C |\n| --- | --- | --- |\n| Same | Same | Other |"),
       /<td colspan="2">Same<\/td><td>Other<\/td>/
     );
+  });
+
+  it("renders escaped inline code and math markers as literal text", () => {
+    const html = markdownToHtml("\\`not code\\` and \\$not math\\$");
+
+    assert.match(html, /<p>`not code` and \$not math\$<\/p>/);
+    assert.doesNotMatch(html, /<code>not code<\/code>/);
+    assert.doesNotMatch(html, /admin-editor-math/);
+  });
+
+  it("renders explicit blank line blocks as editable empty paragraphs", () => {
+    assert.match(markdownToHtml("Before\n\n<br>\n\nAfter"), /<p>Before<\/p><p><br><\/p><p>After<\/p>/);
   });
 
   it("merges adjacent matching table cells vertically", () => {
@@ -115,6 +130,7 @@ describe("MarkdownEditor helpers", () => {
       "heading4",
       "table",
       "code",
+      "inlineCode",
       "quote",
       "math"
     ]);
@@ -124,7 +140,7 @@ describe("MarkdownEditor helpers", () => {
   it("keeps H1-H4 available when image upload is unavailable", () => {
     const options = buildSlashMenuOptions((key) => key, false);
 
-    assert.deepEqual(options.map((option) => option.id), ["heading1", "heading2", "heading3", "heading4", "table", "code", "quote", "math"]);
+    assert.deepEqual(options.map((option) => option.id), ["heading1", "heading2", "heading3", "heading4", "table", "code", "inlineCode", "quote", "math"]);
   });
 
   it("renders a long editor document within a practical interaction budget", () => {

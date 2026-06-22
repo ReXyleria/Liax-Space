@@ -57,6 +57,22 @@ function createLegacyDatabase(): LegacySyncConstructorArgs[0] {
         ];
       }
 
+      if (sql.includes("INFORMATION_SCHEMA.TABLES")) {
+        return [[{ count: 1 }] as T, []];
+      }
+
+      if (sql.includes("FROM site_settings")) {
+        return [
+          [
+            { key: "ai.provider", value_json: JSON.stringify("deepseek") },
+            { key: "ai.apiKey", value_json: JSON.stringify("legacy-ai-secret") },
+            { key: "smtp.host", value_json: JSON.stringify("smtp.example.test") },
+            { key: "smtp.pass", value_json: JSON.stringify("legacy-smtp-secret") }
+          ] as T,
+          []
+        ];
+      }
+
       throw new Error(`Unexpected legacy query: ${sql}`);
     }
   };
@@ -121,6 +137,7 @@ describe("LegacyPublicDataSyncJob", () => {
     assert.equal(result.legacyArticleTagLinks, 1);
     assert.equal(result.legacyArticlePublishedAt, 3);
     assert.equal(result.legacyMoments, 1);
+    assert.equal(result.legacyPortableSiteSettings, 4);
     assert.equal(result.momentImages, 1);
     assert.equal(targetDatabase.transactionStarts, 0);
   });
@@ -149,6 +166,10 @@ describe("LegacyPublicDataSyncJob", () => {
 
         if (sql.includes("UPDATE article_translations") && sql.includes("published_at = ?")) {
           return [{ affectedRows: 2, insertId: 0 } as T, []];
+        }
+
+        if (sql.includes("INSERT INTO site_settings")) {
+          return [{ affectedRows: 1, insertId: 0 } as T, []];
         }
 
         return [{ affectedRows: 1, insertId: 0 } as T, []];
@@ -184,6 +205,7 @@ describe("LegacyPublicDataSyncJob", () => {
     assert.equal(result.articleVisibilitiesUpdated, 4);
     assert.equal(result.articlePublishedAtUpdated, 4);
     assert.equal(result.skippedArticleVisibilities, 1);
+    assert.equal(result.siteSettingsUpserted, 4);
     assert.deepEqual(visibilityWrites.map((write) => write.params), [
       [JSON.stringify(["svip", "ssvip"]), 21],
       [JSON.stringify([]), 22]
@@ -221,6 +243,10 @@ describe("LegacyPublicDataSyncJob", () => {
           return [{ affectedRows: 2, insertId: 0 } as T, []];
         }
 
+        if (sql.includes("INSERT INTO site_settings")) {
+          return [{ affectedRows: 1, insertId: 0 } as T, []];
+        }
+
         throw new Error(`Unexpected target write for non-empty repair: ${sql}`);
       },
       query: async <T>(sql: string): Promise<[T, unknown]> => {
@@ -255,11 +281,28 @@ describe("LegacyPublicDataSyncJob", () => {
     assert.equal(result.momentsInserted, 0);
     assert.equal(result.articleVisibilitiesUpdated, 4);
     assert.equal(result.articlePublishedAtUpdated, 4);
-    assert.deepEqual(writes.map((write) => write.params), [
+    assert.equal(result.siteSettingsUpserted, 4);
+    assert.deepEqual(
+      writes
+        .filter((write) => !write.sql.includes("INSERT INTO site_settings"))
+        .map((write) => write.params),
+      [
       [JSON.stringify(["svip", "ssvip"]), 21],
       [JSON.stringify([]), 22],
       [new Date("2026-06-01T00:00:00.000Z"), 21],
       [new Date("2026-06-02T00:00:00.000Z"), 22]
-    ]);
+      ]
+    );
+    assert.deepEqual(
+      writes
+        .filter((write) => write.sql.includes("INSERT INTO site_settings"))
+        .map((write) => write.params),
+      [
+        ["ai.provider", JSON.stringify("deepseek")],
+        ["ai.apiKey", JSON.stringify("legacy-ai-secret")],
+        ["smtp.host", JSON.stringify("smtp.example.test")],
+        ["smtp.pass", JSON.stringify("legacy-smtp-secret")]
+      ]
+    );
   });
 });
