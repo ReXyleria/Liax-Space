@@ -172,6 +172,11 @@ async function installAdminMocks(page: Page, state: AdminMockState): Promise<voi
       return;
     }
 
+    if (path === "/admin/translation-jobs") {
+      await fulfillJson(route, { jobs: [] });
+      return;
+    }
+
     if (path === "/admin/settings/preflight") {
       await fulfillJson(route, preflightResponse());
       return;

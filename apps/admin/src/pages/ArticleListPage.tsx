@@ -582,7 +582,7 @@ export function ArticleListPage(): ReactElement {
         ) : null}
       </section>
 
-      <section className="liax-card admin-table-card" aria-label={t("article.listTitle")}>
+      <section className="liax-card admin-table-card admin-article-list-card" aria-label={t("article.listTitle")}>
         <div className="liax-card__body">
           {isLoading ? (
             <AdminLoadingSkeleton label={t("article.listLoading")} rows={5} variant="table" />
@@ -618,7 +618,7 @@ export function ArticleListPage(): ReactElement {
 
                   return (
                   <tr key={item.article.id}>
-                    <td className="admin-article-title-cell">
+                    <td className="admin-article-title-cell" data-label={t("article.field.title")}>
                       <strong>{displayTitle}</strong>
                       <small>
                         {titleTranslation
@@ -626,12 +626,12 @@ export function ArticleListPage(): ReactElement {
                           : `${t("article.id")} ${item.article.id}`}
                       </small>
                     </td>
-                    <td className="admin-article-status-cell">
+                    <td className="admin-article-status-cell" data-label={t("article.status")}>
                       <span className="admin-status-badge" data-status={itemPublishState}>
                         {t(`article.publishState.${itemPublishState}`)}
                       </span>
                     </td>
-                    <td>
+                    <td data-label={t("article.translationStatus")}>
                       <div className="admin-translation-badges">
                         {articleLocales.map((locale) => {
                           const status = translationStatus(findTranslation(item.translations, locale));
@@ -644,7 +644,7 @@ export function ArticleListPage(): ReactElement {
                         })}
                       </div>
                     </td>
-                    <td>
+                    <td data-label={t("article.visibilityColumn")}>
                       <div className="admin-article-visibility-list">
                         {articleLocales.map((locale) => {
                           const translation = findTranslation(item.translations, locale);
@@ -658,8 +658,8 @@ export function ArticleListPage(): ReactElement {
                         })}
                       </div>
                     </td>
-                    <td className="admin-article-updated-cell">{formatDate(preferredPublishedTranslation(item.translations)?.publishedAt, formatterLocale)}</td>
-                    <td>
+                    <td className="admin-article-updated-cell" data-label={t("article.publishedAt")}>{formatDate(preferredPublishedTranslation(item.translations)?.publishedAt, formatterLocale)}</td>
+                    <td data-label={t("article.actions")}>
                       {canEditArticle ? (
                         <div className="admin-article-actions">
                           <a

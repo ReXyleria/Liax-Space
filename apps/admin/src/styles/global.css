@@ -4229,6 +4229,100 @@ canvas {
     overflow-x: auto;
   }
 
+  .admin-article-list-card {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .admin-article-list-card .liax-card__body {
+    padding: 0;
+  }
+
+  .admin-article-list-card .admin-article-table {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-article-list-card .admin-article-table thead {
+    display: none;
+  }
+
+  .admin-article-list-card .admin-article-table tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .admin-article-list-card .admin-article-table tbody tr {
+    display: grid;
+    gap: 12px;
+    border: 1px solid rgb(209 207 197 / 84%);
+    border-radius: 8px;
+    background:
+      linear-gradient(180deg, #ffffff, rgb(250 249 245 / 76%));
+    box-shadow: 0 8px 24px rgb(20 20 19 / 4%);
+    padding: 14px;
+  }
+
+  .admin-article-list-card .admin-article-table tbody tr:hover {
+    background:
+      linear-gradient(180deg, #ffffff, rgb(238 245 233 / 52%));
+    box-shadow: inset 3px 0 0 rgb(95 122 80 / 42%), 0 10px 26px rgb(20 20 19 / 6%);
+  }
+
+  .admin-article-list-card .admin-article-table th,
+  .admin-article-list-card .admin-article-table td {
+    width: auto;
+  }
+
+  .admin-article-list-card .admin-article-table td {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    border-bottom: 0;
+    padding: 0;
+  }
+
+  .admin-article-list-card .admin-article-table td[data-label]::before {
+    content: attr(data-label);
+    color: var(--color-text-muted);
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .admin-article-list-card .admin-article-title-cell {
+    min-width: 0;
+    border-bottom: 1px solid rgb(209 207 197 / 70%);
+    padding-bottom: 10px;
+  }
+
+  .admin-article-list-card .admin-article-title-cell::before {
+    display: none;
+  }
+
+  .admin-article-list-card .admin-translation-badges,
+  .admin-article-list-card .admin-article-visibility-list {
+    align-items: flex-start;
+  }
+
+  .admin-article-list-card .admin-status-badge {
+    justify-self: start;
+  }
+
+  .admin-article-list-card .admin-article-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .admin-article-list-card .admin-article-actions .liax-button {
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+  }
+
   .admin-dashboard-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
