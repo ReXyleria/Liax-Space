@@ -203,6 +203,9 @@ describe("public section page rendering", () => {
     assert.match(patched, /function liaxHighlightCodeElement\(code\)/);
     assert.match(patched, /liaxHighlightCodeElement\(code\);/);
     assert.match(patched, /function liaxSetupReadingScrollbar\(\)/);
+    assert.match(patched, /\.liax-back-to-top\s*\{/);
+    assert.match(patched, /function liaxSetupBackToTop\(\)/);
+    assert.match(patched, /liaxSetupBackToTop\(\);/);
     assert.match(patched, /className = "liax-article-toc-toggle"/);
     assert.match(patched, /document\.body\.append\(nav\);/);
   });

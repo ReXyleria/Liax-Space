@@ -1321,7 +1321,17 @@ describe("admin article integration flow", () => {
     };
     const response = {
       body: "",
+      headers: {} as Record<string, string>,
       statusCode: 0,
+      set(name: string | Record<string, string>, value?: string) {
+        if (typeof name === "string") {
+          this.headers[name] = value ?? "";
+          return this;
+        }
+
+        Object.assign(this.headers, name);
+        return this;
+      },
       status(code: number) {
         this.statusCode = code;
         return this;
@@ -1340,10 +1350,14 @@ describe("admin article integration flow", () => {
     assert.doesNotMatch(response.body, /restricted secret/);
 
     response.body = "";
+    response.headers = {};
     response.statusCode = 0;
 
     await controller.getArticle(allowedRequest as never, response as never);
     assert.equal(response.statusCode, 200);
+    assert.equal(response.headers["Cache-Control"], "no-store, max-age=0");
+    assert.equal(response.headers.Expires, "0");
+    assert.equal(response.headers.Pragma, "no-cache");
     assert.match(response.body, /restricted secret/);
   });
 });

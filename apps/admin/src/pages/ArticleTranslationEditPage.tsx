@@ -7,6 +7,7 @@ import {
   type ArticleTranslation
 } from "../api/articleApi";
 import { translationApi } from "../api/translationApi";
+import { versionApi } from "../api/versionApi";
 import { LocaleTabs } from "../components/LocaleTabs";
 import { SeoFields, type TranslationMetadataFormValue } from "../components/SeoFields";
 import { AdminLayout } from "../layout/AdminLayout";
@@ -133,7 +134,7 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
   const [existingTranslations, setExistingTranslations] = useState<ExistingTranslationState>(() => emptyExistingState());
   const [forms, setForms] = useState<TranslationFormState>(() => emptyFormState());
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [seoProgress, setSeoProgress] = useState<number | null>(null);
@@ -197,23 +198,51 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
     });
   }
 
-  async function handleSave(): Promise<void> {
-    setIsSaving(true);
+  async function saveActiveTranslationMetadata(): Promise<ArticleTranslation> {
+    const payload = {
+      publishedAt: activeTranslation?.publishedVersionId != null ? toPublishedAtPayload(activeForm.publishedAt) : undefined,
+      seoDescription: toNullableValue(activeForm.seoDescription),
+      seoTitle: toNullableValue(activeForm.seoTitle),
+      slug: activeForm.slug.trim(),
+      summary: toNullableValue(activeForm.summary),
+      title: activeForm.title.trim()
+    };
+    const response = activeTranslation
+      ? await articleApi.updateTranslation(articleId, activeLocale, payload)
+      : await articleApi.createTranslation(articleId, { ...payload, locale: activeLocale });
+
+    setExistingTranslations((currentTranslations) => ({
+      ...currentTranslations,
+      [activeLocale]: response.translation
+    }));
+    setForms((currentForms) => ({
+      ...currentForms,
+      [activeLocale]: toFormValue(response.translation)
+    }));
+
+    return response.translation;
+  }
+
+  async function handlePublishArticle(): Promise<void> {
+    setIsPublishing(true);
     setErrorMessage(null);
     setSuccessMessage(null);
 
     try {
-      const payload = {
-        publishedAt: activeTranslation?.publishedVersionId != null ? toPublishedAtPayload(activeForm.publishedAt) : undefined,
-        seoDescription: toNullableValue(activeForm.seoDescription),
-        seoTitle: toNullableValue(activeForm.seoTitle),
-        slug: activeForm.slug.trim(),
-        summary: toNullableValue(activeForm.summary),
-        title: activeForm.title.trim()
-      };
-      const response = activeTranslation
-        ? await articleApi.updateTranslation(articleId, activeLocale, payload)
-        : await articleApi.createTranslation(articleId, { ...payload, locale: activeLocale });
+      const savedTranslation = await saveActiveTranslationMetadata();
+
+      if (savedTranslation.currentVersionId === null) {
+        setErrorMessage(t("article.publishNeedsSavedContent"));
+        return;
+      }
+
+      const publishedAt = savedTranslation.publishedVersionId !== null
+        ? toPublishedAtPayload(activeForm.publishedAt) ?? savedTranslation.publishedAt
+        : undefined;
+      const response = await versionApi.publishVersion(articleId, activeLocale, savedTranslation.currentVersionId, {
+        allowedRoles: savedTranslation.allowedRoles,
+        publishedAt
+      });
 
       setExistingTranslations((currentTranslations) => ({
         ...currentTranslations,
@@ -223,15 +252,15 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
         ...currentForms,
         [activeLocale]: toFormValue(response.translation)
       }));
-      setSuccessMessage(t("article.metadataSaved"));
+      setSuccessMessage(t("article.publishSuccess"));
     } catch (error) {
       setErrorMessage(
         isSlugDuplicateError(error)
           ? t("article.slugDuplicate")
-          : error instanceof Error ? error.message : t("article.metadataSaveFailed")
+          : error instanceof Error ? error.message : t("article.publishFailed")
       );
     } finally {
-      setIsSaving(false);
+      setIsPublishing(false);
     }
   }
 
@@ -357,7 +386,7 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
               <div className="admin-translation-tools">
                 <button
                   className="liax-button"
-                  disabled={isTranslating || isSaving || isGeneratingSeo}
+                  disabled={isTranslating || isPublishing || isGeneratingSeo}
                   onClick={() => void handleTranslateMetadata()}
                   type="button"
                 >
@@ -384,7 +413,7 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
 
               <SeoFields
                 canGenerateSeo={hasSeoGenerationSource(activeForm)}
-                disabled={isSaving || isTranslating || isGeneratingSeo}
+                disabled={isPublishing || isTranslating || isGeneratingSeo}
                 isGeneratingSeo={isGeneratingSeo}
                 onChange={updateActiveForm}
                 onGenerateSeo={() => void handleGenerateSeo()}
@@ -410,7 +439,7 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
                 <label className="admin-form-field">
                   <span>{t("article.publishedAt")}</span>
                   <input
-                    disabled={isSaving || isTranslating || isGeneratingSeo}
+                    disabled={isPublishing || isTranslating || isGeneratingSeo}
                     onChange={(event) => updateActiveFormField("publishedAt", event.target.value)}
                     type="datetime-local"
                     value={activeForm.publishedAt}
@@ -422,11 +451,11 @@ export function ArticleTranslationEditPage({ articleId }: ArticleTranslationEdit
               <div className="admin-form-actions">
                 <button
                   className="liax-button liax-button--primary"
-                  disabled={isSaving || isGeneratingSeo}
-                  onClick={() => void handleSave()}
+                  disabled={isPublishing || isGeneratingSeo}
+                  onClick={() => void handlePublishArticle()}
                   type="button"
                 >
-                  {isSaving ? t("article.metadataSaving") : t("article.metadataSave")}
+                  {isPublishing ? t("article.publishArticleBusy") : t("article.publishArticle")}
                 </button>
                 <a className="liax-button" href={`#articles/${articleId}/${activeLocale}/content`}>
                   {t("article.markdownEdit")}

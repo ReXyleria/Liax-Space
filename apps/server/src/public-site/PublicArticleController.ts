@@ -523,6 +523,45 @@ function renderPublicPolishCss(): string {
       box-shadow: 0 6px 18px rgb(20 20 19 / 12%);
     }
 
+    .liax-back-to-top {
+      position: fixed;
+      right: clamp(18px, 3vw, 40px);
+      bottom: 24px;
+      z-index: 2147483002;
+      display: inline-flex;
+      width: 42px;
+      height: 42px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgb(95 122 80 / 28%);
+      border-radius: 8px;
+      background: rgb(250 249 245 / 94%);
+      color: #3f6b4a;
+      box-shadow: 0 12px 28px rgb(20 20 19 / 12%);
+      cursor: pointer;
+      font: inherit;
+      font-size: 20px;
+      font-weight: 820;
+      line-height: 1;
+      opacity: 0.92;
+      transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease, transform 160ms ease;
+      backdrop-filter: blur(10px);
+    }
+
+    .liax-back-to-top[hidden] {
+      display: none;
+    }
+
+    .liax-back-to-top:hover,
+    .liax-back-to-top:focus-visible {
+      border-color: rgb(95 122 80 / 48%);
+      background: #fffdfa;
+      box-shadow: 0 16px 34px rgb(20 20 19 / 16%);
+      outline: 0;
+      opacity: 1;
+      transform: translateY(-1px);
+    }
+
     .liax-article-toc-toggle {
       display: none;
     }
@@ -590,6 +629,13 @@ function renderPublicPolishCss(): string {
         inset-inline-end: 6px;
         width: 8px;
         opacity: 0.42;
+      }
+
+      .liax-back-to-top {
+        right: 16px;
+        bottom: 18px;
+        width: 38px;
+        height: 38px;
       }
     }
 
@@ -1388,7 +1434,8 @@ function liaxArticleText(key) {
   const text = {
     toc: isZh ? "标题目录" : "Contents",
     copy: isZh ? "复制" : "Copy",
-    copied: isZh ? "已复制" : "Copied"
+    copied: isZh ? "已复制" : "Copied",
+    top: isZh ? "回到顶部" : "Back to top"
   };
   return text[key] || key;
 }
@@ -1490,6 +1537,41 @@ function liaxSetupReadingScrollbar() {
   scrollbar.addEventListener("pointercancel", stopDragging);
   window.addEventListener("scroll", update, { passive: true });
   window.addEventListener("resize", update);
+  update();
+}
+function liaxSetupBackToTop() {
+  let button = document.querySelector(".liax-back-to-top");
+  if (!button) {
+    button = document.createElement("button");
+    button.className = "liax-back-to-top";
+    button.type = "button";
+    button.textContent = "↑";
+    button.hidden = true;
+    document.body.append(button);
+  }
+
+  button.setAttribute("aria-label", liaxArticleText("top"));
+  button.setAttribute("title", liaxArticleText("top"));
+
+  const update = () => {
+    const isVisible = window.scrollY > 280;
+    button.hidden = !isVisible;
+    button.classList.toggle("is-visible", isVisible);
+  };
+
+  if (button.dataset.liaxReady !== "true") {
+    button.dataset.liaxReady = "true";
+    button.addEventListener("click", () => {
+      const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.scrollTo({
+        top: 0,
+        behavior: reduceMotion ? "auto" : "smooth"
+      });
+    });
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+  }
+
   update();
 }
 function liaxSetupMobileArticleToc(toc) {
@@ -1605,6 +1687,7 @@ function liaxSetupMobileArticleToc(toc) {
 function liaxEnhanceArticlePage() {
   const body = document.querySelector(".liax-article-body");
   if (!body) {
+    document.querySelector(".liax-back-to-top")?.remove();
     return;
   }
   const headings = Array.from(body.querySelectorAll("h2, h3, h4"));
@@ -1643,6 +1726,7 @@ function liaxEnhanceArticlePage() {
   }
   liaxSetupMobileArticleToc(articleToc);
   liaxSetupReadingScrollbar();
+  liaxSetupBackToTop();
   body.querySelectorAll("pre").forEach((pre) => {
     const code = pre.querySelector("code");
     if (code) {
@@ -4266,6 +4350,11 @@ export class PublicArticleController {
     try {
       const html = await readFile(htmlPath, "utf8");
       const articleChrome = await this.readPublishedArticleChrome(prefix, translation);
+      response.set({
+        "Cache-Control": "no-store, max-age=0",
+        Expires: "0",
+        Pragma: "no-cache"
+      });
       response.status(200).type("html").send(patchPublishedArticleHtml(html, settings, avatarUrl, articleChrome));
     } catch (error) {
       if (isFileNotFound(error)) {

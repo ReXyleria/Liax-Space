@@ -419,14 +419,6 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
           <a className="liax-link" href={`#articles/${articleId}/${locale}/versions`}>
             {t("article.versions")}
           </a>
-          <button
-            className="liax-button liax-button--primary"
-            disabled={isSaving || isLoading || isHydratingContent || isImportingMarkdown || !translation}
-            onClick={() => void handleSave()}
-            type="button"
-          >
-            {isSaving ? t("article.markdownSaving") : t("article.markdownSave")}
-          </button>
         </div>
       </section>
 
@@ -437,6 +429,14 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
               <span>{t("article.field.title")}: {translation?.title ?? t("article.translation.missing")}</span>
               <span>{t("article.baseVersion")}: {baseVersionId ?? t("article.noVersion")}</span>
             </div>
+            <button
+              className="liax-button liax-button--primary admin-markdown-save-button"
+              disabled={isSaving || isLoading || isHydratingContent || isImportingMarkdown || !translation}
+              onClick={() => void handleSave()}
+              type="button"
+            >
+              {isSaving ? t("article.markdownSaving") : t("article.markdownSave")}
+            </button>
           </div>
           <div className="liax-card__body">
             {isLoading ? (

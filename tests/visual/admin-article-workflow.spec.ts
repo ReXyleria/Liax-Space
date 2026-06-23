@@ -288,10 +288,16 @@ async function installArticleWorkflowMocks(page: Page, state: WorkflowState): Pr
         return;
       }
 
+      state.metadataRequests.push(input);
       const nextTranslation = {
         ...translation,
         allowedRoles: input.allowedRoles ?? translation.allowedRoles,
         publishedAt: input.publishedAt === undefined ? translation.publishedAt : input.publishedAt,
+        seoDescription: input.seoDescription === undefined ? translation.seoDescription : input.seoDescription,
+        seoTitle: input.seoTitle === undefined ? translation.seoTitle : input.seoTitle,
+        slug: input.slug ?? translation.slug,
+        summary: input.summary === undefined ? translation.summary : input.summary,
+        title: input.title ?? translation.title,
         updatedAt: now
       };
 
@@ -544,16 +550,16 @@ test("admin article workflow keeps body, metadata, saving, and publishing as sep
   await page.getByLabel("SEO title").fill("Visual flow SEO");
   await page.getByLabel("SEO description").fill("A concise visual editing flow.");
   await expect(page.getByText("SEO description is present, so summary will be left empty when saved.")).toBeVisible();
-  await page.getByRole("button", { name: "Save metadata" }).click();
-  await expect(page.getByText("Article metadata saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Publish article" }).click();
+  await expect(page.getByText("Article details were saved. Save the body as a version before publishing.")).toBeVisible();
   expect(state.metadataRequests).toHaveLength(1);
 
   await page.getByRole("link", { name: "Edit content" }).click();
   await expect(page.locator("main").getByRole("heading", { name: "Content editor #42 - zh-CN" })).toBeVisible();
   await expect(page.locator(".admin-visual-editor__surface")).toHaveAttribute("contenteditable", "true");
   await expect(page.locator(".admin-markdown-panel textarea")).toHaveCount(0);
-  await expect(page.locator(".admin-page-header").getByRole("button", { name: "Save content" })).toBeVisible();
-  await expect(page.locator(".admin-markdown-panel").getByRole("button", { name: "Save content" })).toHaveCount(0);
+  await expect(page.locator(".admin-page-header").getByRole("button", { name: "Save as version" })).toHaveCount(0);
+  await expect(page.locator(".admin-markdown-panel").getByRole("button", { name: "Save as version" })).toBeVisible();
 
   const editor = page.locator(".admin-visual-editor__surface");
   await editor.click();
@@ -632,7 +638,7 @@ test("admin article workflow keeps body, metadata, saving, and publishing as sep
   await page.waitForTimeout(2300);
   expect(state.saveRequests).toEqual([]);
   await page.keyboard.press("Control+S");
-  await expect(page.getByText("Content saved.")).toBeVisible();
+  await expect(page.getByText("Saved as a version.")).toBeVisible();
 
   expect(state.saveRequests).toEqual([
     {
@@ -662,17 +668,15 @@ test("admin article workflow keeps body, metadata, saving, and publishing as sep
   await expect(page.locator(".admin-version-summary")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Publish current version" })).toHaveCount(0);
 
-  await page.goto("/#articles");
-  await page.getByRole("button", { name: "Configure" }).click();
-  const configModal = page.locator(".admin-modal");
-  await expect(configModal.getByText("Publish settings")).toBeVisible();
-  await expect(configModal.getByText("Unpublished", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Publish current version" }).click();
+  await page.getByRole("link", { name: "Back to metadata" }).click();
+  await expect(page.locator("main").getByRole("heading", { name: "Article metadata #42" })).toBeVisible();
+  await page.getByRole("button", { name: "Publish article" }).click();
   await expect(page.getByText("Published the current language version.")).toBeVisible();
   expect(state.publishRequests).toEqual([{ allowedRoles: [], versionId: 9002 }]);
+  expect(state.metadataRequests).toHaveLength(2);
   expect(state.translations.find((translation) => translation.locale === "zh-CN")?.publishedVersionId).toBe(9002);
 
-  await page.locator(".admin-modal").getByRole("link", { name: "Edit content" }).click();
+  await page.getByRole("link", { name: "Edit content" }).click();
   await expect(page.locator(".admin-visual-editor__surface h1")).toHaveText("Imported heading");
   await expect(page.locator(".admin-visual-editor__surface")).toContainText("Body from imported Markdown.");
   expect(state.unknownRequests).toEqual([]);
@@ -820,8 +824,8 @@ test("visual editor deletes fenced code blocks at text boundaries without absorb
   await sourceEditor.fill("```\ncode\n```\n\nSlash tail");
 
   state.saveRequests = [];
-  await page.getByRole("button", { name: "Save content" }).click();
-  await expect(page.getByText("Content saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Save as version" }).click();
+  await expect(page.getByText("Saved as a version.")).toBeVisible();
   expect(state.saveRequests).toEqual([
     {
       baseVersionId: version.id,
