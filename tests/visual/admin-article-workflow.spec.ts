@@ -827,6 +827,87 @@ test("visual editor deletes fenced code blocks at text boundaries without absorb
   expect(state.unknownRequests).toEqual([]);
 });
 
+test("visual editor keeps headings and quotes from absorbing adjacent text", async ({ page }) => {
+  const state = createWorkflowState();
+  const version = createVersion({ mdContent: "# Heading\n\nAfter" }, state);
+  const translation = createTranslation({
+    locale: "zh-CN",
+    seoDescription: "Block boundary regression",
+    seoTitle: "Block boundary article",
+    slug: "block-boundary-article",
+    title: "Block boundary article"
+  });
+
+  state.versions.unshift(version);
+  state.translations = [{ ...translation, currentVersionId: version.id }];
+
+  await loginAsAdmin(page);
+  await installArticleWorkflowMocks(page, state);
+
+  await page.goto("/#articles/42/zh-CN/content");
+  await expect(page.locator("main").getByRole("heading", { name: "Content editor #42 - zh-CN" })).toBeVisible();
+
+  const editor = page.locator(".admin-visual-editor__surface");
+  await expect(editor.locator("h1")).toHaveText("Heading");
+
+  await placeCaretAtEditorBlockEdge(page, "p", "After", "start");
+  await page.keyboard.press("Backspace");
+  await expect(editor.locator("h1")).toHaveCount(0);
+  await expect(editor.locator("p").filter({ hasText: "After" })).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Source" }).click();
+  const sourceEditor = page.locator(".admin-markdown-panel textarea");
+  await expect(sourceEditor).toHaveValue("After");
+
+  await sourceEditor.fill("Before\n\n## Heading\n\nAfter");
+  await page.getByRole("button", { name: "Visual" }).click();
+  await expect(editor.locator("h2")).toHaveText("Heading");
+
+  await placeCaretAtEditorBlockEdge(page, "p", "Before", "end");
+  await page.keyboard.press("Delete");
+  await expect(editor.locator("h2")).toHaveCount(0);
+  await expect(editor.locator("p").filter({ hasText: "Before" })).toHaveCount(1);
+  await expect(editor.locator("p").filter({ hasText: "After" })).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("Before\n\nAfter");
+
+  await sourceEditor.fill("Before\n\n### Heading\n\nAfter");
+  await page.getByRole("button", { name: "Visual" }).click();
+  await expect(editor.locator("h3")).toHaveText("Heading");
+
+  await placeCaretAtEditorBlockEdge(page, "h3", "Heading", "end");
+  await page.keyboard.press("Delete");
+  await expect(editor.locator("h3")).toHaveText("Heading");
+  await expect(editor.locator("p").filter({ hasText: "After" })).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("Before\n\n### Heading\n\nAfter");
+
+  await sourceEditor.fill("Before\n\n> Quoted note\n\nAfter");
+  await page.getByRole("button", { name: "Visual" }).click();
+  await expect(editor.locator("blockquote")).toHaveText("Quoted note");
+
+  await placeCaretAtEditorBlockEdge(page, "p", "After", "start");
+  await page.keyboard.press("Backspace");
+  await expect(editor.locator("blockquote")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("Before\n\nAfter");
+
+  await sourceEditor.fill("Before\n\n> Quoted note\n\nAfter");
+  await page.getByRole("button", { name: "Visual" }).click();
+  await expect(editor.locator("blockquote")).toHaveText("Quoted note");
+
+  await placeCaretAtEditorBlockEdge(page, "p", "Before", "end");
+  await page.keyboard.press("Delete");
+  await expect(editor.locator("blockquote")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Source" }).click();
+  await expect(sourceEditor).toHaveValue("Before\n\nAfter");
+  expect(state.unknownRequests).toEqual([]);
+});
+
 test("large Markdown content uses incremental visual preview instead of source-only mode", async ({ page }) => {
   const state = createWorkflowState();
   const largeMarkdown = [

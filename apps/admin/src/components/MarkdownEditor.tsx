@@ -1750,74 +1750,85 @@ export function MarkdownEditor({
     return range.toString().length === 0;
   }
 
+  const deletionBoundaryBlockSelector = "pre, h1, h2, h3, h4, h5, h6, blockquote";
+
+  type DeletionBoundaryBlock = {
+    block: HTMLElement;
+    spacers: HTMLElement[];
+  };
+
   function isCodeBlockElement(element: Element | null): element is HTMLPreElement {
     return element instanceof HTMLPreElement || element?.tagName.toLowerCase() === "pre";
+  }
+
+  function isDeletionBoundaryBlock(element: Element | null): element is HTMLElement {
+    return element instanceof HTMLElement && element.matches(deletionBoundaryBlockSelector);
   }
 
   function editableSpacerElement(element: Element | null): HTMLElement | null {
     return element instanceof HTMLElement && isEmptyEditableBlock(element) ? element : null;
   }
 
-  function findPreviousCodeBoundary(block: HTMLElement): { codeBlock: HTMLPreElement; spacers: HTMLElement[] } | null {
+  function findPreviousDeletionBoundary(block: HTMLElement): DeletionBoundaryBlock | null {
     const previousBlock = block.previousElementSibling;
 
-    if (isCodeBlockElement(previousBlock)) {
-      return { codeBlock: previousBlock, spacers: [] };
+    if (isDeletionBoundaryBlock(previousBlock)) {
+      return { block: previousBlock, spacers: [] };
     }
 
     const spacer = editableSpacerElement(previousBlock);
-    const codeBlock = spacer?.previousElementSibling ?? null;
+    const boundaryBlock = spacer?.previousElementSibling ?? null;
 
-    return spacer && isCodeBlockElement(codeBlock) ? { codeBlock, spacers: [spacer] } : null;
+    return spacer && isDeletionBoundaryBlock(boundaryBlock) ? { block: boundaryBlock, spacers: [spacer] } : null;
   }
 
-  function findNextCodeBoundary(block: HTMLElement): { codeBlock: HTMLPreElement; spacers: HTMLElement[] } | null {
+  function findNextDeletionBoundary(block: HTMLElement): DeletionBoundaryBlock | null {
     const nextBlock = block.nextElementSibling;
 
-    if (isCodeBlockElement(nextBlock)) {
+    if (isDeletionBoundaryBlock(nextBlock)) {
       const trailingSpacer = editableSpacerElement(nextBlock.nextElementSibling);
 
       return {
-        codeBlock: nextBlock,
+        block: nextBlock,
         spacers: trailingSpacer ? [trailingSpacer] : []
       };
     }
 
     const leadingSpacer = editableSpacerElement(nextBlock);
-    const codeBlock = leadingSpacer?.nextElementSibling ?? null;
+    const boundaryBlock = leadingSpacer?.nextElementSibling ?? null;
 
-    if (!leadingSpacer || !isCodeBlockElement(codeBlock)) {
+    if (!leadingSpacer || !isDeletionBoundaryBlock(boundaryBlock)) {
       return null;
     }
 
-    const trailingSpacer = editableSpacerElement(codeBlock.nextElementSibling);
+    const trailingSpacer = editableSpacerElement(boundaryBlock.nextElementSibling);
 
     return {
-      codeBlock,
+      block: boundaryBlock,
       spacers: trailingSpacer ? [leadingSpacer, trailingSpacer] : [leadingSpacer]
     };
   }
 
   function withCurrentSpacer(
-    boundary: { codeBlock: HTMLPreElement; spacers: HTMLElement[] },
+    boundary: DeletionBoundaryBlock,
     block: HTMLElement
-  ): { codeBlock: HTMLPreElement; spacers: HTMLElement[] } {
+  ): DeletionBoundaryBlock {
     if (!isEmptyEditableBlock(block)) {
       return boundary;
     }
 
     return {
-      codeBlock: boundary.codeBlock,
+      block: boundary.block,
       spacers: Array.from(new Set([...boundary.spacers, block]))
     };
   }
 
   function nearestSurvivingBoundaryTarget(
     block: HTMLElement,
-    boundary: { codeBlock: HTMLPreElement; spacers: HTMLElement[] },
+    boundary: DeletionBoundaryBlock,
     direction: "previous" | "next"
   ): HTMLElement {
-    const removedElements = new Set<Element>([boundary.codeBlock, ...boundary.spacers]);
+    const removedElements = new Set<Element>([boundary.block, ...boundary.spacers]);
     const firstDirection = direction === "next" ? "nextElementSibling" : "previousElementSibling";
     const secondDirection = direction === "next" ? "previousElementSibling" : "nextElementSibling";
     let candidate: Element | null = block[firstDirection];
@@ -1839,18 +1850,18 @@ export function MarkdownEditor({
     return candidate instanceof HTMLElement ? candidate : block;
   }
 
-  function removeCodeBoundaryBlock(
-    boundary: { codeBlock: HTMLPreElement; spacers: HTMLElement[] },
+  function removeDeletionBoundaryBlock(
+    boundary: DeletionBoundaryBlock,
     caretTarget: HTMLElement,
     caretEdge: "start" | "end"
   ): void {
     const editor = editorRef.current;
 
-    if (!editor || !editor.contains(boundary.codeBlock)) {
+    if (!editor || !editor.contains(boundary.block)) {
       return;
     }
 
-    boundary.codeBlock.remove();
+    boundary.block.remove();
 
     boundary.spacers.forEach((spacer) => {
       if (editor.contains(spacer) && isEmptyEditableBlock(spacer)) {
@@ -1871,7 +1882,7 @@ export function MarkdownEditor({
     updateSlashMenuFromSelection();
   }
 
-  function handleCodeBoundaryDeletion(event: KeyboardEvent<HTMLDivElement>): boolean {
+  function handleDeletionBoundary(event: KeyboardEvent<HTMLDivElement>): boolean {
     if (event.key !== "Backspace" && event.key !== "Delete") {
       return false;
     }
@@ -1902,19 +1913,19 @@ export function MarkdownEditor({
             : null;
 
         event.preventDefault();
-        removeCodeBoundaryBlock({ codeBlock: pre, spacers: trailingSpacer ? [trailingSpacer] : [] }, fallbackTarget ?? nextTarget ?? pre, fallbackTarget ? "end" : "start");
+        removeDeletionBoundaryBlock({ block: pre, spacers: trailingSpacer ? [trailingSpacer] : [] }, fallbackTarget ?? nextTarget ?? pre, fallbackTarget ? "end" : "start");
         return true;
       }
 
       const block = closestEditableBlock(anchorNode);
-      const boundary = block && isSelectionAtStartOfElement(block) ? findPreviousCodeBoundary(block) : null;
+      const boundary = block && isSelectionAtStartOfElement(block) ? findPreviousDeletionBoundary(block) : null;
 
       if (block && boundary) {
         const nextBoundary = withCurrentSpacer(boundary, block);
         const caretTarget = isEmptyEditableBlock(block) ? nearestSurvivingBoundaryTarget(block, nextBoundary, "next") : block;
 
         event.preventDefault();
-        removeCodeBoundaryBlock(nextBoundary, caretTarget, "start");
+        removeDeletionBoundaryBlock(nextBoundary, caretTarget, "start");
         return true;
       }
 
@@ -1922,22 +1933,22 @@ export function MarkdownEditor({
     }
 
     if (event.key === "Delete") {
-      const pre = anchorElement.closest("pre");
+      const boundaryBlock = anchorElement.closest(deletionBoundaryBlockSelector);
 
-      if (isCodeBlockElement(pre) && pre.nextElementSibling && isSelectionAtEndOfElement(pre)) {
+      if (isDeletionBoundaryBlock(boundaryBlock) && boundaryBlock.nextElementSibling && isSelectionAtEndOfElement(boundaryBlock)) {
         event.preventDefault();
         return true;
       }
 
       const block = closestEditableBlock(anchorNode);
-      const boundary = block && isSelectionAtEndOfElement(block) ? findNextCodeBoundary(block) : null;
+      const boundary = block && isSelectionAtEndOfElement(block) ? findNextDeletionBoundary(block) : null;
 
       if (block && boundary) {
         const nextBoundary = withCurrentSpacer(boundary, block);
         const caretTarget = isEmptyEditableBlock(block) ? nearestSurvivingBoundaryTarget(block, nextBoundary, "previous") : block;
 
         event.preventDefault();
-        removeCodeBoundaryBlock(nextBoundary, caretTarget, "end");
+        removeDeletionBoundaryBlock(nextBoundary, caretTarget, "end");
         return true;
       }
     }
@@ -2283,7 +2294,7 @@ export function MarkdownEditor({
       return;
     }
 
-    if (handleCodeBoundaryDeletion(event)) {
+    if (handleDeletionBoundary(event)) {
       return;
     }
 
