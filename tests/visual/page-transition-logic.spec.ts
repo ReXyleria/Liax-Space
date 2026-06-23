@@ -171,6 +171,11 @@ async function installAdminFlowMocks(page: Page, state: AdminFlowMockState): Pro
       return;
     }
 
+    if (path === "/admin/translation-jobs" && url.searchParams.get("status") === "active") {
+      await fulfillJson(route, { jobs: [] });
+      return;
+    }
+
     if (path === "/admin/roles") {
       await fulfillJson(route, {
         permissions: allPermissions,
@@ -397,8 +402,10 @@ test("admin settings keep AI provider presets and validation predictable", async
 
   expect(mockState.sitePatches[mockState.sitePatches.length - 1]).toEqual({
     "ai.baseUrl": "http://localhost:11434/v1",
+    "ai.chunkConcurrency": 1,
     "ai.model": "llama3.1",
     "ai.provider": "ollama",
+    "ai.taskConcurrency": 1,
     "ai.translationTemperature": 0.3
   });
   expect(mockState.unknownRequests).toEqual([]);

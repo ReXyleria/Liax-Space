@@ -73,6 +73,10 @@ function adminUser(): unknown {
   };
 }
 
+function isActiveTranslationJobsRequest(path: string, url: URL): boolean {
+  return path === "/admin/translation-jobs" && url.searchParams.get("status") === "active";
+}
+
 async function loginAsAdmin(page: Page): Promise<void> {
   await page.addInitScript(() => {
     window.localStorage.setItem("liax.admin.authToken", "admin-auth-theme-token");
@@ -139,6 +143,11 @@ test("login flow completes the TOTP challenge instead of blocking the user", asy
 
     if (path === "/admin/dashboard") {
       await fulfillJson(route, dashboardResponse());
+      return;
+    }
+
+    if (isActiveTranslationJobsRequest(path, url)) {
+      await fulfillJson(route, { jobs: [] });
       return;
     }
 
@@ -270,6 +279,11 @@ test("theme settings keep preset cards hidden until settings finish loading", as
       return;
     }
 
+    if (isActiveTranslationJobsRequest(path, url)) {
+      await fulfillJson(route, { jobs: [] });
+      return;
+    }
+
     if (path === "/admin/settings/appearance") {
       await fulfillJson(route, {
         settings: {
@@ -352,6 +366,11 @@ test("admin list pages show skeletons while initial data is loading", async ({ p
 
     if (path === "/admin/dashboard") {
       await fulfillJson(route, dashboardResponse());
+      return;
+    }
+
+    if (isActiveTranslationJobsRequest(path, url)) {
+      await fulfillJson(route, { jobs: [] });
       return;
     }
 
@@ -450,6 +469,11 @@ test("theme settings keep presets simple and move customization into edit", asyn
 
     if (path === "/admin/dashboard") {
       await fulfillJson(route, dashboardResponse());
+      return;
+    }
+
+    if (isActiveTranslationJobsRequest(path, url)) {
+      await fulfillJson(route, { jobs: [] });
       return;
     }
 

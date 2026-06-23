@@ -306,6 +306,11 @@ async function installManagementMocks(page: Page, state: ManagementState): Promi
       return;
     }
 
+    if (path === "/admin/translation-jobs" && url.searchParams.get("status") === "active") {
+      await fulfillJson(route, { jobs: [] });
+      return;
+    }
+
     if (path === "/admin/roles" && method === "GET") {
       await fulfillJson(route, {
         permissions: [...allPermissions],
