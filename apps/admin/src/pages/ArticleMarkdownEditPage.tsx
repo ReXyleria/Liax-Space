@@ -64,7 +64,6 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const [isHydratingContent, setIsHydratingContent] = useState(false);
   const [forcePlainEditor, setForcePlainEditor] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [isImportingMarkdown, setIsImportingMarkdown] = useState(false);
   const [importProgress, setImportProgress] = useState<number | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
@@ -72,11 +71,8 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   const [translationStatusText, setTranslationStatusText] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const lastSavedContentRef = useRef("");
   const mdContentRef = useRef("");
   const isHydratingContentRef = useRef(false);
-  const autoSaveTimerRef = useRef<number | null>(null);
-  const suppressNextAutoSaveRef = useRef(false);
   const sourceLocale = oppositeLocale(locale);
   const pageTitle = useMemo(() => `${t("article.markdownTitle")} #${articleId} - ${locale}`, [articleId, locale, t]);
   const translateDirectionLabel = useMemo(
@@ -138,7 +134,6 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                 }
 
                 mdContentRef.current = content;
-                lastSavedContentRef.current = content;
                 setMdContent(content);
                 setHydratingContent(!done);
                 setIsLoading(false);
@@ -158,7 +153,6 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
           setAttachmentPreviewUrls(nextAttachmentPreviewUrls);
           setMdContent(nextMarkdown);
           mdContentRef.current = nextMarkdown;
-          lastSavedContentRef.current = nextMarkdown;
           bumpEditorDocumentRevision();
           setHydratingContent(false);
         }
@@ -181,37 +175,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
     };
   }, [articleId, locale, t]);
 
-  useEffect(() => {
-    if (autoSaveTimerRef.current !== null) {
-      window.clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
-
-    if (
-      isLoading ||
-      isHydratingContent ||
-      isImportingMarkdown ||
-      isSaving ||
-      isAutoSaving ||
-      !translation ||
-      mdContent === lastSavedContentRef.current ||
-      suppressNextAutoSaveRef.current
-    ) {
-      return;
-    }
-
-    autoSaveTimerRef.current = window.setTimeout(() => {
-      void saveContent({ auto: true });
-    }, 2000);
-
-    return () => {
-      if (autoSaveTimerRef.current !== null) {
-        window.clearTimeout(autoSaveTimerRef.current);
-      }
-    };
-  }, [baseVersionId, isAutoSaving, isHydratingContent, isImportingMarkdown, isLoading, isSaving, mdContent, translation]);
-
-  async function saveContent(options: { auto: boolean }): Promise<void> {
+  async function saveContent(): Promise<void> {
     if (isHydratingContentRef.current) {
       setErrorMessage(t("article.markdownLoading"));
       return;
@@ -227,13 +191,8 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
       return;
     }
 
-    if (options.auto) {
-      setIsAutoSaving(true);
-    } else {
-      setIsSaving(true);
-      setMessage(null);
-    }
-
+    setIsSaving(true);
+    setMessage(null);
     setErrorMessage(null);
 
     try {
@@ -247,10 +206,7 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
 
       setMdContent(savedMarkdown);
       mdContentRef.current = savedMarkdown;
-      lastSavedContentRef.current = savedMarkdown;
-      setMessage(options.auto
-        ? t("article.autoSaved")
-        : response.unchanged ? t("article.markdownUnchanged") : t("article.markdownSaved"));
+      setMessage(response.unchanged ? t("article.markdownUnchanged") : t("article.markdownSaved"));
     } catch (error) {
       setErrorMessage(
         isVersionConflict(error)
@@ -258,16 +214,12 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
           : error instanceof Error ? error.message : t("article.markdownSaveFailed")
       );
     } finally {
-      if (options.auto) {
-        setIsAutoSaving(false);
-      } else {
-        setIsSaving(false);
-      }
+      setIsSaving(false);
     }
   }
 
   async function handleSave(): Promise<void> {
-    await saveContent({ auto: false });
+    await saveContent();
   }
 
   function openImportFilePicker(): void {
@@ -314,7 +266,6 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
           }
 
           mdContentRef.current = content;
-          lastSavedContentRef.current = content;
           setMdContent(content);
           setHydratingContent(!done);
         }
@@ -324,12 +275,10 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
         attachmentApi.listAttachments
       ).catch(() => ({}));
 
-      suppressNextAutoSaveRef.current = true;
       setBaseVersionId(response.version.id);
       setAttachmentPreviewUrls(nextAttachmentPreviewUrls);
       setMdContent(importedMarkdown);
       mdContentRef.current = importedMarkdown;
-      lastSavedContentRef.current = importedMarkdown;
       bumpEditorDocumentRevision();
       setSelectedImportFile(null);
 
@@ -348,7 +297,6 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
   }
 
   function handleEditorChange(value: string): void {
-    suppressNextAutoSaveRef.current = false;
     mdContentRef.current = value;
     setMdContent(value);
   }
@@ -415,7 +363,6 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
         attachmentApi.listAttachments
       ).catch(() => ({}));
 
-      suppressNextAutoSaveRef.current = false;
       setForcePlainEditor(translatedContent.length >= largeMarkdownDocumentThreshold);
       setAttachmentPreviewUrls(nextAttachmentPreviewUrls);
       mdContentRef.current = translatedContent;
@@ -472,6 +419,14 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
           <a className="liax-link" href={`#articles/${articleId}/${locale}/versions`}>
             {t("article.versions")}
           </a>
+          <button
+            className="liax-button liax-button--primary"
+            disabled={isSaving || isLoading || isHydratingContent || isImportingMarkdown || !translation}
+            onClick={() => void handleSave()}
+            type="button"
+          >
+            {isSaving ? t("article.markdownSaving") : t("article.markdownSave")}
+          </button>
         </div>
       </section>
 
@@ -530,7 +485,6 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                   forcePlainTextMode={forcePlainEditor}
                   onChange={handleEditorChange}
                   onDraftChange={(value) => {
-                    suppressNextAutoSaveRef.current = false;
                     mdContentRef.current = value;
                   }}
                   onUploadImage={handlePasteImage}
@@ -548,14 +502,6 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                     {isTranslating
                       ? formatLocalized(t("article.translatingDirection"), { sourceLocale, targetLocale: locale })
                       : translateDirectionLabel}
-                  </button>
-                  <button
-                    className="liax-button liax-button--primary"
-                    disabled={isSaving || isHydratingContent || isImportingMarkdown || !translation}
-                    onClick={() => void handleSave()}
-                    type="button"
-                  >
-                    {isSaving ? t("article.markdownSaving") : t("article.markdownSave")}
                   </button>
                   {typeof translationProgress === "number" ? (
                     <div className="admin-translation-progress">
@@ -578,7 +524,6 @@ export function ArticleMarkdownEditPage({ articleId, locale }: ArticleMarkdownEd
                   ) : null}
                 </div>
 
-                {isAutoSaving ? <p className="admin-muted-text">{t("article.autoSaving")}</p> : null}
                 {isHydratingContent ? <p className="admin-muted-text">{t("article.markdownLoading")}</p> : null}
                 {message ? <p className="admin-success-text">{message}</p> : null}
                 {errorMessage ? <p className="admin-error-text">{errorMessage}</p> : null}

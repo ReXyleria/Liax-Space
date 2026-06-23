@@ -552,6 +552,8 @@ test("admin article workflow keeps body, metadata, saving, and publishing as sep
   await expect(page.locator("main").getByRole("heading", { name: "Content editor #42 - zh-CN" })).toBeVisible();
   await expect(page.locator(".admin-visual-editor__surface")).toHaveAttribute("contenteditable", "true");
   await expect(page.locator(".admin-markdown-panel textarea")).toHaveCount(0);
+  await expect(page.locator(".admin-page-header").getByRole("button", { name: "Save content" })).toBeVisible();
+  await expect(page.locator(".admin-markdown-panel").getByRole("button", { name: "Save content" })).toHaveCount(0);
 
   const editor = page.locator(".admin-visual-editor__surface");
   await editor.click();
@@ -627,6 +629,8 @@ test("admin article workflow keeps body, metadata, saving, and publishing as sep
     anchorOffset: "Body from the visual editor.``after $ $$".length,
     anchorText: "Body from the visual editor.``after $ $$"
   });
+  await page.waitForTimeout(2300);
+  expect(state.saveRequests).toEqual([]);
   await page.keyboard.press("Control+S");
   await expect(page.getByText("Content saved.")).toBeVisible();
 

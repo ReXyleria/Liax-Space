@@ -101,18 +101,36 @@ function readAlternates(): Map<string, AlternateLanguage> {
 
   links.forEach((link) => {
     const hreflang = link.hreflang.trim();
+    const href = link.getAttribute("href") ?? "";
 
-    if (!hreflang) {
+    if (!hreflang || !href.trim()) {
       return;
     }
 
     alternates.set(hreflang, {
-      href: new URL(link.href, window.location.href).toString(),
+      href: toCurrentOriginUrl(href),
       hreflang
     });
   });
 
   return alternates;
+}
+
+function toCurrentOriginUrl(value: string): string {
+  const url = new URL(value, window.location.href);
+
+  return `${window.location.origin}${url.pathname}${url.search}${url.hash}`;
+}
+
+function cloneHeadLinkForCurrentOrigin(link: HTMLLinkElement): HTMLLinkElement {
+  const clonedLink = link.cloneNode(true) as HTMLLinkElement;
+  const href = clonedLink.getAttribute("href");
+
+  if (href?.trim()) {
+    clonedLink.setAttribute("href", toCurrentOriginUrl(href));
+  }
+
+  return clonedLink;
 }
 
 function findSwitchTarget(event: MouseEvent): SwitchTarget | null {
@@ -226,8 +244,8 @@ function updateHeadFromTarget(targetDocument: Document): void {
   document.documentElement.lang = targetDocument.documentElement.lang;
 
   document.querySelectorAll('link[rel~="alternate"][hreflang], link[rel="canonical"]').forEach((node) => node.remove());
-  targetDocument.querySelectorAll('link[rel~="alternate"][hreflang], link[rel="canonical"]').forEach((node) => {
-    document.head.append(node.cloneNode(true));
+  targetDocument.querySelectorAll<HTMLLinkElement>('link[rel~="alternate"][hreflang], link[rel="canonical"]').forEach((node) => {
+    document.head.append(cloneHeadLinkForCurrentOrigin(node));
   });
 
   const currentDescription = document.querySelector<HTMLMetaElement>('meta[name="description"]');

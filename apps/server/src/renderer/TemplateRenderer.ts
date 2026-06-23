@@ -5,6 +5,16 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+function toPublicPathHref(href: string): string {
+  try {
+    const url = new URL(href, "https://liax.local");
+
+    return `${url.pathname}${url.search}${url.hash}` || "/";
+  } catch {
+    return href;
+  }
+}
+
 function renderLanguageSwitchPlaceholder(input: TemplateRenderInput): string {
   const alternates = input.alternates ?? [];
   const targetLocale = input.locale === "zh-CN" ? "en-US" : "zh-CN";
@@ -12,7 +22,7 @@ function renderLanguageSwitchPlaceholder(input: TemplateRenderInput): string {
   const label = targetLocale === "zh-CN" ? "切换到中文" : "Switch to English";
   const visibleLabel = targetLocale === "zh-CN" ? "中" : "EN";
   const links = targetAlternate
-    ? `      <a class="liax-button liax-language-icon-button" aria-label="${escapeHtml(label)}" data-locale-target="${escapeHtml(targetAlternate.hreflang)}" href="${escapeHtml(targetAlternate.href)}">
+    ? `      <a class="liax-button liax-language-icon-button" aria-label="${escapeHtml(label)}" data-locale-target="${escapeHtml(targetAlternate.hreflang)}" href="${escapeHtml(toPublicPathHref(targetAlternate.href))}">
         <span aria-hidden="true">${visibleLabel}</span>
       </a>`
     : `      <button class="liax-button liax-language-icon-button" data-locale-target="" disabled type="button">
@@ -483,11 +493,26 @@ export function renderLanguageSwitchScript(): string {
   function readAlternates() {
     const alternates = new Map();
     document.querySelectorAll('link[rel~="alternate"][hreflang][href]').forEach((link) => {
-      if (link.hreflang) {
-        alternates.set(link.hreflang, new URL(link.href, window.location.href).toString());
+      const href = link.getAttribute("href") || "";
+      if (link.hreflang && href.trim()) {
+        alternates.set(link.hreflang, toCurrentOriginUrl(href));
       }
     });
     return alternates;
+  }
+
+  function toCurrentOriginUrl(value) {
+    const url = new URL(value, window.location.href);
+    return window.location.origin + url.pathname + url.search + url.hash;
+  }
+
+  function cloneHeadLinkForCurrentOrigin(link) {
+    const clonedLink = link.cloneNode(true);
+    const href = clonedLink.getAttribute("href");
+    if (href && href.trim()) {
+      clonedLink.setAttribute("href", toCurrentOriginUrl(href));
+    }
+    return clonedLink;
   }
 
   function unavailableText() {
@@ -543,7 +568,7 @@ export function renderLanguageSwitchScript(): string {
     document.documentElement.lang = targetDocument.documentElement.lang;
     document.querySelectorAll('link[rel~="alternate"][hreflang], link[rel="canonical"]').forEach((node) => node.remove());
     targetDocument.querySelectorAll('link[rel~="alternate"][hreflang], link[rel="canonical"]').forEach((node) => {
-      document.head.append(node.cloneNode(true));
+      document.head.append(cloneHeadLinkForCurrentOrigin(node));
     });
     const currentDescription = document.querySelector('meta[name="description"]');
     const targetDescription = targetDocument.querySelector('meta[name="description"]');

@@ -101,6 +101,7 @@ describe("MarkdownRenderer", () => {
     assert.match(result.html, /<link rel="alternate" hreflang="en-US" href="https:\/\/example\.com\/en\/posts\/title">/);
     assert.match(result.html, /data-language-switch-placeholder="true"/);
     assert.match(result.html, /data-locale-target="en-US"/);
+    assert.match(result.html, /data-locale-target="en-US" href="\/en\/posts\/title"/);
     assert.doesNotMatch(result.html, /data-locale-target="zh-CN"/);
     assert.match(result.html, /<header class="liax-article-header">\s*<h1>中文标题<\/h1>\s*<\/header>/);
     assert.match(result.html, /--color-page: #faf9f5;/);
